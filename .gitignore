@@ -1,0 +1,736 @@
+# =============================================================================
+# .gitignore abrangente (multi-linguagem / multi-plataforma)
+# Remova as seções que não se aplicam ao seu projeto.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Segredos e variáveis de ambiente (NUNCA commitar)
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.env
+.envrc
+secrets.*
+*.secret
+*.secrets
+credentials.json
+service-account*.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+.npmrc
+.pypirc
+.netrc
+.htpasswd
+terraform.tfvars
+*.auto.tfvars
+.aws/
+.ssh/
+
+# -----------------------------------------------------------------------------
+# Sistemas operacionais
+# -----------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.DocumentRevisions-V100
+.TemporaryItems
+Icon?
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+*.stackdump
+
+# Linux
+*~
+.directory
+.Trash-*
+.nfs*
+
+# -----------------------------------------------------------------------------
+# Editores e IDEs
+# -----------------------------------------------------------------------------
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+.history/
+
+# JetBrains (IntelliJ, WebStorm, PyCharm, Rider, etc.)
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+cmake-build-*/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Vim / Emacs / Sublime / Nano
+*.swp
+*.swo
+*.swn
+[._]*.s[a-v][a-z]
+Session.vim
+.netrwhist
+\#*\#
+.\#*
+*.sublime-workspace
+*.sublime-project
+*.nano
+
+# Eclipse / NetBeans
+.classpath
+.project
+.settings/
+.metadata/
+nbproject/private/
+nbbuild/
+nbdist/
+
+# Xcode
+xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# -----------------------------------------------------------------------------
+# Logs e arquivos temporários
+# -----------------------------------------------------------------------------
+logs/
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+*.rej
+*.old
+*.cache
+tmp/
+temp/
+.tmp/
+.temp/
+*.pid
+*.pid.lock
+*.seed
+
+# -----------------------------------------------------------------------------
+# Node.js / JavaScript / TypeScript
+# -----------------------------------------------------------------------------
+node_modules/
+jspm_packages/
+bower_components/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.npm/
+.eslintcache
+.stylelintcache
+.node_repl_history
+*.tgz
+.yarn-integrity
+*.tsbuildinfo
+.parcel-cache/
+.rpt2_cache/
+.rts2_cache_*/
+
+# Builds de front-end
+dist/
+build/
+.next/
+.nuxt/
+.output/
+.svelte-kit/
+.angular/
+.astro/
+.vite/
+.turbo/
+.vercel/
+.netlify/
+.docusaurus/
+.expo/
+.expo-shared/
+storybook-static/
+.cache/
+.temp-cache/
+coverage/
+.nyc_output/
+lib-cov/
+
+# -----------------------------------------------------------------------------
+# Python
+# -----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+develop-eggs/
+downloads/
+eggs/
+parts/
+sdist/
+wheels/
+share/python-wheels/
+pip-log.txt
+pip-delete-this-directory.txt
+MANIFEST
+*.manifest
+*.spec
+
+# Ambientes virtuais
+venv/
+.venv/
+env/
+ENV/
+virtualenv/
+.python-version
+pyvenv.cfg
+
+# Testes / cobertura / tipagem
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+cover/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# Ferramentas
+.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+.pdm.toml
+.pdm-python
+.pdm-build/
+__pypackages__/
+.scrapy
+celerybeat-schedule
+celerybeat.pid
+.spyderproject
+.spyproject
+.ropeproject
+
+# Django / Flask
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+instance/
+.webassets-cache
+staticfiles/
+media/
+
+# -----------------------------------------------------------------------------
+# Java / Kotlin / Scala / Android
+# -----------------------------------------------------------------------------
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+target/
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.kotlin/
+.bsp/
+.metals/
+.bloop/
+.scala-build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.dex
+google-services.json
+GoogleService-Info.plist
+
+# -----------------------------------------------------------------------------
+# C# / .NET
+# -----------------------------------------------------------------------------
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Ll]og/
+[Ll]ogs/
+*.dll
+*.exe
+*.pdb
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+*.rsuser
+*.cache
+*.vspscc
+*.vssscc
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+.ionide/
+.fake/
+TestResults/
+[Tt]est[Rr]esult*/
+*.trx
+*.nunit
+BenchmarkDotNet.Artifacts/
+appsettings.Development.json
+appsettings.Local.json
+
+# -----------------------------------------------------------------------------
+# Go
+# -----------------------------------------------------------------------------
+*.exe~
+*.test
+*.out
+*.prof
+go.work
+go.work.sum
+vendor/
+
+# -----------------------------------------------------------------------------
+# Rust
+# -----------------------------------------------------------------------------
+/target/
+**/*.rs.bk
+*.rlib
+*.rmeta
+# Descomente para bibliotecas (não para binários):
+# Cargo.lock
+
+# -----------------------------------------------------------------------------
+# PHP / Laravel / Symfony / Composer
+# -----------------------------------------------------------------------------
+/vendor/
+composer.phar
+.phpunit.result.cache
+.phpunit.cache/
+.php-cs-fixer.cache
+.php_cs.cache
+/public/hot
+/public/storage
+/public/build
+/storage/*.key
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/logs/*
+/bootstrap/cache/*
+Homestead.json
+Homestead.yaml
+auth.json
+/var/
+/web/bundles/
+
+# -----------------------------------------------------------------------------
+# Ruby / Rails
+# -----------------------------------------------------------------------------
+*.gem
+*.rbc
+.bundle/
+vendor/bundle
+.byebug_history
+.rspec_status
+/log/*
+/tmp/*
+/public/assets
+/public/packs
+/public/packs-test
+/storage/*
+!/storage/.keep
+.sass-cache/
+.yardoc/
+_yardoc/
+doc/
+rdoc/
+config/master.key
+config/credentials/*.key
+
+# -----------------------------------------------------------------------------
+# C / C++
+# -----------------------------------------------------------------------------
+*.o
+*.obj
+*.a
+*.lib
+*.lo
+*.la
+*.slo
+*.dylib
+*.d
+*.gch
+*.pch
+*.ko
+*.elf
+*.ilk
+*.map
+*.exp
+*.lai
+*.su
+*.idb
+*.exe
+*.out
+*.app
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+Makefile.in
+.ccls-cache/
+.clangd/
+
+# -----------------------------------------------------------------------------
+# Swift / iOS / macOS
+# -----------------------------------------------------------------------------
+.build/
+.swiftpm/
+Packages/
+Pods/
+Carthage/Build/
+*.xcuserstate
+*.xcscmblueprint
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# -----------------------------------------------------------------------------
+# Dart / Flutter
+# -----------------------------------------------------------------------------
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+pubspec.lock
+/build/
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+
+# -----------------------------------------------------------------------------
+# Elixir / Erlang
+# -----------------------------------------------------------------------------
+/_build/
+/deps/
+/cover/
+erl_crash.dump
+*.ez
+*.beam
+/config/*.secret.exs
+.elixir_ls/
+
+# -----------------------------------------------------------------------------
+# Haskell / OCaml / Lua / R / Julia / Perl
+# -----------------------------------------------------------------------------
+dist-newstyle/
+.stack-work/
+*.hi
+*.dyn_hi
+*.dyn_o
+_opam/
+_build/
+luac.out
+*.luac
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+renv/library/
+Manifest.toml
+*.jl.cov
+*.jl.mem
+blib/
+Build
+_build/
+Makefile.old
+
+# -----------------------------------------------------------------------------
+# Banco de dados e dumps locais
+# -----------------------------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.mdb
+*.accdb
+*.sql.gz
+*.dump
+*.rdb
+dump.rdb
+data/db/
+mongod.lock
+
+# -----------------------------------------------------------------------------
+# Docker / Kubernetes / Infra
+# -----------------------------------------------------------------------------
+docker-compose.override.yml
+.docker/
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terragrunt-cache/
+.vagrant/
+*.retry
+.serverless/
+.pulumi/
+.helm/
+charts/*.tgz
+kubeconfig
+*.kubeconfig
+
+# -----------------------------------------------------------------------------
+# Machine Learning / Data Science
+# -----------------------------------------------------------------------------
+*.h5
+*.hdf5
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.pb
+*.tflite
+*.joblib
+*.pkl
+*.pickle
+*.npy
+*.npz
+*.parquet
+*.feather
+*.arrow
+mlruns/
+wandb/
+lightning_logs/
+tensorboard/
+runs/
+checkpoints/
+.dvc/cache
+.dvc/tmp
+/data/raw/
+/data/processed/
+/datasets/
+/models/
+
+# -----------------------------------------------------------------------------
+# Jogos / Unity / Unreal / Godot
+# -----------------------------------------------------------------------------
+# Unity
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emory[Cc]aptures/
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+sysinfo.txt
+*.unitypackage
+
+# Unreal
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+*.VC.db
+*.opensdf
+*.sdf
+
+# Godot
+.godot/
+.import/
+export.cfg
+export_presets.cfg
+*.translation
+
+# -----------------------------------------------------------------------------
+# Documentos, LaTeX e geração de docs
+# -----------------------------------------------------------------------------
+*.aux
+*.lof
+*.lot
+*.fls
+*.out
+*.toc
+*.fmt
+*.fot
+*.cb
+*.cb2
+*.blg
+*.bbl
+*.bcf
+*.run.xml
+*.synctex.gz
+*.fdb_latexmk
+*.nav
+*.snm
+*.vrb
+~$*
+.~lock.*#
+site/
+_site/
+.jekyll-cache/
+.sass-cache/
+docs/_build/
+.docusaurus/
+resources/_gen/
+.hugo_build.lock
+
+# -----------------------------------------------------------------------------
+# Arquivos compactados / binários pesados
+# -----------------------------------------------------------------------------
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+*.gz
+*.bz2
+*.xz
+*.iso
+*.dmg
+*.msi
+*.deb
+*.rpm
+*.bin
+*.img
+
+# -----------------------------------------------------------------------------
+# Ferramentas de teste / CI / deploy local
+# -----------------------------------------------------------------------------
+.sonar/
+.scannerwork/
+.coveralls.yml
+.circleci/local*
+.act/
+.firebase/
+.firebaserc
+firebase-debug.log
+.vercel
+.amplify/
+amplify/#current-cloud-backend
+amplify/.config/local-*
+amplify/mock-data
+amplify/backend/amplify-meta.json
+.cdk.staging/
+cdk.out/
+.sst/
+.wrangler/
+.dev.vars
+
+# -----------------------------------------------------------------------------
+# Ferramentas de IA / assistentes locais
+# -----------------------------------------------------------------------------
+.claude/settings.local.json
+.claude/local/
+CLAUDE.local.md
+.cursor/
+.aider*
+.continue/
+.copilot/
+
+# -----------------------------------------------------------------------------
+# Uploads e arquivos gerados em runtime
+# -----------------------------------------------------------------------------
+uploads/
+/public/uploads/
+*.generated.*
