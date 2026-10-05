@@ -2,7 +2,8 @@
 # .gitignore abrangente (multi-linguagem / multi-plataforma)
 # Remova as seções que não se aplicam ao seu projeto.
 # =============================================================================
-
+docs/superpowers/specs/2026-10-05-supabase-db-auth-design.md
+CLAUDE.md
 # -----------------------------------------------------------------------------
 # Segredos e variáveis de ambiente (NUNCA commitar)
 # -----------------------------------------------------------------------------
