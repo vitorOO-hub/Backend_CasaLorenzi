@@ -138,3 +138,33 @@ Nao coloque no Git:
 - Quais opcoes finais serao usadas em `status_pedido`, `status_pagamento`, `metodo_pagamento` e `tipo_movimentacao_estoque`.
 - Quando configurar RLS no Supabase.
 - Se as tabelas de opcoes terao telas administrativas ou serao mantidas apenas por migration.
+
+## Teste Flask da tabela estoque
+
+Esta branch possui um app Flask pequeno para exercitar as acoes principais da tabela `estoque`.
+
+Rotas:
+
+- `GET /health`
+- `GET /estoques`
+- `GET /estoques/<id_estoque>`
+- `POST /estoques`
+- `POST /estoques/<id_estoque>/entrada`
+- `POST /estoques/<id_estoque>/saida`
+- `PATCH /estoques/<id_estoque>/minimo`
+- `DELETE /estoques/<id_estoque>`
+
+O app le `DATABASE_URL` do `.env`. Esse arquivo nao deve ser versionado.
+
+Para rodar:
+
+```bash
+pip install -r requirements.txt
+flask --app estoque_flask.app:criar_app run --debug
+```
+
+Para testar a logica sem tocar no banco remoto:
+
+```bash
+pytest tests/test_estoque_repositorio.py
+```
