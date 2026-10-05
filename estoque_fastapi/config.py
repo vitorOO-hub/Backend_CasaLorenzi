@@ -1,4 +1,4 @@
-"""Configuracao do prototipo Flask de estoque."""
+"""Configuracao do prototipo FastAPI de estoque."""
 
 from dataclasses import dataclass
 from os import getenv

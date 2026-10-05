@@ -11,7 +11,7 @@ python-dotenv>=1.0.0,<2.0.0
 email-validator>=2.0.0,<3.0.0
 
 # Banco (Supabase/PostgreSQL). asyncpg e o driver da API (pool no startup e transacoes);
-# psycopg e usado pelo prototipo de estoque (estoque_flask/).
+# psycopg e usado pelo teste de acoes de estoque.
 asyncpg>=0.31.0,<1.0.0
 psycopg[binary]>=3.1.0,<4.0.0
 

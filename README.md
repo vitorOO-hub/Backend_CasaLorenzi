@@ -139,9 +139,9 @@ Nao coloque no Git:
 - Quando configurar RLS no Supabase.
 - Se as tabelas de opcoes terao telas administrativas ou serao mantidas apenas por migration.
 
-## Teste Flask da tabela estoque
+## Teste FastAPI da tabela estoque
 
-Esta branch possui um app Flask pequeno para exercitar as acoes principais da tabela `estoque`.
+Esta branch possui um app FastAPI pequeno para exercitar as acoes principais da tabela `estoque`.
 
 Rotas:
 
@@ -160,7 +160,7 @@ Para rodar:
 
 ```bash
 pip install -r requirements.txt
-flask --app estoque_flask.app:criar_app run --debug
+uvicorn estoque_fastapi.app:criar_app --factory --reload
 ```
 
 Para testar a logica sem tocar no banco remoto:

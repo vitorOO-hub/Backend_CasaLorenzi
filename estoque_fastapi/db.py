@@ -1,4 +1,4 @@
-"""Conexao PostgreSQL usada pelo app Flask."""
+"""Conexao PostgreSQL usada pelo app FastAPI de estoque."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -6,7 +6,7 @@ from contextlib import contextmanager
 import psycopg
 from psycopg.rows import dict_row
 
-from estoque_flask.config import Configuracao
+from estoque_fastapi.config import Configuracao
 
 
 @contextmanager
