@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from estoque_flask.repositorio import (
+from estoque_fastapi.repositorio import (
     EstoqueComSaldo,
     EstoqueInsuficiente,
     RegistroNaoEncontrado,
