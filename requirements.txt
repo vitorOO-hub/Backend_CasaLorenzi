@@ -1,9 +1,28 @@
-supabase>=2.0.0,<3.0.0
-python-dotenv>=1.0.0,<2.0.0
-pydantic>=2.0.0,<3.0.0
-pydantic-settings>=2.0.0,<3.0.0
-Flask>=3.0.0,<4.0.0
-fastapi>=0.110.0,<1.0.0
+# Dependencias de producao (Render). Testes e lint ficam em requirements-dev.txt.
+# Instalar: pip install -r requirements.txt   (Python 3.12)
+
+# API
+fastapi>=0.142.0,<1.0.0
 uvicorn[standard]>=0.27.0,<1.0.0
+pydantic>=2.0.0,<3.0.0
+pydantic-settings>=2.7.0,<3.0.0
+python-dotenv>=1.0.0,<2.0.0
+# EmailStr nos modelos de entrada (ex.: POST /usuarios)
+email-validator>=2.0.0,<3.0.0
+
+# Prototipo de estoque (estoque_flask/): usa Flask, psycopg e python-dotenv
+Flask>=3.0.0,<4.0.0
+
+# Banco (Supabase/PostgreSQL). asyncpg e o driver da API (pool no startup e transacoes);
+# psycopg e usado pelo prototipo de estoque (estoque_flask/).
+asyncpg>=0.31.0,<1.0.0
 psycopg[binary]>=3.1.0,<4.0.0
-pytest>=8.0.0,<9.0.0
+
+# Supabase: login, sessao e JWT sao do Supabase Auth. O backend valida o token (ES256, JWKS)
+pyjwt[crypto]>=2.10.0,<3.0.0
+supabase>=2.0.0,<3.0.0
+# Cliente HTTP assincrono (busca do JWKS)
+httpx>=0.28.0,<1.0.0
+
+# Limite de requisicoes (por IP e por usuario)
+slowapi>=0.1.9,<1.0.0
