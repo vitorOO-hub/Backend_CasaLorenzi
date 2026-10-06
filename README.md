@@ -19,17 +19,29 @@ Backend em Python e frontend ficam para etapas separadas.
 ## Estrutura de arquivos
 
 ```text
+app/                       API FastAPI (monolito modular)
+├── main.py                criar_app(): CORS, tratadores de erro e routers
+├── core/                  config.py (Settings), db.py (conexao), erros.py (ErroDeNegocio)
+├── api/                   router.py (agrega os modulos) e health.py (GET /health)
+├── estoque/               router.py, schemas.py, repositorio.py, erros.py
+└── atendimento/ compras/ admin/ integracao/ dashboard/   (vazios, proximas etapas)
+
 supabase/
-├── migrations/
-│   └── 20261005000000_criar_tabelas_essenciais.sql
+├── migrations/            tabelas, constraints, ids em uuid e politicas de RLS
 ├── seed.sql
 └── config.toml
 
+tests/                     core/, api/ e estoque/, espelhando app/
+pytest.ini
 .env.example
 .gitignore
 requirements.txt
 README.md
 ```
+
+Um modulo novo segue o padrao de `app/estoque/`: `router.py` (rotas), `schemas.py` (entrada),
+`repositorio.py` (SQL parametrizado) e `erros.py` (subclasses de `ErroDeNegocio`). O router
+entra em `app/api/router.py` com uma linha.
 
 ## Tabelas principais
 
@@ -139,9 +151,9 @@ Nao coloque no Git:
 - Quando configurar RLS no Supabase.
 - Se as tabelas de opcoes terao telas administrativas ou serao mantidas apenas por migration.
 
-## Teste FastAPI da tabela estoque
+## API FastAPI
 
-Esta branch possui um app FastAPI pequeno para exercitar as acoes principais da tabela `estoque`.
+O modulo `estoque` expoe as acoes principais da tabela `estoque`.
 
 Rotas:
 
@@ -154,17 +166,22 @@ Rotas:
 - `PATCH /estoques/<id_estoque>/minimo`
 - `DELETE /estoques/<id_estoque>`
 
-O app le `DATABASE_URL` do `.env`. Esse arquivo nao deve ser versionado.
+O app le `DATABASE_URL` (obrigatoria), `SUPABASE_URL` e `CORS_ORIGINS` do `.env`.
+Esse arquivo nao deve ser versionado; use `.env.example` como modelo.
 
-Para rodar:
+Para rodar (documentacao interativa em `http://127.0.0.1:8000/docs`):
 
 ```bash
 pip install -r requirements.txt
-uvicorn estoque_fastapi.app:criar_app --factory --reload
+uvicorn app.main:criar_app --factory --reload
 ```
 
-Para testar a logica sem tocar no banco remoto:
+Atencao: as rotas de estoque ainda **nao exigem login** e usam uma conexao que ignora RLS.
+Rode apenas em `127.0.0.1` ate a autenticacao do Supabase entrar.
+
+Para testar sem tocar no banco remoto (os testes nunca leem o `.env`):
 
 ```bash
-pytest tests/test_estoque_repositorio.py
+pip install pytest
+pytest
 ```
