@@ -1,19 +1,9 @@
-"""Operacoes de banco para testar a tabela estoque."""
+"""Operacoes de banco da tabela estoque (SQL parametrizado, psycopg)."""
 
 from decimal import Decimal
 from uuid import UUID
 
-
-class RegistroNaoEncontrado(Exception):
-    """Registro solicitado nao existe."""
-
-
-class EstoqueInsuficiente(Exception):
-    """Saida maior que o saldo disponivel."""
-
-
-class EstoqueComSaldo(Exception):
-    """Registro de estoque com saldo nao deve ser removido."""
+from app.estoque.erros import EstoqueComSaldo, EstoqueInsuficiente, RegistroNaoEncontrado
 
 
 def normalizar_id(valor: object) -> int | UUID:

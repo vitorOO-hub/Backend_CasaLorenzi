@@ -20,7 +20,10 @@ def test_cors_libera_origem_configurada(cliente):
 def test_cors_nega_origem_desconhecida(cliente):
     resposta = cliente.options(
         "/health",
-        headers={"Origin": "https://site-malicioso.example", "Access-Control-Request-Method": "GET"},
+        headers={
+            "Origin": "https://site-malicioso.example",
+            "Access-Control-Request-Method": "GET",
+        },
     )
     assert resposta.status_code == 400
     assert "access-control-allow-origin" not in resposta.headers

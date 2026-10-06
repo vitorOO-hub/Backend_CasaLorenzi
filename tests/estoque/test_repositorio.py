@@ -2,10 +2,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from estoque_fastapi.repositorio import (
-    EstoqueComSaldo,
-    EstoqueInsuficiente,
-    RegistroNaoEncontrado,
+from app.estoque.erros import EstoqueComSaldo, EstoqueInsuficiente, RegistroNaoEncontrado
+from app.estoque.repositorio import (
     normalizar_id,
     normalizar_quantidade,
     registrar_entrada,
