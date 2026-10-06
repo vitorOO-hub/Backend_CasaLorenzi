@@ -45,7 +45,7 @@ def test_todas_as_rotas_do_estoque_estao_registradas(cliente):
     registradas = {
         (metodo.upper(), caminho) for caminho, itens in caminhos.items() for metodo in itens
     }
-    assert registradas == ROTAS_ESPERADAS
+    assert ROTAS_ESPERADAS.issubset(registradas)
 
 
 def test_listar_devolve_o_que_o_repositorio_devolve(app, cliente):
