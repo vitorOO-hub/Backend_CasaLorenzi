@@ -3,8 +3,10 @@
 from fastapi import APIRouter
 
 from app.api import health
+from app.admin.router import router as admin_router
 from app.estoque.router import router as estoque_router
 
 api_router = APIRouter()
 api_router.include_router(health.router)
+api_router.include_router(admin_router)
 api_router.include_router(estoque_router)
