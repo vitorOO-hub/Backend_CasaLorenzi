@@ -1,4 +1,7 @@
-"""API da Casa Lorenzi. Execucao: uvicorn app.main:criar_app --factory --reload"""
+"""API da Casa Lorenzi. Execucao: uvicorn app.main:app --reload"""
+
+from functools import lru_cache
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,3 +28,18 @@ def criar_app(settings: Settings | None = None) -> FastAPI:
     registrar_tratadores(app)
     app.include_router(api_router)
     return app
+
+
+@lru_cache
+def _app_padrao() -> FastAPI:
+    return criar_app()
+
+
+def __getattr__(nome: str) -> Any:
+    """Permite `uvicorn app.main:app`, mas o app padrao so e criado quando alguem pede `app`.
+
+    Assim importar `app.main` (como fazem os testes) nao le o .env nem exige DATABASE_URL.
+    """
+    if nome == "app":
+        return _app_padrao()
+    raise AttributeError(f"module {__name__!r} has no attribute {nome!r}")

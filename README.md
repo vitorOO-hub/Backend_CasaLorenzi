@@ -173,8 +173,12 @@ Para rodar (documentacao interativa em `http://127.0.0.1:8000/docs`):
 
 ```bash
 pip install -r requirements.txt
-uvicorn app.main:criar_app --factory --reload
+uvicorn app.main:app --reload
 ```
+
+Rode sempre da raiz do projeto. O `app` do modulo `app.main` e criado sob demanda a partir
+do `.env`; os testes usam `criar_app(settings)` e nunca leem o `.env`. O comando equivalente
+`uvicorn app.main:criar_app --factory --reload` tambem funciona.
 
 Atencao: as rotas de estoque ainda **nao exigem login** e usam uma conexao que ignora RLS.
 Rode apenas em `127.0.0.1` ate a autenticacao do Supabase entrar.
