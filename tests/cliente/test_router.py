@@ -84,6 +84,20 @@ MENSAGEM = {
     "enviada_em": "2026-10-07T12:10:00+00:00",
 }
 
+PERFIL = {
+    "id_cliente": "9f1c3a52-6a4e-4c8e-9a39-0f1f2b6f2f10",
+    "nome": "Cliente",
+    "email": "cliente@casalorenzi.test",
+    "telefone": "(11) 99999-0000",
+    "documento": None,
+    "cliente_desde": "2026-10-01T12:00:00+00:00",
+    "total_pedidos": 2,
+    "valor_total_pedidos": "398.90",
+    "total_chamados": 1,
+    "id_loja_preferida": ID_LOJA,
+    "loja_preferida": "Casa Lorenzi Centro",
+}
+
 
 def usar_cliente(app):
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
@@ -112,6 +126,7 @@ def test_rotas_do_cliente_estao_registradas(app, cliente):
         (metodo.upper(), caminho) for caminho, itens in caminhos.items() for metodo in itens
     }
     assert ("GET", "/api/v1/cliente/lojas") in registradas
+    assert ("GET", "/api/v1/cliente/perfil") in registradas
     assert ("GET", "/api/v1/cliente/pedidos") in registradas
     assert ("POST", "/api/v1/cliente/pedidos") in registradas
     assert ("GET", "/api/v1/cliente/pedidos/{id_pedido}") in registradas
@@ -121,6 +136,15 @@ def test_rotas_do_cliente_estao_registradas(app, cliente):
     assert ("GET", "/api/v1/cliente/chamados/{id_atendimento}") in registradas
     assert ("GET", "/api/v1/cliente/chamados/{id_atendimento}/mensagens") in registradas
     assert ("POST", "/api/v1/cliente/chamados/{id_atendimento}/mensagens") in registradas
+
+
+def test_perfil_do_cliente_responde_200(app, cliente):
+    usar_cliente(app)
+    usar_executor(app, devolve(PERFIL))
+    resposta = cliente.get("/api/v1/cliente/perfil")
+    assert resposta.status_code == 200
+    assert resposta.json()["email"] == "cliente@casalorenzi.test"
+    assert resposta.json()["total_pedidos"] == 2
 
 
 def test_listar_pedidos_do_cliente_responde_200(app, cliente):
@@ -181,6 +205,7 @@ def test_abrir_chamado_do_cliente_responde_201(app, cliente):
             "assunto": "Troca de tamanho",
             "categoria": "troca_devolucao",
             "descricao": "Preciso trocar o tamanho.",
+            "id_loja": ID_LOJA,
             "id_pedido": ID_PEDIDO,
             "id_item_pedido": ID_ITEM,
         },

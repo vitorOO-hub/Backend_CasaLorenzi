@@ -12,9 +12,31 @@ class EntradaRestrita(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+CodigoBanco = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=40, pattern=r"^[a-z0-9_]+$"),
+]
+TextoCurto = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+]
+TextoLongo = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=4000),
+]
+
+
 class ItemCheckout(EntradaRestrita):
     id_variacao: UUID
     quantidade: int = Field(gt=0, le=99)
+
+
+class EnderecoEntrega(EntradaRestrita):
+    cep: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=20)]
+    rua: TextoCurto
+    numero: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]
+    complemento: Annotated[str, StringConstraints(strip_whitespace=True, max_length=120)] | None = None
+    uf: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=2)]
 
 
 class CheckoutCriacao(EntradaRestrita):
@@ -22,6 +44,7 @@ class CheckoutCriacao(EntradaRestrita):
     entrega: Literal["casa", "loja"]
     metodo_pagamento: Literal["cartao_credito", "pix", "boleto"]
     frete: Decimal = Field(default=Decimal("0.00"), ge=0, decimal_places=2)
+    endereco_entrega: EnderecoEntrega | None = None
     itens: list[ItemCheckout] = Field(min_length=1, max_length=50)
 
 
@@ -31,6 +54,20 @@ class LojaCliente(BaseModel):
     cidade: str | None = None
     uf: str | None = None
     endereco: str | None = None
+
+
+class PerfilCliente(BaseModel):
+    id_cliente: UUID
+    nome: str
+    email: str
+    telefone: str | None = None
+    documento: str | None = None
+    cliente_desde: datetime
+    total_pedidos: int
+    valor_total_pedidos: Decimal
+    total_chamados: int
+    id_loja_preferida: UUID | None = None
+    loja_preferida: str | None = None
 
 
 class ItemPedidoCliente(BaseModel):
@@ -68,20 +105,6 @@ class PedidoCliente(BaseModel):
     pagamento: PagamentoCliente | None = None
 
 
-CodigoBanco = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1, max_length=40, pattern=r"^[a-z0-9_]+$"),
-]
-TextoCurto = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
-]
-TextoLongo = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1, max_length=4000),
-]
-
-
 class OpcaoCliente(BaseModel):
     codigo: str
     nome: str
@@ -95,6 +118,7 @@ class ChamadoCriacao(EntradaRestrita):
     assunto: TextoCurto
     categoria: CodigoBanco
     descricao: TextoLongo
+    id_loja: UUID | None = None
     id_pedido: UUID | None = None
     id_item_pedido: UUID | None = None
 
