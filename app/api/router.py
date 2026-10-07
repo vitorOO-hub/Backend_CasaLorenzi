@@ -15,6 +15,7 @@ from app.dashboard.router import router as dashboard_router
 from app.estoque.router import router as estoque_router
 from app.gerencia.router import router as gerencia_router
 from app.movimentacoes.router import router as movimentacoes_router
+from app.painel_estoque.router import router as painel_estoque_router
 from app.transferencias.router import router as transferencias_router
 
 # So atua com AUTENTICACAO_OBRIGATORIA=true (ver app/core/security.py).
@@ -32,6 +33,7 @@ api_router.include_router(dashboard_router)
 api_router.include_router(chamados_router, prefix="/api/v1")
 api_router.include_router(chat_router, prefix="/api/v1")
 api_router.include_router(gerencia_router, prefix="/api/v1")
+api_router.include_router(painel_estoque_router, prefix="/api/v1")
 api_router.include_router(cliente_router, prefix="/api/v1")
 api_router.include_router(estoque_router, dependencies=[Depends(trava(*OPERADOR_DE_ESTOQUE))])
 api_router.include_router(

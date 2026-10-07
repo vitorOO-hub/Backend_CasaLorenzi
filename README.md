@@ -440,3 +440,19 @@ python scripts/semear_vendas.py --aplicar   # grava (uma transação, uma única
 Cria 2 lojas, o catálogo da coleção, clientes fictícios (sem login), ~13 meses de pedidos com
 pagamentos e movimentações de estoque coerentes, ajustes a aprovar e transferências. Exige
 `alembic upgrade head`.
+
+## Estoque do painel: saldo e historico de movimentacoes
+
+Rotas privadas em `/api/v1/painel/estoque` para `operador_estoque`, `gerente_loja` e `admin`.
+Operador e gerente enxergam sempre a propria loja (a do token; pedir outra da 403); o admin ve a
+rede ou escolhe uma loja. O operador ainda so ve as movimentacoes que ele mesmo registrou.
+
+| Metodo | Rota | Para que serve |
+| --- | --- | --- |
+| GET | `/opcoes` | Categorias, pecas, tipos de movimentacao, lojas e escopo de quem chamou |
+| GET | `/saldo?busca=&categoria=&situacao=&id_loja=&limit=&offset=` | Resumo (unidades, baixo, esgotadas, valor) e saldo por peca, com a coluna de cada loja |
+| GET | `/movimentacoes?tipo=&sku=&de=&ate=&id_loja=&limit=&offset=` | Historico: quantidade com sinal, saldo antes e depois, responsavel, motivo e pedido |
+
+Situacao: `esgotado` (saldo 0), `baixo` (no minimo ou abaixo) e `ok`. Tipos agrupados em entrada,
+saida (inclui venda), ajuste e transferencia; o nome exato do tipo vem em cada linha. O periodo usa o
+dia de Sao Paulo nas duas pontas. A busca nunca vira curinga nem SQL.
