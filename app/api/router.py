@@ -7,6 +7,7 @@ from app.api import health
 from app.atendimento.router import router as atendimento_router
 from app.chamados.router import router as chamados_router
 from app.chat.router import router as chat_router
+from app.cliente.router import router as cliente_router
 from app.compras.router import router as compras_router
 from app.core.papeis import Papel
 from app.core.security import trava
@@ -31,6 +32,7 @@ api_router.include_router(dashboard_router)
 api_router.include_router(chamados_router, prefix="/api/v1")
 api_router.include_router(chat_router, prefix="/api/v1")
 api_router.include_router(gerencia_router, prefix="/api/v1")
+api_router.include_router(cliente_router, prefix="/api/v1")
 api_router.include_router(estoque_router, dependencies=[Depends(trava(*OPERADOR_DE_ESTOQUE))])
 api_router.include_router(
     movimentacoes_router,
