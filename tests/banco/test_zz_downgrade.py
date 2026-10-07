@@ -15,6 +15,11 @@ def estado(url: str) -> dict:
             "WHERE table_schema = 'public' AND table_name = 'atendimento' "
             "AND column_name = 'id_loja'"
         ).fetchone()[0]
+        assunto = conexao.execute(
+            "SELECT count(*) FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'atendimento' "
+            "AND column_name = 'assunto'"
+        ).fetchone()[0]
         funcoes = conexao.execute(
             "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
             "WHERE n.nspname = 'public' AND (p.proname LIKE 'app\\_%' "
@@ -28,20 +33,27 @@ def estado(url: str) -> dict:
             "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
             "WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relforcerowsecurity"
         ).fetchone()[0]
-    return {"coluna": coluna, "funcoes": funcoes, "politicas": politicas, "forcado": forcado}
+    return {
+        "coluna": coluna,
+        "assunto": assunto,
+        "funcoes": funcoes,
+        "politicas": politicas,
+        "forcado": forcado,
+    }
 
 
 def test_downgrade_remove_tudo_e_upgrade_reaplica(banco_migrado):
     url = banco_migrado
     antes = estado(url)
     assert antes["coluna"] == 1
+    assert antes["assunto"] == 1
     assert antes["funcoes"] == 9  # 7 app_* + hook_claims_token + preencher_id_loja_atendimento
     assert antes["politicas"] == 19  # 12 em D1 (7 + 5 de opcoes) e 7 em D2
     assert antes["forcado"] >= 20
     try:
         rodar_alembic(url, "downgrade", REVISAO_ANTERIOR)
         depois = estado(url)
-        assert depois == {"coluna": 0, "funcoes": 0, "politicas": 0, "forcado": 0}
+        assert depois == {"coluna": 0, "assunto": 0, "funcoes": 0, "politicas": 0, "forcado": 0}
     finally:
         rodar_alembic(url, "upgrade", "head")
     assert estado(url) == antes
