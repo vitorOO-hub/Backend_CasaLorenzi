@@ -145,6 +145,7 @@ def _obter_variacao(conexao, id_variacao: UUID) -> dict[str, object]:
         FROM variacao_produto v
         JOIN produto p ON p.id_produto = v.id_produto
         WHERE v.id_variacao = %s
+          AND v.ativa IS TRUE
           AND p.ativo IS TRUE
         """,
         (id_variacao,),
@@ -152,6 +153,120 @@ def _obter_variacao(conexao, id_variacao: UUID) -> dict[str, object]:
     if not linha:
         raise VariacaoIndisponivel
     return linha
+
+
+def _itens_do_carrinho(conexao, id_cliente: UUID) -> list[dict[str, object]]:
+    linhas = buscar_todos(
+        conexao,
+        """
+        SELECT
+            c.id_carrinho,
+            c.id_variacao,
+            v.sku,
+            p.nome AS produto,
+            p.imagem_url,
+            p.imagem_alt,
+            p.tecido,
+            v.cor,
+            v.tamanho,
+            c.quantidade,
+            v.preco_venda AS preco_unitario,
+            (v.preco_venda * c.quantidade) AS valor_total
+        FROM carrinho c
+        JOIN variacao_produto v ON v.id_variacao = c.id_variacao
+        JOIN produto p ON p.id_produto = v.id_produto
+        WHERE c.id_cliente = %s
+          AND v.ativa IS TRUE
+          AND p.ativo IS TRUE
+        ORDER BY c.criado_em, p.nome, v.cor, v.tamanho
+        """,
+        (id_cliente,),
+    )
+    return [serializar_linha(linha) for linha in linhas]
+
+
+def obter_carrinho(conexao, id_cliente: UUID) -> dict[str, object]:
+    itens = _itens_do_carrinho(conexao, id_cliente)
+    subtotal = sum((_dinheiro(item["valor_total"]) for item in itens), Decimal("0.00"))
+    return {"itens": itens, "subtotal": str(subtotal)}
+
+
+def adicionar_item_carrinho(
+    conexao,
+    id_cliente: UUID,
+    *,
+    id_variacao: UUID,
+    quantidade: int,
+) -> dict[str, object]:
+    _obter_variacao(conexao, id_variacao)
+    try:
+        executar_sql(
+            conexao,
+            """
+            INSERT INTO carrinho (id_cliente, id_variacao, quantidade)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (id_cliente, id_variacao)
+            DO UPDATE SET quantidade = LEAST(carrinho.quantidade + EXCLUDED.quantidade, 99),
+                          atualizado_em = now()
+            """,
+            (id_cliente, id_variacao, quantidade),
+        )
+        conexao.commit()
+    except Exception:
+        conexao.rollback()
+        raise
+    return obter_carrinho(conexao, id_cliente)
+
+
+def atualizar_item_carrinho(
+    conexao,
+    id_cliente: UUID,
+    *,
+    id_variacao: UUID,
+    quantidade: int,
+) -> dict[str, object]:
+    _obter_variacao(conexao, id_variacao)
+    try:
+        executar_sql(
+            conexao,
+            """
+            UPDATE carrinho
+            SET quantidade = %s,
+                atualizado_em = now()
+            WHERE id_cliente = %s
+              AND id_variacao = %s
+            """,
+            (quantidade, id_cliente, id_variacao),
+        )
+        conexao.commit()
+    except Exception:
+        conexao.rollback()
+        raise
+    return obter_carrinho(conexao, id_cliente)
+
+
+def remover_item_carrinho(conexao, id_cliente: UUID, id_variacao: UUID) -> dict[str, object]:
+    try:
+        executar_sql(
+            conexao,
+            "DELETE FROM carrinho WHERE id_cliente = %s AND id_variacao = %s",
+            (id_cliente, id_variacao),
+        )
+        conexao.commit()
+    except Exception:
+        conexao.rollback()
+        raise
+    return obter_carrinho(conexao, id_cliente)
+
+
+def limpar_carrinho(conexao, id_cliente: UUID) -> dict[str, object]:
+    try:
+        executar_sql(conexao, "DELETE FROM carrinho WHERE id_cliente = %s", (id_cliente,))
+        conexao.commit()
+    except Exception:
+        conexao.rollback()
+        raise
+    return obter_carrinho(conexao, id_cliente)
 
 
 def _obter_estoque_para_atualizar(conexao, id_loja: UUID, id_variacao: UUID) -> dict[str, object]:
@@ -885,6 +1000,7 @@ def criar_checkout(
                 f"checkout-{chave_idempotencia or numero}",
             ),
         )
+        executar_sql(conexao, "DELETE FROM carrinho WHERE id_cliente = %s", (id_cliente,))
         conexao.commit()
     except Exception:
         conexao.rollback()
