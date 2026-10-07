@@ -129,10 +129,15 @@ def id_usuario_ativo(conexao: Connection, id_auth: UUID) -> UUID | None:
 # ---------------------------------------------------------------- leituras
 
 
-def opcoes(conexao: Connection, escopo: Escopo, *, todas_as_lojas: bool) -> dict[str, Any]:
-    def tabela(nome: str) -> list[dict[str, Any]]:
-        return _mapas(conexao, f"SELECT codigo, nome FROM {nome} WHERE ativo ORDER BY ordem", {})
+_OPCOES = {
+    "status": "SELECT codigo, nome FROM status_atendimento WHERE ativo ORDER BY ordem",
+    "canais": "SELECT codigo, nome FROM canal_atendimento WHERE ativo ORDER BY ordem",
+    "categorias": "SELECT codigo, nome FROM categoria_atendimento WHERE ativo ORDER BY ordem",
+    "prioridades": "SELECT codigo, nome FROM prioridade_atendimento WHERE ativo ORDER BY ordem",
+}
 
+
+def opcoes(conexao: Connection, escopo: Escopo, *, todas_as_lojas: bool) -> dict[str, Any]:
     lojas = _mapas(
         conexao,
         """
@@ -143,10 +148,7 @@ def opcoes(conexao: Connection, escopo: Escopo, *, todas_as_lojas: bool) -> dict
         {"todas": todas_as_lojas, "id_loja": str(escopo.id_loja) if escopo.id_loja else None},
     )
     return {
-        "status": tabela("status_atendimento"),
-        "canais": tabela("canal_atendimento"),
-        "categorias": tabela("categoria_atendimento"),
-        "prioridades": tabela("prioridade_atendimento"),
+        **{chave: _mapas(conexao, sql, {}) for chave, sql in _OPCOES.items()},
         "lojas": lojas,
     }
 
