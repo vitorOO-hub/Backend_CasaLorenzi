@@ -54,3 +54,29 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
     GRANT ALL ON TABLES TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
     GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+
+-- Realtime do Supabase: publicacao das mudancas e a tabela de mensagens dos canais privados
+-- (Broadcast e Presence). So o necessario para testar as policies do chat.
+DROP PUBLICATION IF EXISTS supabase_realtime;
+CREATE PUBLICATION supabase_realtime;
+
+CREATE SCHEMA IF NOT EXISTS realtime;
+
+CREATE TABLE IF NOT EXISTS realtime.messages (
+    id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    topic TEXT NOT NULL,
+    extension TEXT NOT NULL,
+    payload JSONB,
+    event TEXT,
+    private BOOLEAN DEFAULT FALSE,
+    inserted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+
+-- O Realtime real informa o canal pela configuracao realtime.topic antes de checar a policy.
+CREATE OR REPLACE FUNCTION realtime.topic() RETURNS text
+LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('realtime.topic', true), '') $$;
+
+GRANT USAGE ON SCHEMA realtime TO anon, authenticated, service_role;
+GRANT SELECT, INSERT ON realtime.messages TO authenticated;
+GRANT EXECUTE ON FUNCTION realtime.topic() TO anon, authenticated, service_role;

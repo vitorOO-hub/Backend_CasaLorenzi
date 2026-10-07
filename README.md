@@ -375,3 +375,39 @@ trigger), `usuario.cidade` e a tabela `chamado_anexo` (com RLS).
 
 `python scripts/semear_chamados.py --aplicar` cria chamados de exemplo para ver a fila funcionando
 (só se a tabela estiver vazia; só para desenvolvimento).
+
+## Chat ao vivo do atendente
+
+O chat usa o **Supabase Realtime** (sem servidor de websocket proprio). A API cuida da sessao, da
+caixa de conversas e da escrita; o Realtime entrega o que acontece ao vivo.
+
+### Endpoints (`/api/v1/painel/chat`, privados: atendente, gerente e admin)
+
+| Metodo | Rota | Para que serve |
+| --- | --- | --- |
+| GET | `/conversas?secao=todas\|fila\|minhas&apenas_nao_lidas=&limit=&offset=` | Caixa de conversas abertas (ultima mensagem, nao lidas, aguardando resposta) |
+| GET | `/conversas/resumo` | Contadores da caixa: fila, minhas, nao lidas, aguardando |
+| GET | `/conversas/{id}/sessao` | Abre a sessao do chat: canal privado, filtro do Realtime, quem sou eu, se posso responder |
+| GET | `/conversas/{id}/mensagens?apos=<id>&limit=` | Historico e recuperacao apos reconexao (cursor por mensagem) |
+| POST | `/conversas/{id}/mensagens` | Envia mensagem (assume o chamado se estiver sem responsavel) |
+| POST | `/conversas/{id}/lido` | Marca a conversa como lida para quem chamou |
+
+Escopo: equipe ve a propria loja e os chamados sem loja; admin ve a rede; conversa fora do escopo
+devolve 404. O remetente sempre vem do token, nunca do corpo.
+
+### Como o front se conecta
+
+1. `GET /conversas/{id}/sessao` devolve `topico` (`chamado:<uuid>`) e `filtro_mensagens`.
+2. **Mensagens novas**: Postgres Changes em `public.mensagem` com o filtro recebido. O RLS decide
+   quem recebe.
+3. **Digitando e presenca**: canal **privado** `supabase.channel(topico, { config: { private: true } })`
+   (Broadcast e Presence). As policies em `realtime.messages` so liberam quem enxerga o chamado.
+4. Apos reconectar, `GET /mensagens?apos=<ultimo_id_mensagem>` busca o que ficou pendente.
+
+### Banco
+
+Migration `20261007120000_chat_ao_vivo`: tabela `chamado_leitura` (RLS forcado, fechada ao front),
+`mensagem` e `atendimento` na publicacao `supabase_realtime` e as policies de `realtime.messages`.
+Se faltar permissao para criar as policies, a migration avisa e segue: rode
+`supabase/realtime_chat_policies.sql` pelo SQL Editor. A revisao encadeia depois de
+`20261007110000` (correcao de RLS das transferencias).

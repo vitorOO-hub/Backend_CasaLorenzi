@@ -69,6 +69,7 @@ def banco_migrado(url_banco: str) -> str:
     with psycopg.connect(url_banco, autocommit=True) as conexao:
         conexao.execute("DROP SCHEMA IF EXISTS public CASCADE")
         conexao.execute("DROP SCHEMA IF EXISTS auth CASCADE")
+        conexao.execute("DROP SCHEMA IF EXISTS realtime CASCADE")
         conexao.execute("CREATE SCHEMA public")
         conexao.execute(BOOTSTRAP.read_text(encoding="utf-8"))
         for arquivo in sorted(PASTA_MIGRATIONS_SQL.glob("*.sql")):
