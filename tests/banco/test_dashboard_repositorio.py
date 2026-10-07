@@ -117,6 +117,18 @@ def test_filtra_por_loja(sa_conn, cenario):
     assert r["escopo"]["pode_escolher_loja"] is False
 
 
+def test_equipe_de_loja_tambem_ve_os_chamados_sem_loja(sa_conn, cenario):
+    loja_a, _ = cenario.lojas
+    so_a = dashboard(sa_conn, cenario.atendente_a, id_loja=loja_a)
+    com_sem_loja = dashboard(sa_conn, cenario.atendente_a, id_loja=loja_a, incluir_sem_loja=True)
+    assert so_a["atual"]["total"] == 2
+    assert com_sem_loja["atual"]["total"] == 3  # a1, a2 e o chamado sem loja
+    fila = service.montar_fila(
+        sa_conn, Filtro(id_loja=loja_a, incluir_sem_loja=True), limit=20, offset=0
+    )
+    assert fila["total_aberto"] == 3  # a1, o sem loja e o "fora"; a2 esta resolvido
+
+
 def test_admin_enxerga_todas_as_lojas_nas_opcoes(sa_conn, cenario):
     r = dashboard(sa_conn, cenario.admin)
     ids = {loja["id_loja"] for loja in r["opcoes"]["lojas"]}

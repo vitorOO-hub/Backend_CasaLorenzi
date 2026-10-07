@@ -22,12 +22,15 @@ class Filtro:
     id_loja: UUID | None = None
     canal: str | None = None
     categoria: str | None = None
+    # Equipe de loja tambem atende os chamados sem loja (fila geral); o admin filtra a rede.
+    incluir_sem_loja: bool = False
 
     def parametros(self) -> dict[str, Any]:
         return {
             "id_loja": str(self.id_loja) if self.id_loja else None,
             "canal": self.canal,
             "categoria": self.categoria,
+            "incluir_sem_loja": self.incluir_sem_loja,
         }
 
 
@@ -60,7 +63,11 @@ WITH base AS (
     ) resposta ON true
     WHERE a.aberto_em >= CAST(:inicio AS date)::timestamp AT TIME ZONE :fuso
       AND a.aberto_em < (CAST(:fim AS date) + 1)::timestamp AT TIME ZONE :fuso
-      AND (CAST(:id_loja AS uuid) IS NULL OR a.id_loja = CAST(:id_loja AS uuid))
+      AND (
+        CAST(:id_loja AS uuid) IS NULL
+        OR a.id_loja = CAST(:id_loja AS uuid)
+        OR (CAST(:incluir_sem_loja AS boolean) AND a.id_loja IS NULL)
+    )
       AND (CAST(:canal AS text) IS NULL OR canal.codigo = CAST(:canal AS text))
       AND (CAST(:categoria AS text) IS NULL OR categoria.codigo = CAST(:categoria AS text))
 )
@@ -205,7 +212,11 @@ JOIN prioridade_atendimento prioridade
 JOIN usuario cliente ON cliente.id_usuario = a.id_cliente
 LEFT JOIN loja ON loja.id_loja = a.id_loja
 WHERE status.codigo NOT IN ('resolvido', 'encerrado', 'cancelado')
-  AND (CAST(:id_loja AS uuid) IS NULL OR a.id_loja = CAST(:id_loja AS uuid))
+  AND (
+        CAST(:id_loja AS uuid) IS NULL
+        OR a.id_loja = CAST(:id_loja AS uuid)
+        OR (CAST(:incluir_sem_loja AS boolean) AND a.id_loja IS NULL)
+    )
   AND (CAST(:canal AS text) IS NULL OR canal.codigo = CAST(:canal AS text))
   AND (CAST(:categoria AS text) IS NULL OR categoria.codigo = CAST(:categoria AS text))
 """
