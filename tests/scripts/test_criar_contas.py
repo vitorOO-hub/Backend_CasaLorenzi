@@ -161,3 +161,68 @@ def test_sem_env_completo_para_com_erro(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(criar_contas, "RAIZ", tmp_path)
     assert criar_contas.main([]) == 2
     assert "Faltam" in capsys.readouterr().err
+
+
+def test_cadastro_admin_usa_a_admin_api_com_conta_ja_confirmada():
+    visto = {}
+
+    def atender(request: httpx.Request) -> httpx.Response:
+        visto["url"] = str(request.url)
+        visto["authorization"] = request.headers["authorization"]
+        visto["apikey"] = request.headers["apikey"]
+        visto["corpo"] = json.loads(request.content)
+        return httpx.Response(200, json={**USUARIO, "email_confirmed_at": "2026-10-07T00:00:00Z"})
+
+    with httpx.Client(transport=httpx.MockTransport(atender)) as http:
+        r = criar_contas.cadastrar_admin(
+            http, "https://x.supabase.co", "chave-de-servico", "a@b.com", "Senha#123456789a", "Ana"
+        )
+    assert (r.id_auth, r.confirmado) == (USUARIO["id"], True)
+    assert visto["url"] == "https://x.supabase.co/auth/v1/admin/users"
+    assert visto["authorization"] == "Bearer chave-de-servico"
+    assert visto["corpo"]["email_confirm"] is True
+    assert visto["corpo"]["user_metadata"] == {"nome": "Ana"}
+
+
+def test_admin_com_email_repetido_e_pulado_sem_erro():
+    corpo = {
+        "error_code": "email_exists",
+        "msg": "A user with this email has already been registered",
+    }
+    r = criar_contas.interpretar_cadastro(422, corpo)
+    assert r.ja_existia is True
+
+
+class ConexaoFalsa:
+    def __init__(self, linhas):
+        self.linhas = linhas
+        self.consultas = []
+
+    def execute(self, sql, parametros=()):
+        self.consultas.append((sql, parametros))
+        return self
+
+    def fetchone(self):
+        return self.linhas.pop(0) if self.linhas else None
+
+
+def test_id_auth_por_email_le_so_contas_nao_apagadas():
+    conexao = ConexaoFalsa([(USUARIO["id"],), None])
+    assert criar_contas.id_auth_por_email(conexao, "A@B.com") == USUARIO["id"]
+    assert criar_contas.id_auth_por_email(conexao, "novo@b.com") is None
+    assert "deleted_at IS NULL" in conexao.consultas[0][0]
+
+
+def test_chave_de_servico_nunca_aparece_na_saida(monkeypatch, capsys, tmp_path):
+    segredo = "sb_secret_NAO_PODE_VAZAR"
+    linhas = [
+        "SUPABASE_URL=https://abc.supabase.co",
+        "SUPABASE_PUBLISHABLE_KEY=k",
+        "DATABASE_URL=postgresql://u:p@h/db",
+    ]
+    (tmp_path / ".env").write_text("\n".join(linhas), encoding="utf-8")
+    monkeypatch.setattr(criar_contas, "RAIZ", tmp_path)
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", segredo)
+    assert criar_contas.main([]) == 0  # modo plano: nem abre conexao
+    saida = capsys.readouterr()
+    assert segredo not in saida.out + saida.err

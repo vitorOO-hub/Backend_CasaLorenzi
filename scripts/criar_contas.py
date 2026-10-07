@@ -11,11 +11,16 @@ Uso, a partir da raiz do backend (le o .env; nada e gravado em disco):
     python scripts/criar_contas.py             # mostra o plano e nao altera nada
     python scripts/criar_contas.py --aplicar   # cria as contas e imprime e-mail e senha UMA vez
 
+Com a variavel de ambiente SUPABASE_SERVICE_ROLE_KEY definida so para esta execucao, as contas
+sao criadas pela Admin API (necessario quando o cadastro publico esta desligado). Com
+--so-vincular, o script nao cria nada: liga ao `usuario` as contas que voce ja criou no painel.
+
 As senhas aparecem so na saida deste comando. Quem ja tem conta no Auth e pulado: sem a service
 role key nao ha como ler nem trocar a senha de outra conta, e este script nunca a usa.
 """
 
 import argparse
+import os
 import re
 import secrets
 import string
@@ -29,6 +34,15 @@ import psycopg
 from dotenv import dotenv_values
 
 RAIZ = Path(__file__).resolve().parents[1]
+DICA_CADASTRO_DESLIGADO = (
+    "\nO cadastro publico esta desligado neste projeto (o que e bom para a seguranca). Escolha:\n"
+    "  1. Rode com a service role key SO nesta execucao (nao grave no .env):\n"
+    "       $env:SUPABASE_SERVICE_ROLE_KEY = '<chave secreta do painel>'\n"
+    "       python scripts/criar_contas.py --email-base voce@gmail.com --aplicar\n"
+    "       Remove-Item Env:SUPABASE_SERVICE_ROLE_KEY\n"
+    "  2. Ou crie as contas no painel (Authentication > Users > Add user, Auto Confirm) e rode\n"
+    "       python scripts/criar_contas.py --email-base voce@gmail.com --so-vincular --aplicar"
+)
 DOMINIO_PADRAO = "casalorenzi.com.br"
 LOJA_PADRAO = "LOJA-CENTRO"
 
@@ -119,6 +133,41 @@ def cadastrar(
     return interpretar_cadastro(resposta.status_code, corpo if isinstance(corpo, dict) else {})
 
 
+def cadastrar_admin(
+    http: httpx.Client, url_supabase: str, chave_servico: str, email: str, senha: str, nome: str
+):
+    """Cria a conta pela Admin API do Supabase, ja confirmada. A chave nunca e impressa."""
+    resposta = http.post(
+        f"{url_supabase}/auth/v1/admin/users",
+        headers={
+            "apikey": chave_servico,
+            "Authorization": f"Bearer {chave_servico}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "email": email,
+            "password": senha,
+            "email_confirm": True,
+            "user_metadata": {"nome": nome},
+        },
+        timeout=20,
+    )
+    try:
+        corpo = resposta.json()
+    except ValueError:
+        corpo = {}
+    return interpretar_cadastro(resposta.status_code, corpo if isinstance(corpo, dict) else {})
+
+
+def id_auth_por_email(conexao: psycopg.Connection, email: str) -> str | None:
+    """Id da conta no Supabase Auth (leitura de auth.users), ou None se ainda nao existe."""
+    linha = conexao.execute(
+        "SELECT id FROM auth.users WHERE lower(email) = lower(%s) AND deleted_at IS NULL",
+        (email,),
+    ).fetchone()
+    return str(linha[0]) if linha else None
+
+
 def vincular_usuario(
     conexao: psycopg.Connection, conta: Conta, email: str, id_auth: str, codigo_loja: str
 ) -> None:
@@ -168,6 +217,11 @@ def main(argv: list[str] | None = None) -> int:
         "--dominio", default=DOMINIO_PADRAO, help=f"dominio dos e-mails (padrao {DOMINIO_PADRAO})"
     )
     parser.add_argument(
+        "--so-vincular",
+        action="store_true",
+        help="nao cria contas: liga ao usuario as que ja existem no Auth (criadas no painel)",
+    )
+    parser.add_argument(
         "--email-base",
         help="e-mail seu com caixa real; as contas viram voce+atendente@..., voce+gerente@... "
         "(o Supabase recusa dominios sem servidor de e-mail)",
@@ -202,7 +256,9 @@ def main(argv: list[str] | None = None) -> int:
         print("\nNada foi alterado. Rode de novo com --aplicar para criar as contas.")
         return 0
 
+    chave_servico = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
     entregues: list[tuple[str, str, str]] = []
+    ligadas: list[tuple[str, str, str]] = []
     avisos: list[str] = []
     with httpx.Client() as http, psycopg.connect(banco, connect_timeout=15) as conexao:
         existe = conexao.execute("SELECT 1 FROM loja WHERE codigo = %s", (args.loja,)).fetchone()
@@ -211,8 +267,28 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         for conta in CONTAS:
             email = email_da(conta, args.dominio, args.email_base)
+            if args.so_vincular:
+                id_auth = id_auth_por_email(conexao, email)
+                if id_auth is None:
+                    avisos.append(
+                        f"{email}: ainda nao existe no Auth; crie no painel e rode de novo"
+                    )
+                    continue
+                vincular_usuario(conexao, conta, email, id_auth, args.loja)
+                conexao.commit()
+                ligadas.append((conta.papel, email, "(a que voce definiu no painel)"))
+                continue
             senha = gerar_senha()
-            resultado = cadastrar(http, url, chave, email, senha, conta.nome)
+            try:
+                if chave_servico:
+                    resultado = cadastrar_admin(http, url, chave_servico, email, senha, conta.nome)
+                else:
+                    resultado = cadastrar(http, url, chave, email, senha, conta.nome)
+            except RuntimeError as erro:
+                print(f"\n{erro}", file=sys.stderr)
+                if "signups are disabled" in str(erro).lower():
+                    print(DICA_CADASTRO_DESLIGADO, file=sys.stderr)
+                return 1
             if resultado.ja_existia or resultado.id_auth is None:
                 avisos.append(
                     f"{email}: ja tem conta no Auth; mantida como esta (a senha nao e alterada)"
@@ -227,6 +303,9 @@ def main(argv: list[str] | None = None) -> int:
                     "desligue 'Confirm email' no Auth ou confirme a conta"
                 )
 
+    if ligadas:
+        print("\nContas ligadas ao usuario (papel e loja agora vao no token):\n")
+        print(_tabela([("PAPEL", "E-MAIL", "SENHA"), *ligadas]))
     if entregues:
         print("\nContas criadas (guarde agora: as senhas nao ficam salvas em lugar nenhum):\n")
         print(_tabela([("PAPEL", "E-MAIL", "SENHA"), *entregues]))

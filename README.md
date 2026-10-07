@@ -329,6 +329,20 @@ python scripts/criar_contas.py             # mostra o plano e não altera nada
 python scripts/criar_contas.py --aplicar   # cria as contas e imprime e-mail e senha uma única vez
 ```
 
+O cadastro público deste projeto está desligado, então a criação usa a Admin API do Supabase, que
+precisa da *secret/service role key* (Project Settings > API Keys). Use-a só naquela execução e
+nunca grave no `.env` nem no git:
+
+```powershell
+$env:SUPABASE_SERVICE_ROLE_KEY = '<chave secreta do painel>'
+python scripts/criar_contas.py --email-base voce@gmail.com --aplicar
+Remove-Item Env:SUPABASE_SERVICE_ROLE_KEY
+```
+
+Alternativa sem a chave: crie as contas no painel (Authentication > Users > Add user, com Auto
+Confirm) e rode `python scripts/criar_contas.py --email-base voce@gmail.com --so-vincular --aplicar`,
+que só liga cada conta à sua linha em `usuario`.
+
 As senhas são geradas na hora e só aparecem na saída do comando; guarde-as em um gerenciador de
 senhas. Quem já tem conta no Auth é pulado (sem a service role não há como ler nem trocar a senha de
 outra conta; para recuperar o acesso, use "Reset password" no painel do Supabase). Se o projeto
