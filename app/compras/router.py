@@ -3,7 +3,7 @@
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
-from psycopg import errors
+from sqlalchemy.exc import IntegrityError
 
 from app.compras import service
 from app.compras.erros import CompraDuplicada, ReferenciaCompraInvalida
@@ -17,7 +17,11 @@ from app.compras.schemas import (
     StatusPagamentoAtualizacao,
     StatusPedidoAtualizacao,
 )
-from app.core.db import ExecutarDep
+from app.core.db import (
+    ExecutarDep,
+    eh_violacao_chave_estrangeira,
+    eh_violacao_unicidade,
+)
 
 router = APIRouter(prefix="/compras", tags=["compras"])
 
@@ -34,10 +38,12 @@ def _executar_com_tratamento(executar: ExecutarDep, operacao) -> Any:
         return executar(operacao)
     except ValueError as erro:
         raise HTTPException(status_code=422, detail=str(erro)) from erro
-    except errors.UniqueViolation as erro:
-        raise CompraDuplicada from erro
-    except errors.ForeignKeyViolation as erro:
-        raise ReferenciaCompraInvalida from erro
+    except IntegrityError as erro:
+        if eh_violacao_unicidade(erro):
+            raise CompraDuplicada from erro
+        if eh_violacao_chave_estrangeira(erro):
+            raise ReferenciaCompraInvalida from erro
+        raise
 
 
 @router.get("/pedidos", response_model=list[RegistroCompraLeitura])

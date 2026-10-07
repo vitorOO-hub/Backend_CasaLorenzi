@@ -1,7 +1,6 @@
 """Testes das rotas de estoque sem banco: a dependencia `executar` e trocada por um dublê."""
 
 import pytest
-from psycopg import errors
 
 from app.core.db import get_executar
 from app.estoque.erros import (
@@ -63,8 +62,8 @@ def test_criar_responde_201(app, cliente):
     assert resposta.json() == LINHA
 
 
-def test_criar_duplicado_responde_409_em_portugues(app, cliente):
-    usar_executor(app, levanta(errors.UniqueViolation("duplicado")))
+def test_criar_duplicado_responde_409_em_portugues(app, cliente, erro_integridade):
+    usar_executor(app, levanta(erro_integridade("23505")))
     resposta = cliente.post("/estoques", json={"id_loja": ID_UUID, "id_variacao": ID_UUID})
     assert resposta.status_code == 409
     assert resposta.json() == {"detail": "Ja existe estoque para esta loja e variacao"}

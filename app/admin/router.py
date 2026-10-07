@@ -3,7 +3,7 @@
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
-from psycopg import errors
+from sqlalchemy.exc import IntegrityError
 
 from app.admin.erros import ReferenciaAdminInvalida, RegistroAdminDuplicado
 from app.admin.schemas import (
@@ -25,7 +25,11 @@ from app.admin.schemas import (
 )
 from app.admin.service import TABELAS_OPCOES
 from app.admin import service
-from app.core.db import ExecutarDep
+from app.core.db import (
+    ExecutarDep,
+    eh_violacao_chave_estrangeira,
+    eh_violacao_unicidade,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -37,10 +41,10 @@ def _dados(modelo) -> dict[str, object]:
     return modelo.model_dump(exclude_none=True)
 
 
-def _tratar_erro_banco(erro: Exception, recurso: str) -> None:
-    if isinstance(erro, errors.UniqueViolation):
+def _tratar_erro_banco(erro: IntegrityError, recurso: str) -> None:
+    if eh_violacao_unicidade(erro):
         raise RegistroAdminDuplicado(recurso) from erro
-    if isinstance(erro, errors.ForeignKeyViolation):
+    if eh_violacao_chave_estrangeira(erro):
         raise ReferenciaAdminInvalida from erro
     raise erro
 
@@ -50,7 +54,7 @@ def _executar_com_tratamento(executar: ExecutarDep, operacao, recurso: str) -> A
         return executar(operacao)
     except ValueError as erro:
         raise HTTPException(status_code=422, detail=str(erro)) from erro
-    except (errors.UniqueViolation, errors.ForeignKeyViolation) as erro:
+    except IntegrityError as erro:
         _tratar_erro_banco(erro, recurso)
 
 

@@ -3,9 +3,9 @@
 from typing import Any
 
 from fastapi import APIRouter, status
-from psycopg import errors
+from sqlalchemy.exc import IntegrityError
 
-from app.core.db import ExecutarDep
+from app.core.db import ExecutarDep, eh_violacao_unicidade
 from app.estoque.erros import EstoqueDuplicado
 from app.estoque.repositorio import (
     atualizar_estoque_minimo,
@@ -45,8 +45,10 @@ def criar(dados: EstoqueCriacao, executar: ExecutarDep) -> dict[str, Any]:
                 estoque_minimo=dados.estoque_minimo,
             )
         )
-    except errors.UniqueViolation as erro:
-        raise EstoqueDuplicado from erro
+    except IntegrityError as erro:
+        if eh_violacao_unicidade(erro):
+            raise EstoqueDuplicado from erro
+        raise
 
 
 @router.post("/{id_estoque}/entrada")

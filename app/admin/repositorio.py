@@ -2,6 +2,9 @@
 
 from app.admin.erros import RegistroAdminNaoEncontrado
 from app.core.repositorio import (
+    buscar_todos,
+    buscar_um,
+    executar_sql,
     montar_insert,
     montar_update,
     serializar_linha,
@@ -10,26 +13,21 @@ from app.core.repositorio import (
 
 
 def _listar(conexao, sql: str, parametros: tuple[object, ...]) -> list[dict[str, object]]:
-    with conexao.cursor() as cursor:
-        cursor.execute(sql, parametros)
-        return serializar_linhas(cursor.fetchall())
+    return serializar_linhas(buscar_todos(conexao, sql, parametros))
 
 
 def _obter_por_id(conexao, tabela: str, coluna_id: str, id_registro: object, recurso: str):
-    with conexao.cursor() as cursor:
-        cursor.execute(f"SELECT * FROM {tabela} WHERE {coluna_id} = %s", (id_registro,))
-        linha = cursor.fetchone()
-        if not linha:
-            raise RegistroAdminNaoEncontrado(recurso)
-        return serializar_linha(linha)
+    linha = buscar_um(conexao, f"SELECT * FROM {tabela} WHERE {coluna_id} = %s", (id_registro,))
+    if not linha:
+        raise RegistroAdminNaoEncontrado(recurso)
+    return serializar_linha(linha)
 
 
 def _criar(conexao, tabela: str, dados: dict[str, object]) -> dict[str, object]:
     sql, parametros = montar_insert(tabela, dados)
-    with conexao.cursor() as cursor:
-        cursor.execute(sql, parametros)
-        conexao.commit()
-        return serializar_linha(cursor.fetchone())
+    linha = executar_sql(conexao, sql, parametros).mappings().first()
+    conexao.commit()
+    return serializar_linha(dict(linha))
 
 
 def _atualizar(
@@ -49,14 +47,12 @@ def _atualizar(
         dados,
         coluna_data=coluna_data,
     )
-    with conexao.cursor() as cursor:
-        cursor.execute(sql, parametros)
-        linha = cursor.fetchone()
-        if not linha:
-            conexao.rollback()
-            raise RegistroAdminNaoEncontrado(recurso)
-        conexao.commit()
-        return serializar_linha(linha)
+    linha = executar_sql(conexao, sql, parametros).mappings().first()
+    if not linha:
+        conexao.rollback()
+        raise RegistroAdminNaoEncontrado(recurso)
+    conexao.commit()
+    return serializar_linha(dict(linha))
 
 
 def listar_lojas(conexao, *, limit: int, offset: int) -> list[dict[str, object]]:
