@@ -31,10 +31,13 @@ supabase/
 ├── seed.sql
 └── config.toml
 
+alembic/                   migrations novas do banco via Alembic
+
 tests/                     core/, api/ e estoque/, espelhando app/
 pytest.ini
 .env.example
 .gitignore
+alembic.ini
 requirements.txt
 README.md
 ```
@@ -101,6 +104,30 @@ Frontend
   -> Backend Python
     -> Supabase/PostgreSQL
       -> Tabelas, constraints e historico
+```
+
+## Versionamento do banco
+
+As migrations SQL em `supabase/migrations/` representam o histórico inicial do projeto.
+A partir das próximas mudanças de estrutura do banco, o versionamento deve ser feito pelo Alembic.
+
+Para aplicar as migrations Alembic no banco configurado em `DATABASE_URL`:
+
+```bash
+pip install -r requirements.txt
+alembic upgrade head
+```
+
+Para ver a versão atual do banco:
+
+```bash
+alembic current
+```
+
+Para criar uma nova migration:
+
+```bash
+alembic revision -m "descricao da mudanca"
 ```
 
 ## Como aplicar no Supabase pelo site
