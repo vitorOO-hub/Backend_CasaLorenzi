@@ -75,6 +75,9 @@ class ItemPedidoCliente(BaseModel):
     id_variacao: UUID
     sku: str
     produto: str
+    imagem_url: str | None = None
+    imagem_alt: str | None = None
+    tecido: str | None = None
     cor: str
     tamanho: str
     quantidade: int
