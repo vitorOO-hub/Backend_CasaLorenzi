@@ -317,3 +317,20 @@ Definições: "resolvido" é `resolvido` ou `encerrado`; "sem resposta" é o sta
 resposta" é a primeira mensagem de alguém que não é cliente; a fila exclui `resolvido`,
 `encerrado` e `cancelado`. `atendimento.assunto` é opcional (a revisão `20261007000500` a cria); sem
 ele, a fila mostra o nome da categoria.
+
+## Contas de acesso por tipo de usuário
+
+`scripts/criar_contas.py` cria uma conta para cada tipo (cliente, atendente, operador de estoque,
+gerente e administrador) pelo Supabase Auth e a liga à linha de `usuario`, de onde o hook de claims
+tira o `papel` e a `loja_id` do token. Usa só a chave pública do projeto (nunca a service role).
+
+```bash
+python scripts/criar_contas.py             # mostra o plano e não altera nada
+python scripts/criar_contas.py --aplicar   # cria as contas e imprime e-mail e senha uma única vez
+```
+
+As senhas são geradas na hora e só aparecem na saída do comando; guarde-as em um gerenciador de
+senhas. Quem já tem conta no Auth é pulado (sem a service role não há como ler nem trocar a senha de
+outra conta; para recuperar o acesso, use "Reset password" no painel do Supabase). Se o projeto
+exigir confirmação de e-mail, o script avisa: desligue "Confirm email" em Authentication > Providers
+> Email, ou confirme as contas no painel.
