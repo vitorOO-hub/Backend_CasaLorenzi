@@ -13,7 +13,7 @@ from app.movimentacoes import service
 from app.movimentacoes.erros import MovimentacaoInvalida
 from app.movimentacoes.schemas import MovimentacaoCriacao, MovimentacaoLeitura
 
-PermissaoEstoque = Depends(requer_papeis("operador_estoque", "gerente_loja", "diretor"))
+PermissaoEstoque = Depends(requer_papeis("operador_estoque"))
 
 router = APIRouter(
     prefix="/movimentacoes-estoque",

@@ -20,7 +20,7 @@ from app.estoque.repositorio import (
 )
 from app.estoque.schemas import EstoqueCriacao, EstoqueMinimoEntrada, QuantidadeEntrada
 
-PermissaoEstoque = Depends(requer_papeis("operador_estoque", "gerente_loja", "diretor"))
+PermissaoEstoque = Depends(requer_papeis("operador_estoque"))
 
 router = APIRouter(prefix="/estoques", tags=["estoque"], dependencies=[PermissaoEstoque])
 
