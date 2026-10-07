@@ -1,6 +1,6 @@
 """Rotas da tabela movimentacao_estoque."""
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.exc import IntegrityError
 
 from app.core.db import (
@@ -8,11 +8,18 @@ from app.core.db import (
     eh_violacao_chave_estrangeira,
     eh_violacao_check,
 )
+from app.core.security import requer_papeis
 from app.movimentacoes import service
 from app.movimentacoes.erros import MovimentacaoInvalida
 from app.movimentacoes.schemas import MovimentacaoCriacao, MovimentacaoLeitura
 
-router = APIRouter(prefix="/movimentacoes-estoque", tags=["movimentacoes-estoque"])
+PermissaoEstoque = Depends(requer_papeis("operador_estoque", "gerente_loja", "diretor"))
+
+router = APIRouter(
+    prefix="/movimentacoes-estoque",
+    tags=["movimentacoes-estoque"],
+    dependencies=[PermissaoEstoque],
+)
 
 Pagina = Query(default=20, ge=1, le=100)
 Deslocamento = Query(default=0, ge=0)

@@ -1,8 +1,11 @@
 """Testes das rotas de estoque sem banco: a dependencia `executar` e trocada por um dublê."""
 
+from types import SimpleNamespace
+
 import pytest
 
 from app.core.db import get_executar
+from app.core.security import get_current_user
 from app.estoque.erros import (
     EstoqueComSaldo,
     EstoqueInsuficiente,
@@ -22,6 +25,13 @@ ROTAS_ESPERADAS = {
     ("POST", "/estoques/{id_estoque}/saida"),
     ("PATCH", "/estoques/{id_estoque}/minimo"),
 }
+
+
+@pytest.fixture(autouse=True)
+def liberar_operador_de_estoque(app):
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        tipo_usuario_codigo="operador_estoque"
+    )
 
 
 def usar_executor(app, executor):

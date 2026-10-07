@@ -2,10 +2,11 @@
 
 from typing import Any
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.exc import IntegrityError
 
 from app.core.db import ExecutarDep, eh_violacao_unicidade
+from app.core.security import requer_papeis
 from app.estoque.erros import EstoqueDuplicado
 from app.estoque.repositorio import (
     atualizar_estoque_minimo,
@@ -19,7 +20,9 @@ from app.estoque.repositorio import (
 )
 from app.estoque.schemas import EstoqueCriacao, EstoqueMinimoEntrada, QuantidadeEntrada
 
-router = APIRouter(prefix="/estoques", tags=["estoque"])
+PermissaoEstoque = Depends(requer_papeis("operador_estoque", "gerente_loja", "diretor"))
+
+router = APIRouter(prefix="/estoques", tags=["estoque"], dependencies=[PermissaoEstoque])
 
 
 @router.get("")

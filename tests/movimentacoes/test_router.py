@@ -1,10 +1,22 @@
 """Testes das rotas de movimentacao de estoque sem banco real."""
 
+from types import SimpleNamespace
+
+import pytest
+
 from app.core.db import get_executar
+from app.core.security import get_current_user
 from app.movimentacoes.erros import MovimentacaoNaoEncontrada
 
 ID_UUID = "6f1c3a52-6a4e-4c8e-9a39-0f1f2b6f2f10"
 LINHA = {"id_movimentacao_estoque": ID_UUID, "quantidade": 2}
+
+
+@pytest.fixture(autouse=True)
+def liberar_operador_de_estoque(app):
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        tipo_usuario_codigo="operador_estoque"
+    )
 
 
 def usar_executor(app, executor):

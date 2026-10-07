@@ -40,6 +40,14 @@ class Settings(BaseSettings):
             return [origem.strip().rstrip("/") for origem in valor.split(",") if origem.strip()]
         return valor
 
+    @property
+    def supabase_issuer(self) -> str | None:
+        return f"{self.supabase_url}/auth/v1" if self.supabase_url else None
+
+    @property
+    def supabase_jwks_url(self) -> str | None:
+        return f"{self.supabase_issuer}/.well-known/jwks.json" if self.supabase_issuer else None
+
 
 def get_settings(request: Request) -> Settings:
     """Dependencia do FastAPI: as configuracoes com que o app foi criado."""
