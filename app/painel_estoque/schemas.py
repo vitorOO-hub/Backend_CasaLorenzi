@@ -37,6 +37,8 @@ class Escopo(Saida):
 
 class Opcoes(Saida):
     lojas: list[LojaOpcao]
+    # Todas as lojas ativas da rede (para escolher de onde pedir pecas), so id e nome.
+    rede: list[LojaOpcao]
     categorias: list[str]
     situacoes: list[Opcao]
     tipos: list[Opcao]

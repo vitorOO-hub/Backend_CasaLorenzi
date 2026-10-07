@@ -37,6 +37,7 @@ def montar_opcoes(
     loja = repositorio.loja_por_id(conexao, id_loja) if id_loja else None
     return {
         "lojas": repositorio.lojas_visiveis(conexao, None if admin else usuario.id_loja),
+        "rede": repositorio.lojas_visiveis(conexao, None),
         "categorias": repositorio.categorias(conexao, id_loja),
         "situacoes": [{"codigo": c, "nome": n} for c, n in repositorio.SITUACOES],
         "tipos": [{"codigo": c, "nome": n} for c, n in repositorio.GRUPOS],

@@ -233,6 +233,7 @@ def test_opcoes_trazem_categorias_pecas_e_escopo(sa_conn, cena):
     assert o["categorias"] == ["Calcas", "Camisas"]
     assert {p["sku"] for p in o["pecas"]} == {"SKU-OK", "SKU-BAIXO", "SKU-ESGOTADO"}
     assert [x["id_loja"] for x in o["lojas"]] == [cena.a]
+    assert {cena.a, cena.b} <= {x["id_loja"] for x in o["rede"]}  # a rede toda, so id e nome
     assert o["escopo"]["somente_minhas"] is False and o["escopo"]["pode_escolher_loja"] is False
     assert {t["codigo"] for t in o["tipos"]} == {"entrada", "saida", "ajuste", "transferencia"}
     operador = UsuarioAtual(

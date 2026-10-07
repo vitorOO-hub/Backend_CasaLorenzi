@@ -26,6 +26,7 @@ ESCOPO = {
 }
 OPCOES = {
     "lojas": [{"id_loja": str(LOJA_A), "nome": "Centro"}],
+    "rede": [{"id_loja": str(LOJA_A), "nome": "Centro"}],
     "categorias": ["Camisas"],
     "situacoes": [{"codigo": "ok", "nome": "OK"}],
     "tipos": [{"codigo": "entrada", "nome": "Entrada"}],
