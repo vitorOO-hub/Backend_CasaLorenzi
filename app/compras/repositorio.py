@@ -1,12 +1,21 @@
 """Operacoes SQL do modulo de compras."""
 
 from app.compras.erros import ItemPedidoNaoEncontrado, PagamentoNaoEncontrado, PedidoNaoEncontrado
-from app.core.repositorio import montar_insert, montar_update, serializar_linha, serializar_linhas
+from app.core.repositorio import (
+    buscar_todos,
+    buscar_um,
+    executar_sql,
+    montar_insert,
+    montar_update,
+    serializar_linha,
+    serializar_linhas,
+)
 
 
 def listar_pedidos(conexao, *, limit: int, offset: int) -> list[dict[str, object]]:
-    with conexao.cursor() as cursor:
-        cursor.execute(
+    return serializar_linhas(
+        buscar_todos(
+            conexao,
             """
             SELECT
                 p.*,
@@ -25,24 +34,21 @@ def listar_pedidos(conexao, *, limit: int, offset: int) -> list[dict[str, object
             """,
             (limit, offset),
         )
-        return serializar_linhas(cursor.fetchall())
+    )
 
 
 def obter_pedido(conexao, id_pedido: object) -> dict[str, object]:
-    with conexao.cursor() as cursor:
-        cursor.execute("SELECT * FROM pedido WHERE id_pedido = %s", (id_pedido,))
-        linha = cursor.fetchone()
-        if not linha:
-            raise PedidoNaoEncontrado
-        return serializar_linha(linha)
+    linha = buscar_um(conexao, "SELECT * FROM pedido WHERE id_pedido = %s", (id_pedido,))
+    if not linha:
+        raise PedidoNaoEncontrado
+    return serializar_linha(linha)
 
 
 def criar_pedido(conexao, dados: dict[str, object]) -> dict[str, object]:
     sql, parametros = montar_insert("pedido", dados)
-    with conexao.cursor() as cursor:
-        cursor.execute(sql, parametros)
-        conexao.commit()
-        return serializar_linha(cursor.fetchone())
+    linha = executar_sql(conexao, sql, parametros).mappings().first()
+    conexao.commit()
+    return serializar_linha(dict(linha))
 
 
 def atualizar_pedido(conexao, id_pedido: object, dados: dict[str, object]) -> dict[str, object]:
@@ -53,43 +59,41 @@ def atualizar_pedido(conexao, id_pedido: object, dados: dict[str, object]) -> di
         dados,
         coluna_data="atualizado_em",
     )
-    with conexao.cursor() as cursor:
-        cursor.execute(sql, parametros)
-        linha = cursor.fetchone()
-        if not linha:
-            conexao.rollback()
-            raise PedidoNaoEncontrado
-        conexao.commit()
-        return serializar_linha(linha)
+    linha = executar_sql(conexao, sql, parametros).mappings().first()
+    if not linha:
+        conexao.rollback()
+        raise PedidoNaoEncontrado
+    conexao.commit()
+    return serializar_linha(dict(linha))
 
 
 def cancelar_pedido(conexao, id_pedido: object) -> dict[str, object]:
-    with conexao.cursor() as cursor:
-        cursor.execute(
-            """
-            UPDATE pedido
-            SET id_status_pedido = (
-                    SELECT id_status_pedido
-                    FROM status_pedido
-                    WHERE codigo = 'cancelado'
-                ),
-                atualizado_em = now()
-            WHERE id_pedido = %s
-            RETURNING *
-            """,
-            (id_pedido,),
-        )
-        linha = cursor.fetchone()
-        if not linha:
-            conexao.rollback()
-            raise PedidoNaoEncontrado
-        conexao.commit()
-        return serializar_linha(linha)
+    linha = executar_sql(
+        conexao,
+        """
+        UPDATE pedido
+        SET id_status_pedido = (
+                SELECT id_status_pedido
+                FROM status_pedido
+                WHERE codigo = 'cancelado'
+            ),
+            atualizado_em = now()
+        WHERE id_pedido = %s
+        RETURNING *
+        """,
+        (id_pedido,),
+    ).mappings().first()
+    if not linha:
+        conexao.rollback()
+        raise PedidoNaoEncontrado
+    conexao.commit()
+    return serializar_linha(dict(linha))
 
 
 def listar_itens_pedido(conexao, id_pedido: object) -> list[dict[str, object]]:
-    with conexao.cursor() as cursor:
-        cursor.execute(
+    return serializar_linhas(
+        buscar_todos(
+            conexao,
             """
             SELECT
                 i.*,
@@ -105,44 +109,44 @@ def listar_itens_pedido(conexao, id_pedido: object) -> list[dict[str, object]]:
             """,
             (id_pedido,),
         )
-        return serializar_linhas(cursor.fetchall())
+    )
 
 
 def obter_item_pedido(conexao, id_item_pedido: object) -> dict[str, object]:
-    with conexao.cursor() as cursor:
-        cursor.execute("SELECT * FROM item_pedido WHERE id_item_pedido = %s", (id_item_pedido,))
-        linha = cursor.fetchone()
-        if not linha:
-            raise ItemPedidoNaoEncontrado
-        return serializar_linha(linha)
+    linha = buscar_um(
+        conexao,
+        "SELECT * FROM item_pedido WHERE id_item_pedido = %s",
+        (id_item_pedido,),
+    )
+    if not linha:
+        raise ItemPedidoNaoEncontrado
+    return serializar_linha(linha)
 
 
 def _recalcular_total_pedido(conexao, id_pedido: object) -> None:
-    with conexao.cursor() as cursor:
-        cursor.execute(
-            """
-            UPDATE pedido
-            SET valor_total = (
-                    SELECT COALESCE(SUM(valor_total), 0)
-                    FROM item_pedido
-                    WHERE id_pedido = %s
-                ),
-                atualizado_em = now()
-            WHERE id_pedido = %s
-            """,
-            (id_pedido, id_pedido),
-        )
+    executar_sql(
+        conexao,
+        """
+        UPDATE pedido
+        SET valor_total = (
+                SELECT COALESCE(SUM(valor_total), 0)
+                FROM item_pedido
+                WHERE id_pedido = %s
+            ),
+            atualizado_em = now()
+        WHERE id_pedido = %s
+        """,
+        (id_pedido, id_pedido),
+    )
 
 
 def criar_item_pedido(conexao, id_pedido: object, dados: dict[str, object]) -> dict[str, object]:
     dados_com_pedido = {"id_pedido": id_pedido, **dados}
     sql, parametros = montar_insert("item_pedido", dados_com_pedido)
-    with conexao.cursor() as cursor:
-        cursor.execute(sql, parametros)
-        linha = cursor.fetchone()
-        _recalcular_total_pedido(conexao, id_pedido)
-        conexao.commit()
-        return serializar_linha(linha)
+    linha = executar_sql(conexao, sql, parametros).mappings().first()
+    _recalcular_total_pedido(conexao, id_pedido)
+    conexao.commit()
+    return serializar_linha(dict(linha))
 
 
 def atualizar_item_pedido(
@@ -151,32 +155,35 @@ def atualizar_item_pedido(
     dados: dict[str, object],
 ) -> dict[str, object]:
     sql, parametros = montar_update("item_pedido", "id_item_pedido", id_item_pedido, dados)
-    with conexao.cursor() as cursor:
-        cursor.execute(sql, parametros)
-        linha = cursor.fetchone()
-        if not linha:
-            conexao.rollback()
-            raise ItemPedidoNaoEncontrado
-        _recalcular_total_pedido(conexao, linha["id_pedido"])
-        conexao.commit()
-        return serializar_linha(linha)
+    linha = executar_sql(conexao, sql, parametros).mappings().first()
+    if not linha:
+        conexao.rollback()
+        raise ItemPedidoNaoEncontrado
+    linha_dict = dict(linha)
+    _recalcular_total_pedido(conexao, linha_dict["id_pedido"])
+    conexao.commit()
+    return serializar_linha(linha_dict)
 
 
 def remover_item_pedido(conexao, id_item_pedido: object) -> dict[str, object]:
-    with conexao.cursor() as cursor:
-        cursor.execute("DELETE FROM item_pedido WHERE id_item_pedido = %s RETURNING *", (id_item_pedido,))
-        linha = cursor.fetchone()
-        if not linha:
-            conexao.rollback()
-            raise ItemPedidoNaoEncontrado
-        _recalcular_total_pedido(conexao, linha["id_pedido"])
-        conexao.commit()
-        return serializar_linha(linha)
+    linha = executar_sql(
+        conexao,
+        "DELETE FROM item_pedido WHERE id_item_pedido = %s RETURNING *",
+        (id_item_pedido,),
+    ).mappings().first()
+    if not linha:
+        conexao.rollback()
+        raise ItemPedidoNaoEncontrado
+    linha_dict = dict(linha)
+    _recalcular_total_pedido(conexao, linha_dict["id_pedido"])
+    conexao.commit()
+    return serializar_linha(linha_dict)
 
 
 def listar_pagamentos_pedido(conexao, id_pedido: object) -> list[dict[str, object]]:
-    with conexao.cursor() as cursor:
-        cursor.execute(
+    return serializar_linhas(
+        buscar_todos(
+            conexao,
             """
             SELECT
                 g.*,
@@ -192,24 +199,21 @@ def listar_pagamentos_pedido(conexao, id_pedido: object) -> list[dict[str, objec
             """,
             (id_pedido,),
         )
-        return serializar_linhas(cursor.fetchall())
+    )
 
 
 def obter_pagamento(conexao, id_pagamento: object) -> dict[str, object]:
-    with conexao.cursor() as cursor:
-        cursor.execute("SELECT * FROM pagamento WHERE id_pagamento = %s", (id_pagamento,))
-        linha = cursor.fetchone()
-        if not linha:
-            raise PagamentoNaoEncontrado
-        return serializar_linha(linha)
+    linha = buscar_um(conexao, "SELECT * FROM pagamento WHERE id_pagamento = %s", (id_pagamento,))
+    if not linha:
+        raise PagamentoNaoEncontrado
+    return serializar_linha(linha)
 
 
 def criar_pagamento(conexao, id_pedido: object, dados: dict[str, object]) -> dict[str, object]:
     sql, parametros = montar_insert("pagamento", {"id_pedido": id_pedido, **dados})
-    with conexao.cursor() as cursor:
-        cursor.execute(sql, parametros)
-        conexao.commit()
-        return serializar_linha(cursor.fetchone())
+    linha = executar_sql(conexao, sql, parametros).mappings().first()
+    conexao.commit()
+    return serializar_linha(dict(linha))
 
 
 def atualizar_status_pagamento(
@@ -218,11 +222,9 @@ def atualizar_status_pagamento(
     dados: dict[str, object],
 ) -> dict[str, object]:
     sql, parametros = montar_update("pagamento", "id_pagamento", id_pagamento, dados)
-    with conexao.cursor() as cursor:
-        cursor.execute(sql, parametros)
-        linha = cursor.fetchone()
-        if not linha:
-            conexao.rollback()
-            raise PagamentoNaoEncontrado
-        conexao.commit()
-        return serializar_linha(linha)
+    linha = executar_sql(conexao, sql, parametros).mappings().first()
+    if not linha:
+        conexao.rollback()
+        raise PagamentoNaoEncontrado
+    conexao.commit()
+    return serializar_linha(dict(linha))

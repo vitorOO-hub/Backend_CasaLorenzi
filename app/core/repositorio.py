@@ -3,6 +3,8 @@
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy.engine import Connection
+
 
 def normalizar_id(valor: object) -> int | UUID:
     """Aceita ids antigos numericos nos testes e UUIDs no Supabase atual."""
@@ -30,6 +32,27 @@ def serializar_linha(linha: dict[str, object]) -> dict[str, object]:
 
 def serializar_linhas(linhas: list[dict[str, object]]) -> list[dict[str, object]]:
     return [serializar_linha(linha) for linha in linhas]
+
+
+def executar_sql(conexao: Connection, sql: str, parametros: tuple[object, ...] = ()):
+    return conexao.exec_driver_sql(sql, parametros)
+
+
+def buscar_um(
+    conexao: Connection,
+    sql: str,
+    parametros: tuple[object, ...] = (),
+) -> dict[str, object] | None:
+    linha = executar_sql(conexao, sql, parametros).mappings().first()
+    return dict(linha) if linha else None
+
+
+def buscar_todos(
+    conexao: Connection,
+    sql: str,
+    parametros: tuple[object, ...] = (),
+) -> list[dict[str, object]]:
+    return [dict(linha) for linha in executar_sql(conexao, sql, parametros).mappings().all()]
 
 
 def limpar_nulos(dados: dict[str, object]) -> dict[str, object]:

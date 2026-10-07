@@ -3,7 +3,6 @@
 from decimal import Decimal
 
 import pytest
-from psycopg import errors
 
 from app.admin.erros import RegistroAdminNaoEncontrado
 from app.admin.schemas import ProdutoCriacao
@@ -91,8 +90,8 @@ def test_produto_usa_decimal_no_schema():
     assert produto.preco_base == Decimal("149.90")
 
 
-def test_criar_produto_duplicado_responde_409(app, cliente):
-    usar_executor(app, levanta(errors.UniqueViolation("duplicado")))
+def test_criar_produto_duplicado_responde_409(app, cliente, erro_integridade):
+    usar_executor(app, levanta(erro_integridade("23505")))
     resposta = cliente.post(
         "/admin/produtos",
         json={"nome": "Camisa", "preco_base": "149.90"},

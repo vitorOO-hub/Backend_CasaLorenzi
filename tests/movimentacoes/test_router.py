@@ -1,7 +1,5 @@
 """Testes das rotas de movimentacao de estoque sem banco real."""
 
-from psycopg import errors
-
 from app.core.db import get_executar
 from app.movimentacoes.erros import MovimentacaoNaoEncontrada
 
@@ -73,8 +71,8 @@ def test_movimentacao_inexistente_responde_404(app, cliente):
     assert resposta.json() == {"detail": "Movimentacao de estoque nao encontrada"}
 
 
-def test_movimentacao_invalida_responde_409(app, cliente):
-    usar_executor(app, levanta(errors.CheckViolation("saldo invalido")))
+def test_movimentacao_invalida_responde_409(app, cliente, erro_integridade):
+    usar_executor(app, levanta(erro_integridade("23514")))
     resposta = cliente.post(
         "/movimentacoes-estoque",
         json={

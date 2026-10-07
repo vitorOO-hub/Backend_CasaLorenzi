@@ -1,8 +1,9 @@
-"""Operacoes de banco da tabela estoque (SQL parametrizado, psycopg)."""
+"""Operacoes de banco da tabela estoque com SQLAlchemy Core."""
 
 from decimal import Decimal
 from uuid import UUID
 
+from app.core.repositorio import buscar_todos, buscar_um, executar_sql
 from app.estoque.erros import EstoqueComSaldo, EstoqueInsuficiente, RegistroNaoEncontrado
 
 
@@ -42,47 +43,46 @@ def serializar_linha(linha: dict[str, object]) -> dict[str, object]:
 
 
 def _buscar_por_id(conexao, id_estoque: int | UUID) -> dict[str, object] | None:
-    with conexao.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT *
-            FROM estoque
-            WHERE id_estoque = %s
-            """,
-            (id_estoque,),
-        )
-        return cursor.fetchone()
+    return buscar_um(
+        conexao,
+        """
+        SELECT *
+        FROM estoque
+        WHERE id_estoque = %s
+        """,
+        (id_estoque,),
+    )
 
 
 def listar_estoques(conexao) -> list[dict[str, object]]:
-    with conexao.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT
-                e.id_estoque,
-                e.id_loja,
-                l.nome AS loja,
-                e.id_variacao,
-                v.sku,
-                p.nome AS produto,
-                v.cor,
-                v.tamanho,
-                e.quantidade,
-                e.estoque_minimo,
-                CASE
-                    WHEN e.quantidade = 0 THEN 'Esgotado'
-                    WHEN e.quantidade <= e.estoque_minimo THEN 'Estoque baixo'
-                    ELSE 'OK'
-                END AS status_estoque,
-                e.atualizado_em
-            FROM estoque e
-            JOIN loja l ON l.id_loja = e.id_loja
-            JOIN variacao_produto v ON v.id_variacao = e.id_variacao
-            JOIN produto p ON p.id_produto = v.id_produto
-            ORDER BY l.nome, p.nome, v.cor, v.tamanho
-            """
-        )
-        return [serializar_linha(linha) for linha in cursor.fetchall()]
+    linhas = buscar_todos(
+        conexao,
+        """
+        SELECT
+            e.id_estoque,
+            e.id_loja,
+            l.nome AS loja,
+            e.id_variacao,
+            v.sku,
+            p.nome AS produto,
+            v.cor,
+            v.tamanho,
+            e.quantidade,
+            e.estoque_minimo,
+            CASE
+                WHEN e.quantidade = 0 THEN 'Esgotado'
+                WHEN e.quantidade <= e.estoque_minimo THEN 'Estoque baixo'
+                ELSE 'OK'
+            END AS status_estoque,
+            e.atualizado_em
+        FROM estoque e
+        JOIN loja l ON l.id_loja = e.id_loja
+        JOIN variacao_produto v ON v.id_variacao = e.id_variacao
+        JOIN produto p ON p.id_produto = v.id_produto
+        ORDER BY l.nome, p.nome, v.cor, v.tamanho
+        """,
+    )
+    return [serializar_linha(linha) for linha in linhas]
 
 
 def obter_estoque(conexao, id_estoque: int | UUID) -> dict[str, object]:
@@ -100,63 +100,61 @@ def criar_estoque(
     quantidade: int,
     estoque_minimo: int,
 ) -> dict[str, object]:
-    with conexao.cursor() as cursor:
-        cursor.execute(
-            """
-            INSERT INTO estoque (id_loja, id_variacao, quantidade, estoque_minimo)
-            VALUES (%s, %s, %s, %s)
-            RETURNING *
-            """,
-            (id_loja, id_variacao, quantidade, estoque_minimo),
-        )
-        conexao.commit()
-        return serializar_linha(cursor.fetchone())
+    linha = executar_sql(
+        conexao,
+        """
+        INSERT INTO estoque (id_loja, id_variacao, quantidade, estoque_minimo)
+        VALUES (%s, %s, %s, %s)
+        RETURNING *
+        """,
+        (id_loja, id_variacao, quantidade, estoque_minimo),
+    ).mappings().first()
+    conexao.commit()
+    return serializar_linha(dict(linha))
 
 
 def registrar_entrada(conexao, *, id_estoque: int | UUID, quantidade: int) -> dict[str, object]:
-    with conexao.cursor() as cursor:
-        cursor.execute(
-            """
-            UPDATE estoque
-            SET quantidade = quantidade + %s,
-                atualizado_em = now()
-            WHERE id_estoque = %s
-            RETURNING *
-            """,
-            (quantidade, id_estoque),
-        )
-        linha = cursor.fetchone()
-        if not linha:
-            conexao.rollback()
-            raise RegistroNaoEncontrado
-        conexao.commit()
-        return serializar_linha(linha)
+    linha = executar_sql(
+        conexao,
+        """
+        UPDATE estoque
+        SET quantidade = quantidade + %s,
+            atualizado_em = now()
+        WHERE id_estoque = %s
+        RETURNING *
+        """,
+        (quantidade, id_estoque),
+    ).mappings().first()
+    if not linha:
+        conexao.rollback()
+        raise RegistroNaoEncontrado
+    conexao.commit()
+    return serializar_linha(dict(linha))
 
 
 def registrar_saida(conexao, *, id_estoque: int | UUID, quantidade: int) -> dict[str, object]:
-    with conexao.cursor() as cursor:
-        cursor.execute(
-            """
-            UPDATE estoque
-            SET quantidade = quantidade - %s,
-                atualizado_em = now()
-            WHERE id_estoque = %s
-              AND quantidade >= %s
-            RETURNING *
-            """,
-            (quantidade, id_estoque, quantidade),
-        )
-        linha = cursor.fetchone()
-        if linha:
-            conexao.commit()
-            return serializar_linha(linha)
+    linha = executar_sql(
+        conexao,
+        """
+        UPDATE estoque
+        SET quantidade = quantidade - %s,
+            atualizado_em = now()
+        WHERE id_estoque = %s
+          AND quantidade >= %s
+        RETURNING *
+        """,
+        (quantidade, id_estoque, quantidade),
+    ).mappings().first()
+    if linha:
+        conexao.commit()
+        return serializar_linha(dict(linha))
 
-        if _buscar_por_id(conexao, id_estoque):
-            conexao.rollback()
-            raise EstoqueInsuficiente
-
+    if _buscar_por_id(conexao, id_estoque):
         conexao.rollback()
-        raise RegistroNaoEncontrado
+        raise EstoqueInsuficiente
+
+    conexao.rollback()
+    raise RegistroNaoEncontrado
 
 
 def atualizar_estoque_minimo(
@@ -165,43 +163,41 @@ def atualizar_estoque_minimo(
     id_estoque: int | UUID,
     estoque_minimo: int,
 ) -> dict[str, object]:
-    with conexao.cursor() as cursor:
-        cursor.execute(
-            """
-            UPDATE estoque
-            SET estoque_minimo = %s,
-                atualizado_em = now()
-            WHERE id_estoque = %s
-            RETURNING *
-            """,
-            (estoque_minimo, id_estoque),
-        )
-        linha = cursor.fetchone()
-        if not linha:
-            conexao.rollback()
-            raise RegistroNaoEncontrado
-        conexao.commit()
-        return serializar_linha(linha)
+    linha = executar_sql(
+        conexao,
+        """
+        UPDATE estoque
+        SET estoque_minimo = %s,
+            atualizado_em = now()
+        WHERE id_estoque = %s
+        RETURNING *
+        """,
+        (estoque_minimo, id_estoque),
+    ).mappings().first()
+    if not linha:
+        conexao.rollback()
+        raise RegistroNaoEncontrado
+    conexao.commit()
+    return serializar_linha(dict(linha))
 
 
 def remover_estoque_sem_saldo(conexao, *, id_estoque: int | UUID) -> dict[str, object]:
-    with conexao.cursor() as cursor:
-        cursor.execute(
-            """
-            DELETE FROM estoque
-            WHERE id_estoque = %s
-              AND quantidade = 0
-            RETURNING *
-            """,
-            (id_estoque,),
-        )
-        linha = cursor.fetchone()
-        if linha:
-            conexao.commit()
-            return serializar_linha(linha)
+    linha = executar_sql(
+        conexao,
+        """
+        DELETE FROM estoque
+        WHERE id_estoque = %s
+          AND quantidade = 0
+        RETURNING *
+        """,
+        (id_estoque,),
+    ).mappings().first()
+    if linha:
+        conexao.commit()
+        return serializar_linha(dict(linha))
 
-        atual = _buscar_por_id(conexao, id_estoque)
-        conexao.rollback()
-        if atual:
-            raise EstoqueComSaldo
-        raise RegistroNaoEncontrado
+    atual = _buscar_por_id(conexao, id_estoque)
+    conexao.rollback()
+    if atual:
+        raise EstoqueComSaldo
+    raise RegistroNaoEncontrado

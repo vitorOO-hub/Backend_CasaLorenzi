@@ -10,8 +10,9 @@ python-dotenv>=1.0.0,<2.0.0
 # EmailStr nos modelos de entrada (ex.: POST /usuarios)
 email-validator>=2.0.0,<3.0.0
 
-# Banco (Supabase/PostgreSQL). asyncpg e o driver da API (pool no startup e transacoes);
-# psycopg e usado pelo teste de acoes de estoque.
+# Banco (Supabase/PostgreSQL). SQLAlchemy e a camada padrao de acesso ao banco;
+# psycopg fica como driver PostgreSQL usado por baixo do SQLAlchemy.
+SQLAlchemy>=2.0.0,<3.0.0
 asyncpg>=0.31.0,<1.0.0
 psycopg[binary]>=3.1.0,<4.0.0
 

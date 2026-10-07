@@ -1,9 +1,13 @@
 """Rotas da tabela movimentacao_estoque."""
 
 from fastapi import APIRouter, Query, status
-from psycopg import errors
+from sqlalchemy.exc import IntegrityError
 
-from app.core.db import ExecutarDep
+from app.core.db import (
+    ExecutarDep,
+    eh_violacao_chave_estrangeira,
+    eh_violacao_check,
+)
 from app.movimentacoes import service
 from app.movimentacoes.erros import MovimentacaoInvalida
 from app.movimentacoes.schemas import MovimentacaoCriacao, MovimentacaoLeitura
@@ -28,5 +32,7 @@ def obter(id_movimentacao: str, executar: ExecutarDep):
 def criar(dados: MovimentacaoCriacao, executar: ExecutarDep):
     try:
         return executar(lambda conexao: service.criar_movimentacao(conexao, dados.model_dump()))
-    except (errors.ForeignKeyViolation, errors.CheckViolation) as erro:
-        raise MovimentacaoInvalida from erro
+    except IntegrityError as erro:
+        if eh_violacao_chave_estrangeira(erro) or eh_violacao_check(erro):
+            raise MovimentacaoInvalida from erro
+        raise

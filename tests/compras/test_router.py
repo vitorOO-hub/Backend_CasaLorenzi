@@ -1,7 +1,5 @@
 """Testes das rotas de compras sem banco real."""
 
-from psycopg import errors
-
 from app.compras.erros import PedidoNaoEncontrado
 from app.core.db import get_executar
 
@@ -88,8 +86,8 @@ def test_criar_item_rejeita_quantidade_invalida(cliente):
     assert resposta.status_code == 422
 
 
-def test_criar_pagamento_duplicado_responde_409(app, cliente):
-    usar_executor(app, levanta(errors.UniqueViolation("duplicado")))
+def test_criar_pagamento_duplicado_responde_409(app, cliente, erro_integridade):
+    usar_executor(app, levanta(erro_integridade("23505")))
     resposta = cliente.post(
         f"/compras/pedidos/{ID_UUID}/pagamentos",
         json={

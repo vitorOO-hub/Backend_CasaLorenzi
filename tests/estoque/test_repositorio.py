@@ -12,61 +12,22 @@ from app.estoque.repositorio import (
 )
 
 
-class CursorFalso:
-    def __init__(self, conexao):
-        self.conexao = conexao
-        self.resultado = None
+class ResultadoFalso:
+    def __init__(self, resultado):
+        self.resultado = resultado
 
-    def __enter__(self):
+    def mappings(self):
         return self
 
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def execute(self, sql, parametros=()):
-        self.conexao.sqls.append(sql)
-        self.conexao.parametros.append(parametros)
-        sql_normalizado = " ".join(sql.split()).upper()
-
-        if sql_normalizado.startswith("UPDATE ESTOQUE SET QUANTIDADE = QUANTIDADE +"):
-            quantidade, id_estoque = parametros
-            linha_atual = self.conexao.linhas.get(id_estoque)
-            if linha_atual:
-                linha_nova = {**linha_atual, "quantidade": linha_atual["quantidade"] + quantidade}
-                self.conexao.linhas[id_estoque] = linha_nova
-                self.resultado = linha_nova
-            else:
-                self.resultado = None
-            return
-
-        if sql_normalizado.startswith("UPDATE ESTOQUE SET QUANTIDADE = QUANTIDADE -"):
-            quantidade, id_estoque, minimo = parametros
-            linha_atual = self.conexao.linhas.get(id_estoque)
-            if linha_atual and linha_atual["quantidade"] >= minimo:
-                linha_nova = {**linha_atual, "quantidade": linha_atual["quantidade"] - quantidade}
-                self.conexao.linhas[id_estoque] = linha_nova
-                self.resultado = linha_nova
-            else:
-                self.resultado = None
-            return
-
-        if sql_normalizado.startswith("SELECT * FROM ESTOQUE WHERE ID_ESTOQUE"):
-            self.resultado = self.conexao.linhas.get(parametros[0])
-            return
-
-        if sql_normalizado.startswith("DELETE FROM ESTOQUE"):
-            id_estoque = parametros[0]
-            linha_atual = self.conexao.linhas.get(id_estoque)
-            if linha_atual and linha_atual["quantidade"] == 0:
-                self.resultado = self.conexao.linhas.pop(id_estoque)
-            else:
-                self.resultado = None
-            return
-
-        raise AssertionError(f"SQL inesperado: {sql}")
-
-    def fetchone(self):
+    def first(self):
         return self.resultado
+
+    def all(self):
+        if self.resultado is None:
+            return []
+        if isinstance(self.resultado, list):
+            return self.resultado
+        return [self.resultado]
 
 
 class ConexaoFalsa:
@@ -77,8 +38,43 @@ class ConexaoFalsa:
         self.commits = 0
         self.rollbacks = 0
 
-    def cursor(self):
-        return CursorFalso(self)
+    def exec_driver_sql(self, sql, parametros=()):
+        return ResultadoFalso(self.executar_sql_falso(sql, parametros))
+
+    def executar_sql_falso(self, sql, parametros=()):
+        self.sqls.append(sql)
+        self.parametros.append(parametros)
+        sql_normalizado = " ".join(sql.split()).upper()
+
+        if sql_normalizado.startswith("UPDATE ESTOQUE SET QUANTIDADE = QUANTIDADE +"):
+            quantidade, id_estoque = parametros
+            linha_atual = self.linhas.get(id_estoque)
+            if linha_atual:
+                linha_nova = {**linha_atual, "quantidade": linha_atual["quantidade"] + quantidade}
+                self.linhas[id_estoque] = linha_nova
+                return linha_nova
+            return None
+
+        if sql_normalizado.startswith("UPDATE ESTOQUE SET QUANTIDADE = QUANTIDADE -"):
+            quantidade, id_estoque, minimo = parametros
+            linha_atual = self.linhas.get(id_estoque)
+            if linha_atual and linha_atual["quantidade"] >= minimo:
+                linha_nova = {**linha_atual, "quantidade": linha_atual["quantidade"] - quantidade}
+                self.linhas[id_estoque] = linha_nova
+                return linha_nova
+            return None
+
+        if sql_normalizado.startswith("SELECT * FROM ESTOQUE WHERE ID_ESTOQUE"):
+            return self.linhas.get(parametros[0])
+
+        if sql_normalizado.startswith("DELETE FROM ESTOQUE"):
+            id_estoque = parametros[0]
+            linha_atual = self.linhas.get(id_estoque)
+            if linha_atual and linha_atual["quantidade"] == 0:
+                return self.linhas.pop(id_estoque)
+            return None
+
+        raise AssertionError(f"SQL inesperado: {sql}")
 
     def commit(self):
         self.commits += 1
