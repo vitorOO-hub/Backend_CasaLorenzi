@@ -380,17 +380,34 @@ def mensagens(conexao: Connection, id_atendimento: UUID) -> list[dict[str, Any]]
 
 
 def travar(conexao: Connection, escopo: Escopo, id_atendimento: UUID) -> dict[str, Any] | None:
-    """Le o chamado (so se estiver no escopo) e o trava ate o fim da transacao."""
+    """Trava o chamado (so se estiver no escopo) ate o fim da transacao e le o estado atual.
+
+    A trava e pedida SEM junções de proposito: depois de esperar outra transacao, o PostgreSQL
+    reavalia o WHERE e as junções com a versao nova da linha, e um JOIN pelo status (que acabou de
+    mudar) faria quem perdeu a corrida ver "nao encontrado" em vez de "ja foi assumido". Com a linha
+    ja travada, a segunda consulta enxerga o estado confirmado.
+    """
+    travado = conexao.execute(
+        text(
+            f"""
+            SELECT a.id_atendimento FROM atendimento a
+            WHERE a.id_atendimento = CAST(:id AS uuid) AND {NO_ESCOPO}
+            FOR UPDATE
+            """  # nosec B608
+        ),
+        {**escopo.parametros(), "id": str(id_atendimento)},
+    ).first()
+    if travado is None:
+        return None
     linhas = _mapas(
         conexao,
         f"""
         SELECT a.id_atendimento, st.codigo AS status_codigo,
                a.id_usuario_responsavel, resp.nome AS responsavel_nome
         {DE_ONDE}
-        WHERE a.id_atendimento = CAST(:id AS uuid) AND {NO_ESCOPO}
-        FOR UPDATE OF a
+        WHERE a.id_atendimento = CAST(:id AS uuid)
         """,  # nosec B608
-        {**escopo.parametros(), "id": str(id_atendimento)},
+        {"id": str(id_atendimento)},
     )
     return linhas[0] if linhas else None
 

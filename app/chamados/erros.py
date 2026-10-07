@@ -25,6 +25,7 @@ class ChamadoJaAssumido(ErroDeNegocio):
             self.detalhe = "Voce ja assumiu este chamado"
         else:
             self.detalhe = f"{nome or 'Outro atendente'} ja assumiu este chamado"
+        super().__init__(self.detalhe)
 
 
 class ChamadoSemResponsavel(ErroDeNegocio):
