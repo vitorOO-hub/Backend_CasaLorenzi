@@ -1,0 +1,1 @@
+"""Area do cliente autenticado."""
