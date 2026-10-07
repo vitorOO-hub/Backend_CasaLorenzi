@@ -68,10 +68,9 @@ def atualizar_pedido(conexao, id_pedido: object, dados: dict[str, object]) -> di
 
 
 def cancelar_pedido(conexao, id_pedido: object) -> dict[str, object]:
-    linha = (
-        executar_sql(
-            conexao,
-            """
+    linha = executar_sql(
+        conexao,
+        """
         UPDATE pedido
         SET id_status_pedido = (
                 SELECT id_status_pedido
@@ -82,11 +81,8 @@ def cancelar_pedido(conexao, id_pedido: object) -> dict[str, object]:
         WHERE id_pedido = %s
         RETURNING *
         """,
-            (id_pedido,),
-        )
-        .mappings()
-        .first()
-    )
+        (id_pedido,),
+    ).mappings().first()
     if not linha:
         conexao.rollback()
         raise PedidoNaoEncontrado
@@ -170,15 +166,11 @@ def atualizar_item_pedido(
 
 
 def remover_item_pedido(conexao, id_item_pedido: object) -> dict[str, object]:
-    linha = (
-        executar_sql(
-            conexao,
-            "DELETE FROM item_pedido WHERE id_item_pedido = %s RETURNING *",
-            (id_item_pedido,),
-        )
-        .mappings()
-        .first()
-    )
+    linha = executar_sql(
+        conexao,
+        "DELETE FROM item_pedido WHERE id_item_pedido = %s RETURNING *",
+        (id_item_pedido,),
+    ).mappings().first()
     if not linha:
         conexao.rollback()
         raise ItemPedidoNaoEncontrado
