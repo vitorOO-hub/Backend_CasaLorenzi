@@ -293,3 +293,27 @@ O banco remoto é compartilhado. Antes de rodar `alembic upgrade head` nele:
 
 Para desfazer: `alembic downgrade 20261006213000` (restaura RLS sem `FORCE` e os privilégios
 anteriores).
+
+## Dashboard de atendimento
+
+Alimenta a home do atendente. Todas as rotas exigem o JWT do Supabase e um destes papéis:
+`atendente`, `gerente_loja` ou `admin` (mesmo com `AUTENTICACAO_OBRIGATORIA=false`).
+
+| Rota | O que devolve |
+|---|---|
+| `GET /dashboard/atendimento?inicio=&fim=` | Resumo do período e do período anterior (mesma duração), volume por dia, chamados por categoria, tempo até a primeira resposta por canal, opções de filtro e o escopo do usuário |
+| `GET /dashboard/atendimento/fila` | Chamados não finalizados, com contadores (`total_aberto`, `sem_resposta`, `urgentes`), ordenados por prioridade e depois pelos mais antigos |
+
+Filtros opcionais: `id_loja`, `canal` e `categoria` (códigos das tabelas de opções). A fila aceita
+`limit` (padrão 20, máximo 100) e `offset`. O período vai de `inicio` a `fim` (datas, inclusivas,
+no fuso de São Paulo) e tem no máximo 400 dias.
+
+Escopo (aplicado no código, porque a conexão da API ignora RLS): `atendente` e `gerente_loja`
+veem sempre a loja do token e recebem 403 se pedirem outra; `admin` vê a rede inteira ou filtra por
+loja. Chamados sem loja (sem pedido) só aparecem para o `admin`. A resposta nunca traz e-mail,
+telefone nem documento do cliente.
+
+Definições: "resolvido" é `resolvido` ou `encerrado`; "sem resposta" é o status `aberto`; "primeira
+resposta" é a primeira mensagem de alguém que não é cliente; a fila exclui `resolvido`,
+`encerrado` e `cancelado`. `atendimento.assunto` é opcional (a revisão `20261007000500` a cria); sem
+ele, a fila mostra o nome da categoria.
