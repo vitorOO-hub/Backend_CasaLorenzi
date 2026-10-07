@@ -43,6 +43,30 @@ def test_equipe_de_loja_recebe_loja_e_admin_e_cliente_nao():
     }
 
 
+def test_email_base_gera_enderecos_com_etiqueta_na_mesma_caixa():
+    contas = criar_contas.CONTAS
+    emails = [criar_contas.email_da(c, "ignorado.com", "pessoa@gmail.com") for c in contas]
+    assert emails == [
+        "pessoa+cliente@gmail.com",
+        "pessoa+atendente@gmail.com",
+        "pessoa+operador@gmail.com",
+        "pessoa+gerente@gmail.com",
+        "pessoa+admin@gmail.com",
+    ]
+
+
+@pytest.mark.parametrize("ruim", ["sem-arroba", "a+b@gmail.com", "a b@gmail.com", "a@semponto"])
+def test_email_base_invalido_para_com_erro(ruim, monkeypatch, tmp_path):
+    linhas = [
+        "SUPABASE_URL=https://abc.supabase.co",
+        "SUPABASE_PUBLISHABLE_KEY=k",
+        "DATABASE_URL=postgresql://u:p@h/db",
+    ]
+    (tmp_path / ".env").write_text("\n".join(linhas), encoding="utf-8")
+    monkeypatch.setattr(criar_contas, "RAIZ", tmp_path)
+    assert criar_contas.main(["--email-base", ruim]) == 2
+
+
 def test_emails_sao_unicos_e_usam_o_dominio_pedido():
     emails = [criar_contas.email_da(c, "exemplo.com.br") for c in criar_contas.CONTAS]
     assert len(set(emails)) == len(emails)

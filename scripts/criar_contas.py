@@ -16,6 +16,7 @@ role key nao ha como ler nem trocar a senha de outra conta, e este script nunca 
 """
 
 import argparse
+import re
 import secrets
 import string
 import sys
@@ -50,7 +51,11 @@ CONTAS = (
 )
 
 
-def email_da(conta: Conta, dominio: str) -> str:
+def email_da(conta: Conta, dominio: str, email_base: str | None = None) -> str:
+    """E-mail da conta. Com `email_base` (voce@gmail.com) vira voce+atendente@gmail.com."""
+    if email_base:
+        local, _, host = email_base.partition("@")
+        return f"{local}+{conta.usuario}@{host}"
     return f"{conta.usuario}@{dominio}"
 
 
@@ -163,6 +168,11 @@ def main(argv: list[str] | None = None) -> int:
         "--dominio", default=DOMINIO_PADRAO, help=f"dominio dos e-mails (padrao {DOMINIO_PADRAO})"
     )
     parser.add_argument(
+        "--email-base",
+        help="e-mail seu com caixa real; as contas viram voce+atendente@..., voce+gerente@... "
+        "(o Supabase recusa dominios sem servidor de e-mail)",
+    )
+    parser.add_argument(
         "--loja", default=LOJA_PADRAO, help=f"codigo da loja da equipe (padrao {LOJA_PADRAO})"
     )
     args = parser.parse_args(argv)
@@ -180,7 +190,13 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Projeto Supabase: {urlsplit(url).hostname}")
     print(f"Loja da equipe:   {args.loja}\n")
-    plano = [(c.papel, email_da(c, args.dominio), c.nome) for c in CONTAS]
+    if args.email_base and not re.fullmatch(r"[^@\s+]+@[^@\s]+\.[^@\s]+", args.email_base):
+        print(
+            "--email-base precisa ser um e-mail simples, sem '+' (ex.: voce@gmail.com).",
+            file=sys.stderr,
+        )
+        return 2
+    plano = [(c.papel, email_da(c, args.dominio, args.email_base), c.nome) for c in CONTAS]
     print(_tabela([("PAPEL NO TOKEN", "E-MAIL", "NOME"), *plano]))
     if not args.aplicar:
         print("\nNada foi alterado. Rode de novo com --aplicar para criar as contas.")
@@ -194,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"\nLoja {args.loja!r} nao existe no banco.", file=sys.stderr)
             return 2
         for conta in CONTAS:
-            email = email_da(conta, args.dominio)
+            email = email_da(conta, args.dominio, args.email_base)
             senha = gerar_senha()
             resultado = cadastrar(http, url, chave, email, senha, conta.nome)
             if resultado.ja_existia or resultado.id_auth is None:
