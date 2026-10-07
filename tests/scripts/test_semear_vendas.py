@@ -226,7 +226,7 @@ def test_pendencias_para_o_gerente(mundo):
         assert (a[3] is None) == (a[6] == "pendente") and (a[8] is None) == (a[6] == "pendente")
         assert a[4] != 0
     solicitadas = [t for t in plano.transferencias if t[1] == "solicitada"]
-    aceitas = [t for t in plano.transferencias if t[1] == "aceita"]
+    aceitas = [t for t in plano.transferencias if t[1] == "recebida"]
     assert len(solicitadas) == 4 and len(aceitas) == 2
     assert any(t[0] == "reposicao_rede" and t[2] is None for t in solicitadas)
     assert all(t[2] != t[3] for t in plano.transferencias)

@@ -63,7 +63,9 @@ def test_downgrade_remove_tudo_e_upgrade_reaplica(banco_migrado):
     assert antes["anexos"] == 1
     # 7 app_* + hook_claims_token + preencher_id_loja_atendimento + definir_protocolo_atendimento
     assert antes["funcoes"] == 10
-    assert antes["politicas"] == 20  # 12 em D1 (7 + 5 de opcoes), 7 em D2 e 1 em chamado_anexo
+    # 12 em D1 (7 + 5 de opcoes), 7 em D2, 1 em chamado_anexo e 4 de leitura do estoque
+    # (tipos, status e transferencias, e ajustes).
+    assert antes["politicas"] == 24
     assert antes["forcado"] >= 20
     try:
         rodar_alembic(url, "downgrade", REVISAO_ANTERIOR)

@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Query, status
 from app.core.db import ExecutarDep
 from app.core.papeis import UsuarioAtual
 from app.core.security import requer_papel
-from app.painel_estoque import service, service_escrita
+from app.painel_estoque import minimos, service, service_escrita, transferencias
 from app.painel_estoque.entradas import NovaMovimentacao, NovoAjuste, Recusa
 from app.painel_estoque.repositorio import FiltroSaldo
 from app.painel_estoque.schemas import (
@@ -151,3 +151,127 @@ def recusar_ajuste(id_ajuste: UUID, dados: Recusa, usuario: GestaoDep, executar:
     return executar(
         lambda conexao: service_escrita.recusar_ajuste(conexao, usuario, id_ajuste, dados.motivo)
     )
+
+
+# ---------------------------------------------------------------- transferencias e reposicoes
+
+Situacao3 = Annotated[str, Query(pattern=r"^(acao|andamento|todas)$")]
+TipoTransferencia = Annotated[str | None, Query(pattern=r"^(transferencia|reposicao_rede)$")]
+
+
+@router.get(
+    "/transferencias", response_model=transferencias.Transferencias, summary="Transferencias"
+)
+def listar_transferencias(
+    usuario: UsuarioDep,
+    executar: ExecutarDep,
+    id_loja: IdLoja = None,
+    situacao: Situacao3 = "acao",
+    tipo: TipoTransferencia = None,
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    return executar(
+        lambda conexao: transferencias.listar_do_usuario(
+            conexao,
+            usuario,
+            id_loja=id_loja,
+            situacao=situacao,  # type: ignore[arg-type]
+            tipo=tipo,
+            limit=limit,
+            offset=offset,
+        )
+    )
+
+
+@router.post(
+    "/transferencias",
+    response_model=transferencias.ItemTransferencia,
+    status_code=status.HTTP_201_CREATED,
+    summary="Pedir pecas a outra loja",
+)
+def pedir_transferencia(
+    dados: transferencias.NovaTransferencia, usuario: UsuarioDep, executar: ExecutarDep
+):
+    return executar(lambda conexao: transferencias.solicitar(conexao, usuario, dados))
+
+
+@router.post(
+    "/transferencias/reposicoes",
+    response_model=transferencias.ItemTransferencia,
+    status_code=status.HTTP_201_CREATED,
+    summary="Pedir reposicao a rede",
+)
+def pedir_reposicao(
+    dados: transferencias.NovaReposicao, usuario: UsuarioDep, executar: ExecutarDep
+):
+    return executar(lambda conexao: transferencias.pedir_reposicao(conexao, usuario, dados))
+
+
+@router.post(
+    "/transferencias/{id_transferencia}/aceitar",
+    response_model=transferencias.ItemTransferencia,
+    summary="Aceitar (a peca sai do estoque da origem)",
+)
+def aceitar_transferencia(
+    id_transferencia: UUID,
+    usuario: UsuarioDep,
+    executar: ExecutarDep,
+    dados: transferencias.Decisao | None = None,
+):
+    corpo = dados or transferencias.Decisao()
+    return executar(
+        lambda conexao: transferencias.aceitar(conexao, usuario, id_transferencia, corpo)
+    )
+
+
+@router.post(
+    "/transferencias/{id_transferencia}/recusar",
+    response_model=transferencias.ItemTransferencia,
+    summary="Recusar",
+)
+def recusar_transferencia(
+    id_transferencia: UUID,
+    usuario: UsuarioDep,
+    executar: ExecutarDep,
+    dados: transferencias.Decisao | None = None,
+):
+    corpo = dados or transferencias.Decisao()
+    return executar(
+        lambda conexao: transferencias.recusar(conexao, usuario, id_transferencia, corpo)
+    )
+
+
+@router.post(
+    "/transferencias/{id_transferencia}/receber",
+    response_model=transferencias.ItemTransferencia,
+    summary="Confirmar recebimento (a peca entra no estoque do destino)",
+)
+def receber_transferencia(id_transferencia: UUID, usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(lambda conexao: transferencias.receber(conexao, usuario, id_transferencia))
+
+
+# ---------------------------------------------------------------- estoque minimo
+
+MinimosDep = Annotated[UsuarioAtual, Depends(requer_papel(*minimos.PAPEIS))]
+
+
+@router.get("/minimos", response_model=minimos.Minimos, summary="Estoque minimo por peca")
+def listar_minimos(
+    usuario: MinimosDep,
+    executar: ExecutarDep,
+    id_loja: IdLoja = None,
+    busca: Texto = None,
+    limit: int = Query(default=200, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    return executar(
+        lambda conexao: minimos.listar(
+            conexao, usuario, id_loja=id_loja, busca=busca, limit=limit, offset=offset
+        )
+    )
+
+
+@router.put("/minimos", response_model=minimos.Atualizados, summary="Definir estoques minimos")
+def definir_minimos(dados: minimos.DefinirMinimos, usuario: MinimosDep, executar: ExecutarDep):
+    return executar(lambda conexao: minimos.definir(conexao, usuario, dados))

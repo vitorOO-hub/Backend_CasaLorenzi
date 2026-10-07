@@ -287,10 +287,11 @@ def ajustes_para_aprovar(conexao: Connection, filtro: Filtro) -> int:
 
 
 def transferencias_aguardando(conexao: Connection, filtro: Filtro) -> int:
-    """Pedidos de transferencia que esperam a loja aceitar.
+    """Transferencias que esperam uma acao da loja.
 
-    Uma loja aceita o que pediram a ela (origem) e as reposicoes a rede pedidas por outras lojas.
-    Sem loja (admin olhando a rede), conta todas as solicitadas.
+    Aceitar o que pediram a ela (origem) ou uma reposicao a rede pedida por outra loja, e
+    confirmar o recebimento do que ja foi aceito para ela (destino). Sem loja (admin olhando a
+    rede), conta tudo que esta solicitado ou em transito.
     """
     return conexao.execute(
         text(
@@ -299,12 +300,18 @@ def transferencias_aguardando(conexao: Connection, filtro: Filtro) -> int:
             FROM transferencia_estoque t
             JOIN status_transferencia_estoque s
                 ON s.id_status_transferencia_estoque = t.id_status_transferencia_estoque
-            WHERE s.codigo = 'solicitada'
-              AND (
-                  CAST(:id_loja AS uuid) IS NULL
-                  OR t.id_loja_origem = CAST(:id_loja AS uuid)
-                  OR (t.id_loja_origem IS NULL AND t.id_loja_destino <> CAST(:id_loja AS uuid))
-              )
+            WHERE (
+                CAST(:id_loja AS uuid) IS NULL AND s.codigo IN ('solicitada', 'aceita')
+                OR (
+                    s.codigo = 'solicitada'
+                    AND (
+                        t.id_loja_origem = CAST(:id_loja AS uuid)
+                        OR (t.id_loja_origem IS NULL
+                            AND t.id_loja_destino <> CAST(:id_loja AS uuid))
+                    )
+                )
+                OR (s.codigo = 'aceita' AND t.id_loja_destino = CAST(:id_loja AS uuid))
+            )
             """
         ),
         {"id_loja": filtro.parametros()["id_loja"]},

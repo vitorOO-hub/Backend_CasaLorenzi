@@ -38,3 +38,25 @@ class AjusteNaoEncontrado(ErroDeNegocio):
 class AjusteJaDecidido(ErroDeNegocio):
     status_code = status.HTTP_409_CONFLICT
     detalhe = "Este ajuste ja foi decidido"
+
+
+class TransferenciaNaoEncontrada(ErroDeNegocio):
+    """Tambem cobre transferencia entre outras lojas: nao revelamos que ela existe."""
+
+    status_code = status.HTTP_404_NOT_FOUND
+    detalhe = "Transferencia nao encontrada"
+
+
+class TransferenciaJaDecidida(ErroDeNegocio):
+    status_code = status.HTTP_409_CONFLICT
+    detalhe = "Esta transferencia nao esta mais nesta etapa"
+
+
+class SemPermissaoNaTransferencia(ErroDeNegocio):
+    status_code = status.HTTP_403_FORBIDDEN
+    detalhe = "Somente a loja indicada pode fazer isso nesta transferencia"
+
+
+class LojaInvalida(ErroDeNegocio):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    detalhe = "Loja de origem invalida: escolha outra loja ativa da rede"

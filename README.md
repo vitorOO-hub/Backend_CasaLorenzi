@@ -490,3 +490,22 @@ Quem opera e sempre o dono do token (o corpo nao aceita usuario, saldo nem statu
 token; o admin informa `id_loja`. A linha do estoque e travada antes de ler o saldo: duas saidas ao
 mesmo tempo se enfileiram e o saldo nunca fica negativo (409 "Saldo insuficiente"). Aprovar de novo
 um ajuste decidido da 409. A migration `20261007170000` cria `ajuste_estoque.motivo_recusa`.
+
+### Estoque do painel: transferencias, reposicoes e estoque minimo
+
+Rotas em `/api/v1/painel/estoque` (operador de estoque, gerente e admin; `/minimos` so gerente e admin).
+
+| Metodo | Rota | Para que serve |
+| --- | --- | --- |
+| GET | `/transferencias?situacao=acao\|andamento\|todas&tipo=` | Transferencias e reposicoes da loja, com `acoes` possiveis para quem consulta e o contador `aguardando_voce` |
+| POST | `/transferencias` | A loja de destino pede pecas a uma origem |
+| POST | `/transferencias/reposicoes` | Pedido de reposicao a rede toda (sem origem) |
+| POST | `/transferencias/{id}/aceitar` | A origem aceita: a peca SAI do estoque dela (409 se faltar saldo). Na reposicao, quem atende vira a origem |
+| POST | `/transferencias/{id}/recusar` | A origem recusa (motivo opcional); o estoque nao muda |
+| POST | `/transferencias/{id}/receber` | O destino confirma a chegada: a peca ENTRA no estoque dele |
+| GET/PUT | `/minimos` | Lista e define o estoque minimo por peca (o PUT e tudo-ou-nada) |
+
+Cada passo trava a transferencia e a linha do estoque; repetir uma etapa da 409 e a peca nunca se
+move duas vezes. A migration `20261007180000` cria os status `recebida` e `recusada`, e as policies
+de SELECT (equipe das lojas envolvidas nas transferencias; gerente da loja, ou o proprio operador,
+nos ajustes). Escrever continua so pela API.

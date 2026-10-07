@@ -268,10 +268,14 @@ def test_ajuste_estoque_tem_rls_ligado_e_forcado(conn):
 
 
 @pytest.mark.parametrize("role", ["anon", "authenticated"])
-def test_front_nao_le_nem_escreve_ajustes(conn, base, role):
+def test_front_so_le_ajustes_pela_policy_e_nunca_escreve(conn, base, role):
     inserir(conn, base)
     with como(conn, role=role, sub=base["gerente"].auth, papel="gerente_loja", loja=base["loja"]):
-        assert e_erro(tenta(conn, "SELECT 1 FROM ajuste_estoque"))
+        if role == "anon":
+            assert e_erro(tenta(conn, "SELECT 1 FROM ajuste_estoque"))
+        else:
+            # Logado so le pela policy (gestao da loja); a leitura e testada em outro arquivo.
+            assert len(tenta(conn, "SELECT 1 FROM ajuste_estoque")) == 1
         assert e_erro(
             tenta(
                 conn,

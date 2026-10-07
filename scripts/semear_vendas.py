@@ -467,7 +467,7 @@ def simular(
             plano.transferencias.append(
                 (
                     "transferencia",
-                    "aceita",
+                    "recebida",
                     origem,
                     destino,
                     variacao,
@@ -855,6 +855,13 @@ def gravar(conexao: psycopg.Connection, plano: Plano) -> None:
                 %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             plano.transferencias,
+        )
+        # As transferencias do exemplo ja foram recebidas (o destino foi creditado na simulacao).
+        cur.execute(
+            "UPDATE transferencia_estoque SET recebida_em = aceita_em + interval '1 second' "
+            "WHERE recebida_em IS NULL AND id_status_transferencia_estoque = ("
+            "SELECT id_status_transferencia_estoque FROM status_transferencia_estoque "
+            "WHERE codigo = 'recebida')"
         )
         cur.executemany(
             """

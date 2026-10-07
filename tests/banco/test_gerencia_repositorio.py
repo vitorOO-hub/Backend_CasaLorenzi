@@ -425,7 +425,7 @@ def test_transferencias_aguardando_a_decisao_da_loja(sa_conn, cena):
     nova("reposicao_rede", "solicitada", None, a)  # a propria reposicao de A nao e dela
     nova("reposicao_rede", "solicitada", None, outra)
     assert repositorio.transferencias_aguardando(sa_conn, Filtro(a)) == 3
-    assert repositorio.transferencias_aguardando(sa_conn, Filtro(None)) == 5  # todas as solicitadas
+    assert repositorio.transferencias_aguardando(sa_conn, Filtro(None)) == 6  # solicitadas e em transito
 
 
 def test_pendencias_juntam_os_tres_numeros(sa_conn, cena):
