@@ -36,10 +36,7 @@ def _app_padrao() -> FastAPI:
 
 
 def __getattr__(nome: str) -> Any:
-    """Permite `uvicorn app.main:app`, mas o app padrao so e criado quando alguem pede `app`.
-
-    Assim importar `app.main` (como fazem os testes) nao le o .env nem exige DATABASE_URL.
-    """
+    
     if nome == "app":
         return _app_padrao()
     raise AttributeError(f"module {__name__!r} has no attribute {nome!r}")
