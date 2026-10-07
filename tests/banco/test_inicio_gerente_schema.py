@@ -191,7 +191,15 @@ def test_ajuste_nasce_pendente_sem_decisao(conn, base):
 def test_ajuste_aprovado_e_rejeitado_exigem_quem_e_quando(conn, base):
     agora = datetime.now(UTC)
     for status in ("aprovado", "rejeitado"):
-        inserir(conn, base, status=status, id_usuario_decisor=base["gerente"].id, decidido_em=agora)
+        recusa_ok = {"motivo_recusa": "Nao bate"} if status == "rejeitado" else {}
+        inserir(
+            conn,
+            base,
+            status=status,
+            id_usuario_decisor=base["gerente"].id,
+            decidido_em=agora,
+            **recusa_ok,
+        )
         recusa(conn, psycopg.errors.CheckViolation, base, status=status)
         recusa(conn, psycopg.errors.CheckViolation, base, status=status, decidido_em=agora)
         recusa(

@@ -63,6 +63,7 @@ class FiltroMovimentacoes:
     ate: date | None = None
     # So o operador de estoque: apenas o que ele mesmo registrou.
     id_responsavel: UUID | None = None
+    id_movimentacao: UUID | None = None
 
     def parametros(self) -> dict[str, Any]:
         return {
@@ -72,6 +73,7 @@ class FiltroMovimentacoes:
             "de": self.de,
             "ate": self.ate,
             "id_responsavel": str(self.id_responsavel) if self.id_responsavel else None,
+            "id_movimentacao": str(self.id_movimentacao) if self.id_movimentacao else None,
             "fuso": FUSO,
         }
 
@@ -249,6 +251,8 @@ WHERE (CAST(:id_loja AS uuid) IS NULL OR m.id_loja = CAST(:id_loja AS uuid))
        OR m.criada_em < (CAST(:ate AS date) + 1)::timestamp AT TIME ZONE :fuso)
   AND (CAST(:id_responsavel AS uuid) IS NULL
        OR m.id_usuario_responsavel = CAST(:id_responsavel AS uuid))
+  AND (CAST(:id_movimentacao AS uuid) IS NULL
+       OR m.id_movimentacao_estoque = CAST(:id_movimentacao AS uuid))
 """  # nosec B608
 
 

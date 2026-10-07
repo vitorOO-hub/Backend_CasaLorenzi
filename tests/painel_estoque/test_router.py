@@ -30,6 +30,8 @@ OPCOES = {
     "situacoes": [{"codigo": "ok", "nome": "OK"}],
     "tipos": [{"codigo": "entrada", "nome": "Entrada"}],
     "pecas": [{"id_variacao": str(uuid4()), "sku": "CL-X", "nome": "Camisa · Branco, M"}],
+    "motivos_entrada": ["Recebimento de fornecedor"],
+    "motivos_saida": ["Avaria"],
     "escopo": ESCOPO,
 }
 SALDO = {

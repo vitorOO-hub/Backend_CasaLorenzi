@@ -622,6 +622,7 @@ def simular(
                 "pendente",
                 agora - timedelta(hours=rng.randint(2, 70)),
                 None,
+                None,
             )
         )
     equipe = equipes[LOJA_BASE]
@@ -636,6 +637,7 @@ def simular(
             "rejeitado",
             agora - timedelta(days=6),
             agora - timedelta(days=5),
+            "A divergência é de embalagem, não de saldo",
         )
     )
 
@@ -858,8 +860,8 @@ def gravar(conexao: psycopg.Connection, plano: Plano) -> None:
             """
             INSERT INTO ajuste_estoque (
                 id_loja, id_variacao, id_usuario_solicitante, id_usuario_decisor,
-                quantidade, motivo, status, solicitado_em, decidido_em)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                quantidade, motivo, status, solicitado_em, decidido_em, motivo_recusa)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             plano.ajustes,
         )

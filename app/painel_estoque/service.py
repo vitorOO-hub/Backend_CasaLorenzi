@@ -15,6 +15,8 @@ from app.painel_estoque import repositorio
 from app.painel_estoque.repositorio import FiltroMovimentacoes, FiltroSaldo
 
 PAPEIS_DO_ESTOQUE = (Papel.OPERADOR_ESTOQUE, Papel.GERENTE_LOJA, Papel.ADMIN)
+MOTIVOS_ENTRADA = ["Recebimento de fornecedor", "Devolução de cliente"]
+MOTIVOS_SAIDA = ["Venda em loja", "Avaria", "Peça para ajuste no ateliê"]
 
 
 def loja_do_escopo(usuario: UsuarioAtual, id_loja_pedida: UUID | None) -> UUID | None:
@@ -39,6 +41,8 @@ def montar_opcoes(
         "situacoes": [{"codigo": c, "nome": n} for c, n in repositorio.SITUACOES],
         "tipos": [{"codigo": c, "nome": n} for c, n in repositorio.GRUPOS],
         "pecas": repositorio.pecas(conexao, id_loja),
+        "motivos_entrada": MOTIVOS_ENTRADA,
+        "motivos_saida": MOTIVOS_SAIDA,
         "escopo": {
             "papel": usuario.papel.value if usuario.papel else "",
             "id_loja": usuario.id_loja,

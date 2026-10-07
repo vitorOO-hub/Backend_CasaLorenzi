@@ -41,6 +41,8 @@ class Opcoes(Saida):
     situacoes: list[Opcao]
     tipos: list[Opcao]
     pecas: list[PecaOpcao]
+    motivos_entrada: list[str]
+    motivos_saida: list[str]
     escopo: Escopo
 
 
@@ -108,3 +110,32 @@ class ItemMovimentacao(Saida):
 class Movimentacoes(Saida):
     total: int
     itens: list[ItemMovimentacao]
+
+
+class ItemAjuste(Saida):
+    id_ajuste: UUID
+    id_loja: UUID
+    loja_nome: str
+    id_variacao: UUID
+    sku: str
+    produto: str
+    cor: str
+    tamanho: str
+    # Diferenca a aplicar ao saldo (positiva soma, negativa tira).
+    quantidade: int
+    saldo_atual: int
+    motivo: str
+    # pendente | aprovado | rejeitado
+    status: str
+    motivo_recusa: str | None
+    solicitante: str
+    decisor: str | None
+    solicitado_em: datetime
+    decidido_em: datetime | None
+
+
+class Ajustes(Saida):
+    total: int
+    # Quantos ajustes pendentes existem no escopo, independente do filtro da lista.
+    pendentes: int
+    itens: list[ItemAjuste]

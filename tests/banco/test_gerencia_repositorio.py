@@ -88,10 +88,19 @@ class Cena:
         self.c.execute(
             """
             INSERT INTO ajuste_estoque (id_loja, id_variacao, id_usuario_solicitante,
-                                        id_usuario_decisor, quantidade, motivo, status, decidido_em)
-            VALUES (%s, %s, %s, %s, -1, 'Quebra', %s, %s)
+                                        id_usuario_decisor, quantidade, motivo, status, decidido_em,
+                                        motivo_recusa)
+            VALUES (%s, %s, %s, %s, -1, 'Quebra', %s, %s, %s)
             """,
-            (loja, variacao, solicitante.id, decisor.id if decisor else None, status, decidido_em),
+            (
+                loja,
+                variacao,
+                solicitante.id,
+                decisor.id if decisor else None,
+                status,
+                decidido_em,
+                "Sem justificativa" if status == "rejeitado" else None,
+            ),
         )
 
     def transferencia(self, *, tipo, status, origem, destino, variacao, solicitante):

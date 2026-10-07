@@ -475,3 +475,18 @@ responde 404, como se não existisse.
 Privacidade: o atendente recebe contato e chamados, mas **compras, total gasto e ticket médio vêm
 nulos e nem são calculados no banco**; documento (CPF) nunca é devolvido. A busca trata `%` e `_`
 como letras, e as respostas recusam campo que não foi combinado (`extra="forbid"`).
+
+### Estoque do painel: escrita (entrada, saida e ajustes)
+
+| Metodo | Rota | Quem | Para que serve |
+| --- | --- | --- | --- |
+| POST | `/movimentacoes` | operador, gerente, admin | Registra entrada ou saida (`sku`, `tipo`, `quantidade`, `motivo`) e ja mexe no saldo |
+| GET | `/ajustes?situacao=` | operador (so os seus), gerente, admin | Pedidos de ajuste de inventario e quantos estao pendentes |
+| POST | `/ajustes` | operador, gerente, admin | Pede ajuste: informa a quantidade contada; o saldo so muda na aprovacao |
+| POST | `/ajustes/{id}/aprovar` | gerente, admin | Aplica a diferenca ao saldo de agora e lanca a movimentacao de ajuste |
+| POST | `/ajustes/{id}/recusar` | gerente, admin | Recusa com motivo; o estoque nao muda |
+
+Quem opera e sempre o dono do token (o corpo nao aceita usuario, saldo nem status). A loja e a do
+token; o admin informa `id_loja`. A linha do estoque e travada antes de ler o saldo: duas saidas ao
+mesmo tempo se enfileiram e o saldo nunca fica negativo (409 "Saldo insuficiente"). Aprovar de novo
+um ajuste decidido da 409. A migration `20261007170000` cria `ajuste_estoque.motivo_recusa`.
