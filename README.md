@@ -375,3 +375,22 @@ trigger), `usuario.cidade` e a tabela `chamado_anexo` (com RLS).
 
 `python scripts/semear_chamados.py --aplicar` cria chamados de exemplo para ver a fila funcionando
 (só se a tabela estiver vazia; só para desenvolvimento).
+
+## Clientes do painel (atendente, gerente e admin)
+
+Rotas privadas em `/api/v1/painel/clientes`, com token e papel `atendente`, `gerente_loja` ou
+`admin` (independente de `AUTENTICACAO_OBRIGATORIA`):
+
+| Rota | O que faz |
+|---|---|
+| `GET /` | lista paginada; `busca` (nome, e-mail ou telefone), `secao` (`todos`, `com_aberto`, `meus`), `id_loja` (só admin) |
+| `GET /{id}` | ficha: contato, resumo, chamados do escopo e, só para gerente e admin, as compras |
+
+Seções da lista: **todos**, **com chamado em aberto** e **meus clientes** (os que têm chamado que o
+usuário assumiu). Quem vê quem: o admin vê todos os clientes; a equipe de loja vê os que têm pedido
+na loja ou chamado no escopo dela (a loja mais os chamados sem loja). Cliente fora do escopo
+responde 404, como se não existisse.
+
+Privacidade: o atendente recebe contato e chamados, mas **compras, total gasto e ticket médio vêm
+nulos e nem são calculados no banco**; documento (CPF) nunca é devolvido. A busca trata `%` e `_`
+como letras, e as respostas recusam campo que não foi combinado (`extra="forbid"`).
