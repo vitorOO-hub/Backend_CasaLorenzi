@@ -348,3 +348,30 @@ senhas. Quem já tem conta no Auth é pulado (sem a service role não há como l
 outra conta; para recuperar o acesso, use "Reset password" no painel do Supabase). Se o projeto
 exigir confirmação de e-mail, o script avisa: desligue "Confirm email" em Authentication > Providers
 > Email, ou confirme as contas no painel.
+
+## Chamados do painel (atendente, gerente e admin)
+
+Rotas em `/api/v1/painel/atendimentos`, sempre com token e papel `atendente`, `gerente_loja` ou
+`admin` (independente de `AUTENTICACAO_OBRIGATORIA`). O remetente, o papel e a loja vêm do token,
+nunca do corpo.
+
+| Rota | O que faz |
+|---|---|
+| `GET /opcoes` | status, canais, categorias, prioridades e lojas para os filtros |
+| `GET /resumo` | contadores: sem resposta, em andamento, prioridade alta, resolvidos, na fila, meus |
+| `GET /` | lista paginada; filtros `situacao`, `responsavel` (`fila`, `eu`, `todos`), `prioridade`, `canal`, `categoria`, `id_loja` |
+| `GET /{id}` | detalhe: cliente, pedido, peças, anexos, outros chamados e (só gerente/admin) compras |
+| `GET /{id}/mensagens` | conversa em ordem |
+| `POST /{id}/mensagens` | responder; quem responde primeiro assume o chamado e ele sai de "aberto" |
+| `POST /{id}/assumir` | assume; 409 se outra pessoa chegou antes |
+| `POST /{id}/resolver` | resolve; atendente só o que assumiu, gestão qualquer um |
+
+Escopo: atendente e gerente veem a própria loja **e os chamados sem loja**; o admin vê a rede e
+pode filtrar por loja. Chamado fora do escopo responde 404. As escritas travam a linha
+(`FOR UPDATE`): duas pessoas assumindo ao mesmo tempo resultam em um sucesso e um 409.
+
+Campos novos (revisão `20261007000600`): `atendimento.protocolo` (`AT-AAAA-NNNN`, gerado por
+trigger), `usuario.cidade` e a tabela `chamado_anexo` (com RLS).
+
+`python scripts/semear_chamados.py --aplicar` cria chamados de exemplo para ver a fila funcionando
+(só se a tabela estiver vazia; só para desenvolvimento).
