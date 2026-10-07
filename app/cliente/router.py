@@ -1,0 +1,158 @@
+"""Rotas da area do cliente.
+
+Estas rotas sempre usam o cliente do JWT. O navegador nunca informa `id_cliente`.
+"""
+
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Header, Query, status
+
+from app.cliente import service
+from app.cliente.schemas import (
+    ChamadoCliente,
+    ChamadoCriacao,
+    CheckoutCriacao,
+    DetalheChamadoCliente,
+    LojaCliente,
+    MensagemChamadoCliente,
+    MensagemChamadoCriacao,
+    OpcoesChamadoCliente,
+    PedidoCliente,
+)
+from app.core.db import ExecutarDep
+from app.core.papeis import UsuarioAtual
+from app.core.security import get_current_user
+
+router = APIRouter(prefix="/cliente", tags=["cliente"])
+
+UsuarioDep = Annotated[UsuarioAtual, Depends(get_current_user)]
+ChaveIdempotencia = Annotated[str | None, Header(alias="Idempotency-Key", max_length=160)]
+
+
+@router.get("/lojas", response_model=list[LojaCliente], summary="Lojas disponiveis")
+def listar_lojas(usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(lambda conexao: service.listar_lojas(conexao, usuario))
+
+
+@router.get("/pedidos", response_model=list[PedidoCliente], summary="Pedidos do cliente logado")
+def listar_pedidos(
+    usuario: UsuarioDep,
+    executar: ExecutarDep,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    return executar(
+        lambda conexao: service.listar_pedidos(conexao, usuario, limit=limit, offset=offset)
+    )
+
+
+@router.get(
+    "/pedidos/{id_pedido}",
+    response_model=PedidoCliente,
+    summary="Detalhe de um pedido do cliente logado",
+)
+def obter_pedido(id_pedido: UUID, usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(lambda conexao: service.obter_pedido(conexao, usuario, id_pedido))
+
+
+@router.get(
+    "/chamados/opcoes",
+    response_model=OpcoesChamadoCliente,
+    summary="Opcoes para chamados do cliente",
+)
+def opcoes_chamado(usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(lambda conexao: service.opcoes_chamado(conexao, usuario))
+
+
+@router.get(
+    "/chamados",
+    response_model=list[ChamadoCliente],
+    summary="Chamados do cliente logado",
+)
+def listar_chamados(
+    usuario: UsuarioDep,
+    executar: ExecutarDep,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    return executar(
+        lambda conexao: service.listar_chamados(conexao, usuario, limit=limit, offset=offset)
+    )
+
+
+@router.post(
+    "/chamados",
+    response_model=DetalheChamadoCliente,
+    status_code=status.HTTP_201_CREATED,
+    summary="Abrir chamado do cliente logado",
+)
+def criar_chamado(dados: ChamadoCriacao, usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(
+        lambda conexao: service.criar_chamado(conexao, usuario, dados.model_dump())
+    )
+
+
+@router.get(
+    "/chamados/{id_atendimento}",
+    response_model=DetalheChamadoCliente,
+    summary="Detalhe de um chamado do cliente logado",
+)
+def obter_chamado(id_atendimento: UUID, usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(lambda conexao: service.obter_chamado(conexao, usuario, id_atendimento))
+
+
+@router.get(
+    "/chamados/{id_atendimento}/mensagens",
+    response_model=list[MensagemChamadoCliente],
+    summary="Conversa de um chamado do cliente logado",
+)
+def listar_mensagens_chamado(id_atendimento: UUID, usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(
+        lambda conexao: service.listar_mensagens_chamado(conexao, usuario, id_atendimento)
+    )
+
+
+@router.post(
+    "/chamados/{id_atendimento}/mensagens",
+    response_model=MensagemChamadoCliente,
+    status_code=status.HTTP_201_CREATED,
+    summary="Enviar mensagem em um chamado do cliente logado",
+)
+def enviar_mensagem_chamado(
+    id_atendimento: UUID,
+    dados: MensagemChamadoCriacao,
+    usuario: UsuarioDep,
+    executar: ExecutarDep,
+):
+    return executar(
+        lambda conexao: service.enviar_mensagem_chamado(
+            conexao,
+            usuario,
+            id_atendimento,
+            dados.texto,
+        )
+    )
+
+
+@router.post(
+    "/pedidos",
+    response_model=PedidoCliente,
+    status_code=status.HTTP_201_CREATED,
+    summary="Fechar pedido do cliente logado",
+)
+def criar_pedido(
+    dados: CheckoutCriacao,
+    usuario: UsuarioDep,
+    executar: ExecutarDep,
+    chave_idempotencia: ChaveIdempotencia = None,
+):
+    payload = dados.model_dump()
+    return executar(
+        lambda conexao: service.criar_checkout(
+            conexao,
+            usuario,
+            payload,
+            chave_idempotencia=chave_idempotencia,
+        )
+    )
