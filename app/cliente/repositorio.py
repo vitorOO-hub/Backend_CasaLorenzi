@@ -60,6 +60,56 @@ def listar_lojas(conexao) -> list[dict[str, object]]:
     return [serializar_linha(linha) for linha in linhas]
 
 
+def perfil_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, object]:
+    linha = conexao.execute(
+        text(
+            """
+            WITH resumo_pedidos AS (
+                SELECT
+                    count(*)::int AS total_pedidos,
+                    COALESCE(sum(valor_total), 0)::numeric(12,2) AS valor_total_pedidos
+                FROM pedido
+                WHERE id_cliente = CAST(:cliente AS uuid)
+            ),
+            resumo_chamados AS (
+                SELECT count(*)::int AS total_chamados
+                FROM atendimento
+                WHERE id_cliente = CAST(:cliente AS uuid)
+            ),
+            loja_preferida AS (
+                SELECT l.id_loja, l.nome
+                FROM pedido p
+                JOIN loja l ON l.id_loja = p.id_loja
+                WHERE p.id_cliente = CAST(:cliente AS uuid)
+                ORDER BY p.criado_em DESC, p.id_pedido DESC
+                LIMIT 1
+            )
+            SELECT
+                u.id_usuario AS id_cliente,
+                u.nome,
+                u.email,
+                u.telefone,
+                u.documento,
+                u.criado_em AS cliente_desde,
+                rp.total_pedidos,
+                rp.valor_total_pedidos,
+                rc.total_chamados,
+                lp.id_loja AS id_loja_preferida,
+                lp.nome AS loja_preferida
+            FROM usuario u
+            CROSS JOIN resumo_pedidos rp
+            CROSS JOIN resumo_chamados rc
+            LEFT JOIN loja_preferida lp ON TRUE
+            WHERE u.id_usuario = CAST(:cliente AS uuid)
+            """
+        ),
+        {"cliente": str(id_cliente)},
+    ).mappings().first()
+    if not linha:
+        raise CadastroClienteNaoEncontrado
+    return dict(linha)
+
+
 def _obter_id_por_codigo(conexao, tabela: str, coluna_id: str, codigo: str) -> object:
     linha = buscar_um(
         conexao,
@@ -274,6 +324,7 @@ def _contexto_pedido_item(
     conexao: Connection,
     id_cliente: UUID,
     *,
+    id_loja: UUID | None,
     id_pedido: UUID | None,
     id_item_pedido: UUID | None,
 ) -> dict[str, object]:
@@ -313,7 +364,10 @@ def _contexto_pedido_item(
             raise PedidoClienteNaoEncontrado
         return linhas[0]
 
-    return {"id_pedido": None, "id_loja": None, "numero_pedido": None, "id_item_pedido": None}
+    if id_loja is not None:
+        _garantir_loja_ativa(conexao, id_loja)
+
+    return {"id_pedido": None, "id_loja": id_loja, "numero_pedido": None, "id_item_pedido": None}
 
 
 def _linha_chamado(linha: dict[str, object]) -> dict[str, object]:
@@ -493,6 +547,7 @@ def criar_chamado_cliente(
         contexto = _contexto_pedido_item(
             conexao,
             id_cliente,
+            id_loja=dados.get("id_loja"),
             id_pedido=dados.get("id_pedido"),
             id_item_pedido=dados.get("id_item_pedido"),
         )
@@ -703,7 +758,24 @@ def criar_checkout(
         )
         frete = _dinheiro(dados["frete"])
         numero = f"PD-{datetime.now(UTC):%Y%m%d}-{uuid4().hex[:8].upper()}"
-        observacao = f"Checkout pelo portal. Entrega: {dados['entrega']}. Frete: R$ {frete}."
+        partes_observacao = [
+            "Checkout pelo portal.",
+            f"Entrega: {dados['entrega']}.",
+            f"Frete: R$ {frete}.",
+        ]
+        endereco = dados.get("endereco_entrega")
+        if isinstance(endereco, dict):
+            partes_endereco = [
+                str(endereco.get("rua") or "").strip(),
+                str(endereco.get("numero") or "").strip(),
+                str(endereco.get("complemento") or "").strip(),
+                str(endereco.get("cep") or "").strip(),
+                str(endereco.get("uf") or "").strip().upper(),
+            ]
+            texto_endereco = ", ".join(parte for parte in partes_endereco if parte)
+            if texto_endereco:
+                partes_observacao.append(f"Endereco de entrega: {texto_endereco}.")
+        observacao = " ".join(partes_observacao)
 
         pedido = executar_sql(
             conexao,

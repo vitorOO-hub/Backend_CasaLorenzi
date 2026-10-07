@@ -18,6 +18,7 @@ from app.cliente.schemas import (
     MensagemChamadoCliente,
     MensagemChamadoCriacao,
     OpcoesChamadoCliente,
+    PerfilCliente,
     PedidoCliente,
 )
 from app.core.db import ExecutarDep
@@ -33,6 +34,11 @@ ChaveIdempotencia = Annotated[str | None, Header(alias="Idempotency-Key", max_le
 @router.get("/lojas", response_model=list[LojaCliente], summary="Lojas disponiveis")
 def listar_lojas(usuario: UsuarioDep, executar: ExecutarDep):
     return executar(lambda conexao: service.listar_lojas(conexao, usuario))
+
+
+@router.get("/perfil", response_model=PerfilCliente, summary="Perfil do cliente logado")
+def obter_perfil(usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(lambda conexao: service.obter_perfil(conexao, usuario))
 
 
 @router.get("/pedidos", response_model=list[PedidoCliente], summary="Pedidos do cliente logado")
