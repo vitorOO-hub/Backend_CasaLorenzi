@@ -247,3 +247,49 @@ pelo Plano 2 (revisão Alembic de RLS e claims).
   acesso até ser banido no Supabase Auth.
 - `atendente`, `operador_estoque` e `gerente_loja` precisam de `loja_id` no token. Um atendente
   cadastrado sem loja recebe 401 em todas as rotas com a flag ligada.
+
+## Banco: RLS, policies e hook de claims
+
+As revisões `20261007000000` a `20261007000400` em `alembic/versions/` adicionam, sobre o schema
+existente: `atendimento.id_loja` (preenchida pelo pedido), RLS ligado e forçado em todas as tabelas,
+privilégios mínimos para `anon` e `authenticated`, funções auxiliares, o hook de claims
+(`public.hook_claims_token`) e as policies de leitura por papel e por loja.
+
+Regras: o front só lê o catálogo público e os dados do próprio usuário ou da própria loja, e só
+insere direto `mensagem` e `avaliacao_atendimento`. Toda outra escrita passa pela API (que conecta
+com credencial privilegiada e ignora RLS).
+
+### Testar localmente (Postgres de teste, não o Supabase)
+
+Pré-requisito, uma vez: PostgreSQL 15 ou superior instalado e rodando em `localhost`, um banco
+dedicado `CREATE DATABASE lorenzi_teste;` e a variável `TEST_DATABASE_URL` (no ambiente ou numa
+linha do `.env`, que o git ignora):
+
+```text
+TEST_DATABASE_URL=postgresql://postgres:<senha>@127.0.0.1:5432/lorenzi_teste
+```
+
+```bash
+pytest tests/banco -q
+```
+
+Os testes **recriam o schema `public` e o `auth`** desse banco a cada execução. Por isso a variável
+só é aceita se o host for `localhost`/`127.0.0.1` **e** o nome do banco terminar em `_teste`;
+qualquer outro destino (como o Supabase remoto) faz os testes falharem de propósito. Sem a
+variável, os testes de banco são pulados.
+
+### Aplicar no banco do Supabase (passo manual, com cuidado)
+
+O banco remoto é compartilhado. Antes de rodar `alembic upgrade head` nele:
+
+1. Avise quem mais usa o banco: `authenticated` deixa de escrever direto nas tabelas (só
+   `mensagem` e `avaliacao_atendimento`) e passa a enxergar só o que as policies liberam.
+   A API não é afetada.
+2. Rode com a `DATABASE_URL` da conexão **direta** (porta 5432), não a do pooler.
+3. Ative o hook em Authentication → Hooks → Custom Access Token → função
+   `public.hook_claims_token`. Sem isso, os tokens de equipe saem sem `papel`.
+4. `atendente`, `operador_estoque` e `gerente_loja` precisam de `usuario.id_loja` preenchida; sem
+   loja, o token sai sem `loja_id` e a API responde 401.
+
+Para desfazer: `alembic downgrade 20261006213000` (restaura RLS sem `FORCE` e os privilégios
+anteriores).
