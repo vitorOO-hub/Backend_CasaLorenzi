@@ -1,7 +1,7 @@
 """cria fluxo de transferencias e reposicoes de estoque
 
 Revision ID: 20261007103000
-Revises: 20261006213000
+Revises: 20261007000600
 Create Date: 2026-10-07 10:30:00
 """
 
@@ -11,7 +11,7 @@ from alembic import op
 
 
 revision: str = "20261007103000"
-down_revision: str | Sequence[str] | None = "20261006213000"
+down_revision: str | Sequence[str] | None = "20261007000600"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

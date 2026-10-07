@@ -26,6 +26,22 @@ def _buscar_id_opcao(conexao, *, tabela: str, coluna_id: str, codigo: str) -> ob
     return linha[coluna_id]
 
 
+def _buscar_id_usuario_por_auth(conexao, auth_user_id: int | UUID) -> object:
+    linha = buscar_um(
+        conexao,
+        """
+        SELECT id_usuario
+        FROM usuario
+        WHERE auth_user_id = %s
+          AND ativo
+        """,
+        (auth_user_id,),
+    )
+    if not linha:
+        raise TransferenciaInvalida
+    return linha["id_usuario"]
+
+
 def listar_transferencias(
     conexao,
     *,
@@ -100,7 +116,7 @@ def solicitar_transferencia(
     id_loja_origem: int | UUID,
     id_loja_destino: int | UUID,
     id_variacao: int | UUID,
-    id_usuario_solicitante: int | UUID,
+    auth_user_id_solicitante: int | UUID,
     quantidade: int,
     observacao: str | None,
 ) -> dict[str, object]:
@@ -112,7 +128,7 @@ def solicitar_transferencia(
         id_loja_origem=id_loja_origem,
         id_loja_destino=id_loja_destino,
         id_variacao=id_variacao,
-        id_usuario_solicitante=id_usuario_solicitante,
+        auth_user_id_solicitante=auth_user_id_solicitante,
         quantidade=quantidade,
         observacao=observacao,
     )
@@ -123,7 +139,7 @@ def solicitar_reposicao(
     *,
     id_loja_destino: int | UUID,
     id_variacao: int | UUID,
-    id_usuario_solicitante: int | UUID,
+    auth_user_id_solicitante: int | UUID,
     quantidade: int,
     observacao: str | None,
 ) -> dict[str, object]:
@@ -133,7 +149,7 @@ def solicitar_reposicao(
         id_loja_origem=None,
         id_loja_destino=id_loja_destino,
         id_variacao=id_variacao,
-        id_usuario_solicitante=id_usuario_solicitante,
+        auth_user_id_solicitante=auth_user_id_solicitante,
         quantidade=quantidade,
         observacao=observacao,
     )
@@ -146,7 +162,7 @@ def _criar_solicitacao(
     id_loja_origem: int | UUID | None,
     id_loja_destino: int | UUID,
     id_variacao: int | UUID,
-    id_usuario_solicitante: int | UUID,
+    auth_user_id_solicitante: int | UUID,
     quantidade: int,
     observacao: str | None,
 ) -> dict[str, object]:
@@ -162,6 +178,7 @@ def _criar_solicitacao(
         coluna_id="id_status_transferencia_estoque",
         codigo="solicitada",
     )
+    id_usuario_solicitante = _buscar_id_usuario_por_auth(conexao, auth_user_id_solicitante)
     linha = executar_sql(
         conexao,
         """
@@ -198,7 +215,7 @@ def aceitar_transferencia(
     *,
     id_transferencia: int | UUID,
     id_loja_responsavel: int | UUID,
-    id_usuario_responsavel: int | UUID,
+    auth_user_id_responsavel: int | UUID,
 ) -> dict[str, object]:
     id_status_aceita = _buscar_id_opcao(
         conexao,
@@ -212,6 +229,7 @@ def aceitar_transferencia(
         coluna_id="id_status_transferencia_estoque",
         codigo="solicitada",
     )
+    id_usuario_responsavel = _buscar_id_usuario_por_auth(conexao, auth_user_id_responsavel)
     linha = executar_sql(
         conexao,
         """

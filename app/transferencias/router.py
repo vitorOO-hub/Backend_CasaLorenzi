@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.exc import IntegrityError
 
 from app.core.db import ExecutarDep, eh_violacao_chave_estrangeira, eh_violacao_check
-from app.core.security import UsuarioAtual, requer_papeis
+from app.core.papeis import Papel, UsuarioAtual
+from app.core.security import requer_papel
 from app.transferencias import service
 from app.transferencias.erros import OperadorSemLoja, TransferenciaInvalida
 from app.transferencias.schemas import (
@@ -15,7 +16,7 @@ from app.transferencias.schemas import (
     TransferenciaLeitura,
 )
 
-OperadorEstoque = Annotated[UsuarioAtual, Depends(requer_papeis("operador_estoque"))]
+OperadorEstoque = Annotated[UsuarioAtual, Depends(requer_papel(Papel.OPERADOR_ESTOQUE))]
 
 router = APIRouter(prefix="/transferencias-estoque", tags=["transferencias-estoque"])
 
@@ -23,7 +24,7 @@ Pagina = Query(default=20, ge=1, le=100)
 Deslocamento = Query(default=0, ge=0)
 
 
-def exigir_loja(usuario: UsuarioAtual) -> str:
+def exigir_loja(usuario: UsuarioAtual):
     if not usuario.id_loja:
         raise OperadorSemLoja
     return usuario.id_loja
@@ -66,7 +67,7 @@ def solicitar(
             lambda conexao: service.solicitar_transferencia(
                 conexao,
                 id_loja_operador=id_loja,
-                id_usuario_solicitante=usuario.id_usuario,
+                auth_user_id_solicitante=usuario.id_auth,
                 dados=dados.model_dump(),
             )
         )
@@ -92,7 +93,7 @@ def solicitar_reposicao(
             lambda conexao: service.solicitar_reposicao(
                 conexao,
                 id_loja_operador=id_loja,
-                id_usuario_solicitante=usuario.id_usuario,
+                auth_user_id_solicitante=usuario.id_auth,
                 dados=dados.model_dump(),
             )
         )
@@ -110,6 +111,6 @@ def aceitar(id_transferencia: str, usuario: OperadorEstoque, executar: ExecutarD
             conexao,
             id_transferencia=id_transferencia,
             id_loja_operador=id_loja,
-            id_usuario_responsavel=usuario.id_usuario,
+            auth_user_id_responsavel=usuario.id_auth,
         )
     )

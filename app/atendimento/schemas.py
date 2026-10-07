@@ -13,6 +13,7 @@ class SaidaFlexivel(BaseModel):
 
 class AtendimentoCriacao(EntradaRestrita):
     id_cliente: str | int
+    assunto: str | None = Field(default=None, min_length=1, max_length=200)
     id_usuario_responsavel: str | int | None = None
     id_pedido: str | int | None = None
     id_canal_atendimento: str | int
@@ -22,6 +23,7 @@ class AtendimentoCriacao(EntradaRestrita):
 
 
 class AtendimentoAtualizacao(EntradaRestrita):
+    assunto: str | None = Field(default=None, min_length=1, max_length=200)
     id_usuario_responsavel: str | int | None = None
     id_pedido: str | int | None = None
     id_canal_atendimento: str | int | None = None

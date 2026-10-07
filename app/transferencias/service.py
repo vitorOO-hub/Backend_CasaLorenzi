@@ -5,7 +5,7 @@ from app.transferencias import repositorio
 from app.transferencias.erros import OperadorSemLoja
 
 
-def _loja_do_operador(id_loja: str | None):
+def _loja_do_operador(id_loja: object | None):
     if not id_loja:
         raise OperadorSemLoja
     return normalizar_id(id_loja)
@@ -35,8 +35,8 @@ def obter_transferencia(conexao, id_transferencia: str):
 def solicitar_transferencia(
     conexao,
     *,
-    id_loja_operador: str | None,
-    id_usuario_solicitante: str,
+    id_loja_operador: object | None,
+    auth_user_id_solicitante: object,
     dados: dict[str, object],
 ):
     return repositorio.solicitar_transferencia(
@@ -44,7 +44,7 @@ def solicitar_transferencia(
         id_loja_origem=normalizar_id(dados["id_loja_origem"]),
         id_loja_destino=_loja_do_operador(id_loja_operador),
         id_variacao=normalizar_id(dados["id_variacao"]),
-        id_usuario_solicitante=normalizar_id(id_usuario_solicitante),
+        auth_user_id_solicitante=normalizar_id(auth_user_id_solicitante),
         quantidade=int(dados["quantidade"]),
         observacao=dados.get("observacao"),
     )
@@ -53,15 +53,15 @@ def solicitar_transferencia(
 def solicitar_reposicao(
     conexao,
     *,
-    id_loja_operador: str | None,
-    id_usuario_solicitante: str,
+    id_loja_operador: object | None,
+    auth_user_id_solicitante: object,
     dados: dict[str, object],
 ):
     return repositorio.solicitar_reposicao(
         conexao,
         id_loja_destino=_loja_do_operador(id_loja_operador),
         id_variacao=normalizar_id(dados["id_variacao"]),
-        id_usuario_solicitante=normalizar_id(id_usuario_solicitante),
+        auth_user_id_solicitante=normalizar_id(auth_user_id_solicitante),
         quantidade=int(dados["quantidade"]),
         observacao=dados.get("observacao"),
     )
@@ -71,12 +71,12 @@ def aceitar_transferencia(
     conexao,
     *,
     id_transferencia: str,
-    id_loja_operador: str | None,
-    id_usuario_responsavel: str,
+    id_loja_operador: object | None,
+    auth_user_id_responsavel: object,
 ):
     return repositorio.aceitar_transferencia(
         conexao,
         id_transferencia=normalizar_id(id_transferencia),
         id_loja_responsavel=_loja_do_operador(id_loja_operador),
-        id_usuario_responsavel=normalizar_id(id_usuario_responsavel),
+        auth_user_id_responsavel=normalizar_id(auth_user_id_responsavel),
     )

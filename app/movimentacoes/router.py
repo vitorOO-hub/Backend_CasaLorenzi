@@ -1,18 +1,14 @@
 """Rotas da tabela movimentacao_estoque."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
 from app.core.db import ExecutarDep
-from app.core.security import requer_papeis
 from app.movimentacoes import service
 from app.movimentacoes.schemas import MovimentacaoLeitura
-
-PermissaoEstoque = Depends(requer_papeis("operador_estoque"))
 
 router = APIRouter(
     prefix="/movimentacoes-estoque",
     tags=["movimentacoes-estoque"],
-    dependencies=[PermissaoEstoque],
 )
 
 Pagina = Query(default=20, ge=1, le=100)

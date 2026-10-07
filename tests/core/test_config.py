@@ -21,8 +21,6 @@ def criar(**valores) -> Settings:
 def test_valores_padrao():
     settings = criar()
     assert settings.supabase_url is None
-    assert settings.supabase_issuer is None
-    assert settings.supabase_jwks_url is None
     assert settings.cors_origins == []
 
 
@@ -33,8 +31,6 @@ def test_le_variaveis_de_ambiente(monkeypatch):
     settings = Settings(_env_file=None)
     assert settings.database_url.get_secret_value() == DATABASE_URL_TESTE
     assert settings.supabase_url == "https://abc.supabase.co"
-    assert settings.supabase_issuer == "https://abc.supabase.co/auth/v1"
-    assert settings.supabase_jwks_url == "https://abc.supabase.co/auth/v1/.well-known/jwks.json"
     assert settings.cors_origins == ["https://casa-lorenzi.vercel.app", "http://localhost:5173"]
 
 

@@ -1,10 +1,12 @@
 """Testes das rotas de transferencia e reposicao de estoque sem banco real."""
 
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 
 from app.core.db import get_executar
+from app.core.papeis import Papel
 from app.core.security import get_current_user
 from app.transferencias.erros import TransferenciaNaoEncontrada
 
@@ -15,9 +17,9 @@ LINHA = {"id_transferencia_estoque": ID_UUID, "quantidade": 2}
 @pytest.fixture(autouse=True)
 def liberar_operador_de_estoque(app):
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-        id_usuario=ID_UUID,
-        id_loja=ID_UUID,
-        tipo_usuario_codigo="operador_estoque",
+        id_auth=UUID(ID_UUID),
+        id_loja=UUID(ID_UUID),
+        papel=Papel.OPERADOR_ESTOQUE,
     )
 
 
@@ -94,9 +96,9 @@ def test_quantidade_invalida_e_rejeitada_antes_do_banco(cliente, caminho, corpo)
 
 def test_operador_sem_loja_responde_409(app, cliente):
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-        id_usuario=ID_UUID,
+        id_auth=UUID(ID_UUID),
         id_loja=None,
-        tipo_usuario_codigo="operador_estoque",
+        papel=Papel.OPERADOR_ESTOQUE,
     )
     resposta = cliente.post(
         "/transferencias-estoque/reposicoes",

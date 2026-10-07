@@ -88,18 +88,35 @@ def _buscar_tipo_movimentacao(conexao, codigo: str) -> object:
     return linha["id_tipo_movimentacao_estoque"]
 
 
+def _buscar_id_usuario_por_auth(conexao, auth_user_id: int | UUID) -> object:
+    linha = buscar_um(
+        conexao,
+        """
+        SELECT id_usuario
+        FROM usuario
+        WHERE auth_user_id = %s
+          AND ativo
+        """,
+        (auth_user_id,),
+    )
+    if not linha:
+        raise RegistroNaoEncontrado
+    return linha["id_usuario"]
+
+
 def _registrar_movimentacao(
     conexao,
     *,
     estoque: dict[str, object],
     codigo_tipo: str,
-    id_usuario_responsavel: int | UUID,
+    auth_user_id_responsavel: int | UUID,
     quantidade: int,
     quantidade_anterior: int,
     quantidade_posterior: int,
     motivo: str | None,
 ) -> None:
     id_tipo = _buscar_tipo_movimentacao(conexao, codigo_tipo)
+    id_usuario_responsavel = _buscar_id_usuario_por_auth(conexao, auth_user_id_responsavel)
     executar_sql(
         conexao,
         """
@@ -154,7 +171,7 @@ def _registrar_alteracao_com_historico(
     conexao,
     *,
     id_estoque: int | UUID,
-    id_usuario_responsavel: int | UUID,
+    auth_user_id_responsavel: int | UUID,
     quantidade: int,
     codigo_tipo: str,
     motivo: str | None,
@@ -183,7 +200,7 @@ def _registrar_alteracao_com_historico(
         conexao,
         estoque=estoque,
         codigo_tipo=codigo_tipo,
-        id_usuario_responsavel=id_usuario_responsavel,
+        auth_user_id_responsavel=auth_user_id_responsavel,
         quantidade=quantidade,
         quantidade_anterior=quantidade_anterior,
         quantidade_posterior=quantidade_posterior,
@@ -256,14 +273,14 @@ def registrar_entrada_com_historico(
     conexao,
     *,
     id_estoque: int | UUID,
-    id_usuario_responsavel: int | UUID,
+    auth_user_id_responsavel: int | UUID,
     quantidade: int,
     motivo: str | None = None,
 ) -> dict[str, object]:
     return _registrar_alteracao_com_historico(
         conexao,
         id_estoque=id_estoque,
-        id_usuario_responsavel=id_usuario_responsavel,
+        auth_user_id_responsavel=auth_user_id_responsavel,
         quantidade=quantidade,
         codigo_tipo="entrada",
         motivo=motivo,
@@ -318,14 +335,14 @@ def registrar_saida_com_historico(
     conexao,
     *,
     id_estoque: int | UUID,
-    id_usuario_responsavel: int | UUID,
+    auth_user_id_responsavel: int | UUID,
     quantidade: int,
     motivo: str | None = None,
 ) -> dict[str, object]:
     return _registrar_alteracao_com_historico(
         conexao,
         id_estoque=id_estoque,
-        id_usuario_responsavel=id_usuario_responsavel,
+        auth_user_id_responsavel=auth_user_id_responsavel,
         quantidade=quantidade,
         codigo_tipo="saida",
         motivo=motivo,
@@ -360,7 +377,7 @@ def ajustar_inventario_com_historico(
     conexao,
     *,
     id_estoque: int | UUID,
-    id_usuario_responsavel: int | UUID,
+    auth_user_id_responsavel: int | UUID,
     quantidade_real: int,
     motivo: str | None = None,
 ) -> dict[str, object]:
@@ -386,7 +403,7 @@ def ajustar_inventario_com_historico(
         conexao,
         estoque=estoque,
         codigo_tipo=codigo_tipo,
-        id_usuario_responsavel=id_usuario_responsavel,
+        auth_user_id_responsavel=auth_user_id_responsavel,
         quantidade=quantidade_movimentada,
         quantidade_anterior=quantidade_anterior,
         quantidade_posterior=quantidade_real,

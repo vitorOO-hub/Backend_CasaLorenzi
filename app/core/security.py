@@ -1,160 +1,135 @@
-"""Autenticacao via Supabase Auth e autorizacao por perfil de usuario."""
+"""Validacao do JWT do Supabase e controle de acesso por papel (CLAUDE.md, secoes 3 e 12.7)."""
 
-from collections.abc import Callable
-from functools import lru_cache
 from typing import Annotated
 from uuid import UUID
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jwt import PyJWKClient
-from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError, PyJWTError
-from pydantic import BaseModel, ConfigDict
 
-from app.core.config import Settings, get_settings
-from app.core.db import ExecutarDep
-from app.core.repositorio import buscar_um, serializar_linha
+from app.core.erros_auth import AutenticacaoIndisponivel, NaoAutenticado, SemPermissao
+from app.core.jwks import ProvedorChaves
+from app.core.papeis import PAPEIS_COM_LOJA, Papel, UsuarioAtual
 
 ALGORITMO = "ES256"
-AUDIENCIA = "authenticated"
-TAMANHO_MAXIMO_TOKEN = 8 * 1024
-
-MENSAGEM_NAO_AUTENTICADO = "Token invalido ou expirado"
-MENSAGEM_SEM_PERMISSAO = "Sem permissao para esta acao"
-MENSAGEM_AUTH_INDISPONIVEL = "Servico de autenticacao indisponivel"
-
-esquema_bearer = HTTPBearer(
-    auto_error=False,
-    description="Access token emitido pelo Supabase Auth",
-)
+AUDIENCE = "authenticated"
+TAMANHO_MAXIMO_TOKEN = 8192
+CLAIMS_OBRIGATORIAS = ["exp", "sub", "aud", "iss"]
+# Tolerancia de relogio entre o Supabase e a API, em segundos.
+LEEWAY_SEGUNDOS = 30
 
 
-class UsuarioAtual(BaseModel):
-    model_config = ConfigDict(frozen=True)
+def decodificar_token(token: str, *, provedor: ProvedorChaves, issuer: str) -> UsuarioAtual:
+    """Valida assinatura, expiracao, audience e issuer e devolve o usuario das claims.
 
-    id_usuario: str
-    auth_user_id: str
-    nome: str
-    email: str
-    tipo_usuario_codigo: str
-    tipo_usuario: str
-    id_loja: str | None = None
-
-
-def _erro_nao_autenticado() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=MENSAGEM_NAO_AUTENTICADO,
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-
-def _erro_sem_permissao() -> HTTPException:
-    return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=MENSAGEM_SEM_PERMISSAO)
-
-
-def _erro_auth_indisponivel() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail=MENSAGEM_AUTH_INDISPONIVEL,
-    )
-
-
-@lru_cache
-def _cliente_jwks(url: str) -> PyJWKClient:
-    return PyJWKClient(url)
-
-
-def _validar_claims(token: str, settings: Settings) -> dict[str, object]:
-    if not token or len(token) > TAMANHO_MAXIMO_TOKEN or not token.isascii():
-        raise _erro_nao_autenticado()
-    if not settings.supabase_issuer or not settings.supabase_jwks_url:
-        raise _erro_auth_indisponivel()
-
+    Qualquer falha de validacao vira NaoAutenticado, sem dizer o motivo ao chamador.
+    """
+    if len(token) > TAMANHO_MAXIMO_TOKEN:
+        raise NaoAutenticado()
     try:
         cabecalho = jwt.get_unverified_header(token)
-    except (PyJWTError, ValueError) as erro:
-        raise _erro_nao_autenticado() from erro
-
-    if cabecalho.get("alg") != ALGORITMO:
-        raise _erro_nao_autenticado()
-
-    try:
-        chave = _cliente_jwks(settings.supabase_jwks_url).get_signing_key_from_jwt(token).key
-    except PyJWKClientConnectionError as erro:
-        raise _erro_auth_indisponivel() from erro
-    except PyJWKClientError as erro:
-        raise _erro_nao_autenticado() from erro
-
-    try:
+        if cabecalho.get("alg") != ALGORITMO:
+            raise NaoAutenticado()
+        chave = provedor.obter_chave(cabecalho.get("kid"))
         claims = jwt.decode(
             token,
             chave,
             algorithms=[ALGORITMO],
-            audience=AUDIENCIA,
-            issuer=settings.supabase_issuer,
-            options={"require": ["exp", "iat", "sub", "aud", "iss"]},
+            audience=AUDIENCE,
+            issuer=issuer,
+            leeway=LEEWAY_SEGUNDOS,
+            options={"require": CLAIMS_OBRIGATORIAS},
         )
-    except (PyJWTError, ValueError) as erro:
-        raise _erro_nao_autenticado() from erro
-
-    if claims.get("role") != AUDIENCIA or claims.get("is_anonymous") is True:
-        raise _erro_nao_autenticado()
-    return claims
+    except jwt.PyJWTError as erro:
+        raise NaoAutenticado() from erro
+    return _usuario_das_claims(claims)
 
 
-def _buscar_usuario_atual(executar: ExecutarDep, auth_user_id: UUID) -> UsuarioAtual:
-    def operacao(conexao):
-        linha = buscar_um(
-            conexao,
-            """
-            SELECT
-                u.id_usuario,
-                u.auth_user_id,
-                u.nome,
-                u.email,
-                u.id_loja,
-                t.codigo AS tipo_usuario_codigo,
-                t.nome AS tipo_usuario
-            FROM usuario u
-            JOIN tipo_usuario t ON t.id_tipo_usuario = u.id_tipo_usuario
-            WHERE u.auth_user_id = %s
-              AND u.ativo
-              AND t.ativo
-            """,
-            (auth_user_id,),
-        )
-        return serializar_linha(linha) if linha else None
-
-    dados = executar(operacao)
-    if not dados:
-        raise _erro_nao_autenticado()
-    return UsuarioAtual(**dados)
-
-
-def get_current_user(
-    credenciais: Annotated[HTTPAuthorizationCredentials | None, Depends(esquema_bearer)],
-    settings: Annotated[Settings, Depends(get_settings)],
-    executar: ExecutarDep,
-) -> UsuarioAtual:
-    if credenciais is None or credenciais.scheme.lower() != "bearer":
-        raise _erro_nao_autenticado()
-
-    claims = _validar_claims(credenciais.credentials, settings)
+def _usuario_das_claims(claims: dict) -> UsuarioAtual:
+    if claims.get("is_anonymous") is True or claims.get("role") != "authenticated":
+        raise NaoAutenticado()
     try:
-        auth_user_id = UUID(str(claims["sub"]))
-    except (KeyError, ValueError) as erro:
-        raise _erro_nao_autenticado() from erro
-    return _buscar_usuario_atual(executar, auth_user_id)
+        id_auth = UUID(str(claims["sub"]))
+        papel_bruto = claims.get("papel")
+        papel = Papel(papel_bruto) if papel_bruto is not None else None
+        loja_bruta = claims.get("loja_id")
+        id_loja = UUID(str(loja_bruta)) if loja_bruta is not None else None
+    except (ValueError, TypeError, KeyError) as erro:
+        raise NaoAutenticado() from erro
+
+    # Papel de loja exige loja; admin e cliente nao podem ter loja.
+    if (papel in PAPEIS_COM_LOJA) != (id_loja is not None):
+        raise NaoAutenticado()
+    return UsuarioAtual(id_auth=id_auth, papel=papel, id_loja=id_loja)
 
 
-def requer_papeis(*codigos_permitidos: str) -> Callable[[UsuarioAtual], UsuarioAtual]:
-    permitidos = set(codigos_permitidos)
+_esquema_bearer = HTTPBearer(auto_error=False, description="JWT do Supabase Auth")
+CredenciaisDep = Annotated[HTTPAuthorizationCredentials | None, Depends(_esquema_bearer)]
+
+
+def _provedor(request: Request) -> ProvedorChaves:
+    provedor = getattr(request.app.state, "provedor_chaves", None)
+    if provedor is None:
+        provedor = ProvedorChaves(
+            f"{request.app.state.settings.supabase_url}/auth/v1/.well-known/jwks.json"
+        )
+        request.app.state.provedor_chaves = provedor
+    return provedor
+
+
+def _autenticar(
+    request: Request,
+    credenciais: HTTPAuthorizationCredentials | None,
+) -> UsuarioAtual:
+    supabase_url = request.app.state.settings.supabase_url
+    if not supabase_url:
+        raise AutenticacaoIndisponivel()
+    if credenciais is None:
+        raise NaoAutenticado()
+    return decodificar_token(
+        credenciais.credentials,
+        provedor=_provedor(request),
+        issuer=f"{supabase_url}/auth/v1",
+    )
+
+
+def get_current_user(request: Request, credenciais: CredenciaisDep) -> UsuarioAtual:
+    """Dependencia: o usuario do token, ou 401 (ou 503 se a autenticacao estiver indisponivel)."""
+    return _autenticar(request, credenciais)
+
+
+def requer_papel(*papeis: Papel):
+    """Fabrica de dependencia: exige um dos papeis e devolve o usuario (403 se nao tiver)."""
+    permitidos = frozenset(papeis)
 
     def dependencia(usuario: Annotated[UsuarioAtual, Depends(get_current_user)]) -> UsuarioAtual:
-        if usuario.tipo_usuario_codigo not in permitidos:
-            raise _erro_sem_permissao()
+        if usuario.papel not in permitidos:
+            raise SemPermissao()
         return usuario
+
+    return dependencia
+
+
+def garantir_escopo_de_loja(usuario: UsuarioAtual, id_loja: UUID) -> None:
+    """Admin acessa qualquer loja; os demais so a propria (CLAUDE.md, secao 7)."""
+    if not usuario.pode_acessar_loja(id_loja):
+        raise SemPermissao()
+
+
+def trava(*papeis: Papel):
+    """Dependencia de modulo, controlada por AUTENTICACAO_OBRIGATORIA.
+
+    Desligada, nao faz nada (a tela do cliente continua funcionando sem token). Ligada,
+    exige token valido e, se `papeis` nao for vazio, um desses papeis; vazio aceita
+    qualquer usuario autenticado.
+    """
+    permitidos = frozenset(papeis)
+
+    def dependencia(request: Request, credenciais: CredenciaisDep) -> None:
+        if not request.app.state.settings.autenticacao_obrigatoria:
+            return
+        usuario = _autenticar(request, credenciais)
+        if permitidos and usuario.papel not in permitidos:
+            raise SemPermissao()
 
     return dependencia

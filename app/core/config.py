@@ -1,9 +1,9 @@
 """Configuracao da aplicacao, lida de variaveis de ambiente e do arquivo .env."""
 
-from typing import Annotated
+from typing import Annotated, Self
 
 from fastapi import Request
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     database_url: SecretStr
     supabase_url: str | None = None
     cors_origins: Annotated[list[str], NoDecode] = []
+    # Liga a trava de autenticacao em app/api/router.py. Desligada por padrao enquanto o
+    # front do cliente ainda nao envia o JWT do Supabase.
+    autenticacao_obrigatoria: bool = False
 
     @field_validator("database_url")
     @classmethod
@@ -40,13 +43,13 @@ class Settings(BaseSettings):
             return [origem.strip().rstrip("/") for origem in valor.split(",") if origem.strip()]
         return valor
 
-    @property
-    def supabase_issuer(self) -> str | None:
-        return f"{self.supabase_url}/auth/v1" if self.supabase_url else None
-
-    @property
-    def supabase_jwks_url(self) -> str | None:
-        return f"{self.supabase_issuer}/.well-known/jwks.json" if self.supabase_issuer else None
+    @model_validator(mode="after")
+    def _exigir_supabase_url_com_autenticacao(self) -> Self:
+        if self.autenticacao_obrigatoria and not self.supabase_url:
+            raise ValueError(
+                "SUPABASE_URL e obrigatoria quando AUTENTICACAO_OBRIGATORIA esta ligada"
+            )
+        return self
 
 
 def get_settings(request: Request) -> Settings:
