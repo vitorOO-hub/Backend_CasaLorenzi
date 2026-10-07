@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Proteger o banco com RLS explícito, privilégios mínimos, funções auxiliares, hook de claims (`papel` e `loja_id`) e policies por papel e por loja, tudo em revisões Alembic, validado por testes contra um Postgres **local** em container.
+**Goal:** Proteger o banco com RLS explícito, privilégios mínimos, funções auxiliares, hook de claims (`papel` e `loja_id`) e policies por papel e por loja, tudo em revisões Alembic, validado por testes contra um Postgres **local** (instalado no Windows, banco dedicado `lorenzi_teste`).
 
 **Architecture:** Cinco revisões Alembic encadeadas (escritas à mão com `op.execute`) sobre o `head` atual `20261006213000`: (A) `atendimento.id_loja`, (B) RLS + privilégios + funções auxiliares, (C) hook de claims, (D1) policies de atendimento, (D2) policies de pedidos e estoque. Os testes sobem o schema do Supabase num Postgres de teste (papéis `anon`/`authenticated`, schema `auth` com `uid()`/`jwt()`), aplicam os 3 SQLs de `supabase/migrations/` e o `alembic upgrade head`, e provam as policies trocando de papel (`SET LOCAL ROLE`) com claims injetadas.
 
-**Tech Stack:** Alembic 1.x (`op.execute`), PostgreSQL 15 (container), psycopg 3, pytest, Docker Compose.
+**Tech Stack:** Alembic 1.x (`op.execute`), PostgreSQL 15 ou superior instalado localmente, psycopg 3, pytest, python-dotenv.
 
 **Spec:** `docs/superpowers/specs/2026-10-06-auth-rls-sobre-intermediaria-design.md`, seções "2. Banco" e "3. Testes". Refinamento em relação ao spec: a revisão única vira **5 revisões encadeadas** (uma por responsabilidade, com `downgrade` próprio). O efeito é o mesmo, porque o `alembic/env.py` aplica `upgrade head` numa única transação (DDL transacional do Postgres: tudo ou nada).
 
@@ -14,8 +14,9 @@
 
 - **NENHUMA requisição a serviço externo e nenhuma conexão ao banco remoto do Supabase.** O usuário pediu: "não faça nenhuma requisição ainda". Todo comando `alembic` deste plano roda **com `DATABASE_URL` definida explicitamente para o Postgres local de teste** (o `.env` aponta para o banco remoto e nunca pode ser usado). `alembic upgrade head` no banco remoto **não faz parte deste plano**: só depois de autorização explícita do usuário, fora daqui.
 - **Fluxo de git:** trabalhar na branch `feat/rls-policies-banco`, criada a partir de `feat/rls-policies-auth`. **Não fazer push, merge nem fetch.** Não editar arquivos de módulo do outro integrante (`app/admin`, `app/atendimento`, `app/compras`, `app/estoque`, `app/movimentacoes`, `app/core/db.py`, `app/core/repositorio.py`) nem as revisões existentes `alembic/versions/20261005000000_*` e `20261006213000_*`.
-- **Docker Desktop precisa estar aberto** para as Tasks 1 a 7 (testes de banco). Se o daemon estiver parado, pare e reporte NEEDS_CONTEXT: o controlador pede ao usuário para abri-lo. A primeira execução baixa a imagem `postgres:15` (única atividade de rede, e só com o OK do usuário).
-- Comandos assumem a raiz do repositório, Git Bash e o interpretador `.venv/Scripts/python.exe`. Variável de teste: `TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres`.
+- **Sem Docker.** O usuário escolheu um PostgreSQL instalado no Windows. Pré-requisito, feito por ele uma vez: servidor PostgreSQL 15 ou superior rodando em `localhost:5432`, um banco **dedicado** chamado `lorenzi_teste` (`CREATE DATABASE lorenzi_teste;`) e a variável `TEST_DATABASE_URL` (no ambiente ou numa linha do `.env`, que é ignorado pelo git) no formato `postgresql://postgres:<senha>@127.0.0.1:5432/lorenzi_teste`. A senha nunca vai para o git, para logs nem para relatórios. Se o servidor ou a variável não existirem, pare e reporte NEEDS_CONTEXT: o controlador pede ao usuário. **Nenhum download e nenhuma instalação** além do que o usuário já fez.
+- **Os testes recriam o schema `public` e o `auth` do banco de teste** (`DROP SCHEMA ... CASCADE`). Por isso a guarda só aceita host local **e** nome de banco terminado em `_teste`; qualquer outro destino é recusado com erro. Os papéis `anon`, `authenticated`, `service_role` e `supabase_auth_admin` são criados no cluster local (nível de servidor), o que é inofensivo.
+- Comandos assumem a raiz do repositório, Git Bash e o interpretador `.venv/Scripts/python.exe`. `TEST_DATABASE_URL` vem do ambiente ou do `.env` (o `conftest` lê os dois; o ambiente tem precedência).
 - Idioma do domínio: nomes, mensagens e comentários em português, sem acentos em identificadores SQL e Python.
 - `down_revision` da primeira revisão nova: `"20261006213000"`. IDs das novas revisões, em ordem: `20261007000000`, `20261007000100`, `20261007000200`, `20261007000300`, `20261007000400`.
 - SQL das revisões: **um `op.execute` por comando** (nunca `executar_bloco`, que quebra em `;`), sem `:nome` (SQLAlchemy `text()` leria como parâmetro; `::tipo` é seguro) e sem `%` solto, exceto dentro de `format('%I')` (o `text()` escapa). Linhas de código e SQL com no máximo 100 colunas (ruff E501).
@@ -28,7 +29,6 @@
 ### Task 1: Infraestrutura de teste com Postgres local
 
 **Files:**
-- Create: `docker-compose.test.yml`
 - Create: `tests/banco/__init__.py` (vazio)
 - Create: `tests/banco/bootstrap_supabase.sql`
 - Create: `tests/banco/conftest.py`
@@ -39,7 +39,7 @@
 - Modify: `.env.example`
 
 **Interfaces:**
-- Produces (`tests/banco/conftest.py`): `url_de_teste_segura() -> str | None` (recusa host não local com `RuntimeError`); fixtures `url_banco` (session; pula se a variável faltar), `banco_migrado` (session; recria o schema, aplica bootstrap, os SQLs de `supabase/migrations/` e `alembic upgrade head`; devolve a URL), `conn` (por teste; transação com rollback).
+- Produces (`tests/banco/conftest.py`): `url_de_teste_segura(arquivo_env: Path | None = RAIZ / ".env") -> str | None` (lê `TEST_DATABASE_URL` do ambiente e, se faltar, do `.env`; recusa com `RuntimeError` host não local ou banco cujo nome não termine em `_teste`); fixtures `url_banco` (session; pula se a variável faltar), `banco_migrado` (session; recria o schema, aplica bootstrap, os SQLs de `supabase/migrations/` e `alembic upgrade head`; devolve a URL), `conn` (por teste; transação com rollback).
 - Produces (`tests/banco/apoio.py`): `como(conn, *, role="authenticated", sub=None, papel=None, loja=None)` (context manager: injeta claims e troca o papel), `tenta(conn, comando, parametros=None)` (executa num savepoint; devolve linhas ou a exceção `psycopg.Error`), `e_erro(resultado, tipo=psycopg.errors.InsufficientPrivilege) -> bool`.
 
 - [ ] **Step 1: Criar a branch de trabalho**
@@ -47,28 +47,14 @@
 Run: `git switch -c feat/rls-policies-banco && git branch --show-current && git status --short`
 Expected: `feat/rls-policies-banco` e árvore limpa.
 
-- [ ] **Step 2: Criar `docker-compose.test.yml`**
+- [ ] **Step 2: Conferir o pré-requisito (feito pelo usuário, uma vez)**
 
-```yaml
-# Postgres de teste, so para os testes de banco (tests/banco). Nao e o banco do Supabase.
-# Subir:   docker compose -f docker-compose.test.yml up -d --wait
-# Derrubar: docker compose -f docker-compose.test.yml down
-services:
-  postgres-teste:
-    image: postgres:15
-    environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
-    ports:
-      - "127.0.0.1:54329:5432"
-    tmpfs:
-      - /var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
+Este passo só **verifica**; não instale nada e não baixe nada. O usuário já instalou o PostgreSQL, criou o banco `lorenzi_teste` e definiu `TEST_DATABASE_URL` (ambiente ou `.env`). Confirme com um snippet que não imprime a URL nem a senha:
+
+```bash
+.venv/Scripts/python.exe -I -c "import os, sys; sys.path.insert(0, '.'); from dotenv import dotenv_values; url = os.environ.get('TEST_DATABASE_URL') or dotenv_values('.env').get('TEST_DATABASE_URL'); print('TEST_DATABASE_URL definida:', bool(url)); import psycopg; conexao = psycopg.connect(url, connect_timeout=5); print('servidor:', conexao.execute('SHOW server_version').fetchone()[0]); print('banco:', conexao.execute('SELECT current_database()').fetchone()[0])"
 ```
+Expected: `TEST_DATABASE_URL definida: True`, a versão do servidor (15 ou superior) e `banco: lorenzi_teste`. Se a variável não existir, o servidor não responder ou o banco não terminar em `_teste`, **pare e reporte NEEDS_CONTEXT** com a mensagem de erro (sem a senha).
 
 - [ ] **Step 3: Criar `tests/banco/bootstrap_supabase.sql`**
 
@@ -184,38 +170,84 @@ import pytest
 
 from tests.banco.conftest import VARIAVEL_URL, url_de_teste_segura
 
+URL_LOCAL = "postgresql://postgres:senha-local@127.0.0.1:5432/lorenzi_teste"
 
-def test_sem_variavel_devolve_none(monkeypatch):
+
+@pytest.fixture(autouse=True)
+def ambiente_limpo(monkeypatch):
     monkeypatch.delenv(VARIAVEL_URL, raising=False)
-    assert url_de_teste_segura() is None
+
+
+def test_sem_variavel_devolve_none():
+    assert url_de_teste_segura(arquivo_env=None) is None
 
 
 @pytest.mark.parametrize(
     "url",
     [
-        "postgresql://postgres:postgres@127.0.0.1:54329/postgres",
-        "postgresql://postgres:postgres@localhost:5432/postgres",
-        "postgresql://postgres:postgres@[::1]:5432/postgres",
+        URL_LOCAL,
+        "postgresql://postgres:senha-local@localhost:5432/outro_teste",
+        "postgresql://postgres:senha-local@[::1]:5432/lorenzi_teste",
     ],
 )
-def test_aceita_hosts_locais(monkeypatch, url):
+def test_aceita_host_local_e_banco_de_teste(monkeypatch, url):
     monkeypatch.setenv(VARIAVEL_URL, url)
-    assert url_de_teste_segura() == url
+    assert url_de_teste_segura(arquivo_env=None) == url
 
 
 @pytest.mark.parametrize(
     "url",
     [
-        "postgresql://postgres:segredo@db.abcdefghijkl.supabase.co:5432/postgres",
+        "postgresql://postgres:segredo@db.abcdefghijkl.supabase.co:5432/lorenzi_teste",
         "postgresql://postgres.abc:segredo@aws-0-sa-east-1.pooler.supabase.com:6543/postgres",
-        "postgresql://postgres:postgres@10.0.0.5:5432/postgres",
+        "postgresql://postgres:segredo@10.0.0.5:5432/lorenzi_teste",
     ],
 )
-def test_recusa_banco_que_nao_e_local_sem_vazar_a_senha(monkeypatch, url):
+def test_recusa_host_que_nao_e_local_sem_vazar_a_senha(monkeypatch, url):
     monkeypatch.setenv(VARIAVEL_URL, url)
     with pytest.raises(RuntimeError) as erro:
-        url_de_teste_segura()
+        url_de_teste_segura(arquivo_env=None)
     assert "segredo" not in str(erro.value)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql://postgres:segredo@127.0.0.1:5432/postgres",
+        "postgresql://postgres:segredo@localhost:5432/lorenzi",
+    ],
+)
+def test_recusa_banco_cujo_nome_nao_termina_em_teste(monkeypatch, url):
+    monkeypatch.setenv(VARIAVEL_URL, url)
+    with pytest.raises(RuntimeError) as erro:
+        url_de_teste_segura(arquivo_env=None)
+    assert "segredo" not in str(erro.value)
+
+
+def test_le_do_arquivo_env_quando_a_variavel_nao_existe(tmp_path):
+    arquivo = tmp_path / ".env"
+    arquivo.write_text(f"OUTRA=1
+{VARIAVEL_URL}={URL_LOCAL}
+", encoding="utf-8")
+    assert url_de_teste_segura(arquivo_env=arquivo) == URL_LOCAL
+
+
+def test_ambiente_tem_precedencia_sobre_o_arquivo_env(monkeypatch, tmp_path):
+    arquivo = tmp_path / ".env"
+    arquivo.write_text(f"{VARIAVEL_URL}={URL_LOCAL}
+", encoding="utf-8")
+    do_ambiente = "postgresql://postgres:senha-local@127.0.0.1:5432/ambiente_teste"
+    monkeypatch.setenv(VARIAVEL_URL, do_ambiente)
+    assert url_de_teste_segura(arquivo_env=arquivo) == do_ambiente
+
+
+def test_arquivo_env_apontando_para_banco_remoto_tambem_e_recusado(tmp_path):
+    arquivo = tmp_path / ".env"
+    remoto = "postgresql://postgres:segredo@db.abc.supabase.co:5432/lorenzi_teste"
+    arquivo.write_text(f"{VARIAVEL_URL}={remoto}
+", encoding="utf-8")
+    with pytest.raises(RuntimeError):
+        url_de_teste_segura(arquivo_env=arquivo)
 ```
 
 - [ ] **Step 6: Rodar e ver falhar**
@@ -228,8 +260,8 @@ Expected: FAIL com `ImportError`/`ModuleNotFoundError` (o `conftest.py` ainda n�
 ```python
 """Fixtures dos testes de banco: Postgres local com o schema do Supabase e o Alembic aplicados.
 
-Os testes so rodam com TEST_DATABASE_URL apontando para um banco LOCAL. Qualquer outro host
-(por exemplo o Supabase remoto do .env) e recusado com erro, nunca ignorado.
+Os testes so rodam com TEST_DATABASE_URL apontando para um banco LOCAL cujo nome termina em
+"_teste". Qualquer outro destino (por exemplo o Supabase remoto) e recusado com erro.
 """
 
 import os
@@ -240,22 +272,33 @@ from urllib.parse import urlsplit
 
 import psycopg
 import pytest
+from dotenv import dotenv_values
 
 RAIZ = Path(__file__).resolve().parents[2]
 PASTA_MIGRATIONS_SQL = RAIZ / "supabase" / "migrations"
 BOOTSTRAP = Path(__file__).resolve().parent / "bootstrap_supabase.sql"
 VARIAVEL_URL = "TEST_DATABASE_URL"
 HOSTS_LOCAIS = frozenset({"localhost", "127.0.0.1", "::1"})
+SUFIXO_BANCO_DE_TESTE = "_teste"
 
 
-def url_de_teste_segura() -> str | None:
+def url_de_teste_segura(arquivo_env: Path | None = RAIZ / ".env") -> str | None:
+    """TEST_DATABASE_URL do ambiente (ou, na falta, do .env), so se for local e de teste."""
     url = os.environ.get(VARIAVEL_URL)
+    if not url and arquivo_env is not None and arquivo_env.exists():
+        url = dotenv_values(arquivo_env).get(VARIAVEL_URL)
     if not url:
         return None
-    if urlsplit(url).hostname not in HOSTS_LOCAIS:
+    partes = urlsplit(url)
+    if partes.hostname not in HOSTS_LOCAIS:
         raise RuntimeError(
             f"{VARIAVEL_URL} deve apontar para um banco local (localhost ou 127.0.0.1); "
             "os testes de banco nunca rodam contra o Supabase remoto"
+        )
+    if not partes.path.lstrip("/").endswith(SUFIXO_BANCO_DE_TESTE):
+        raise RuntimeError(
+            f"o banco de {VARIAVEL_URL} deve ter nome terminado em '{SUFIXO_BANCO_DE_TESTE}': "
+            "os testes recriam o schema public dele"
         )
     return url
 
@@ -305,7 +348,7 @@ def conn(banco_migrado: str):
 - [ ] **Step 8: Rodar e ver passar (sem banco ainda)**
 
 Run: `.venv/Scripts/python.exe -m pytest tests/banco/test_url_segura.py -q`
-Expected: PASS (7 testes). Nenhum teste de banco é necessário nesta etapa.
+Expected: PASS (12 testes). Nenhum teste de banco é necessário nesta etapa; a guarda é testada sem conectar em nada.
 
 - [ ] **Step 9: Marcador, `.env.example` e teste de infraestrutura**
 
@@ -319,8 +362,9 @@ markers =
 No `.env.example`, acrescentar ao final:
 
 ```text
-# Postgres LOCAL so para os testes de banco (docker-compose.test.yml). Nunca aponte para o Supabase.
-TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres
+# Postgres LOCAL so para os testes de banco: banco dedicado com nome terminado em _teste.
+# Os testes recriam o schema public dele. Nunca aponte para o Supabase.
+TEST_DATABASE_URL=postgresql://postgres:preencha_a_senha@127.0.0.1:5432/lorenzi_teste
 ```
 
 Criar `tests/banco/test_infra.py`:
@@ -380,18 +424,12 @@ def test_opcoes_de_dominio_vieram_semeadas(conn):
     assert resolvido == 1
 ```
 
-- [ ] **Step 10: Subir o Postgres de teste e rodar os testes de banco**
+- [ ] **Step 10: Rodar os testes de banco no Postgres local**
 
-Run:
-```bash
-docker compose -f docker-compose.test.yml up -d --wait
-TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres .venv/Scripts/python.exe -m pytest tests/banco -q
-```
-Expected: `docker compose` termina com o serviço `healthy`; pytest: todos passam (7 de `test_url_segura` + 5 de `test_infra`). Se o daemon do Docker estiver parado, **pare e reporte NEEDS_CONTEXT** (não tente contornar). Se o `alembic upgrade head` falhar, o erro aparece em `pytest.fail` com o stderr.
-
-Sem a variável, os 5 testes de `test_infra` devem ser **pulados** (`skipped`) e os de `test_url_segura` passar:
 Run: `.venv/Scripts/python.exe -m pytest tests/banco -q`
-Expected: `7 passed, 5 skipped`.
+Expected: todos passam (12 de `test_url_segura` + 5 de `test_infra`). Na primeira execução o `banco_migrado` recria o schema de `lorenzi_teste`, aplica o bootstrap, os 3 SQLs de `supabase/migrations/` e o `alembic upgrade head`; se o `alembic` falhar, o erro aparece em `pytest.fail` com o stderr (sem a senha: confira antes de colar o texto no relatório). Se o Postgres local não responder, **pare e reporte NEEDS_CONTEXT** (não tente iniciar serviços nem instalar nada).
+
+Se `TEST_DATABASE_URL` não estiver definida (nem no ambiente nem no `.env`), os 5 testes de `test_infra` devem ser **pulados** e os 12 de `test_url_segura` passar: `12 passed, 5 skipped`.
 
 - [ ] **Step 11: Lint e commit**
 
@@ -399,7 +437,7 @@ Run: `.venv/Scripts/python.exe -m ruff check tests/banco`
 Expected: `All checks passed!`
 
 ```bash
-git add docker-compose.test.yml pytest.ini .env.example tests/banco
+git add pytest.ini .env.example tests/banco
 git commit -m "test(banco): adiciona Postgres local de teste com schema do Supabase" -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ```
 
@@ -665,7 +703,7 @@ def test_loja_inexistente_e_recusada_pela_fk(conn, fab):
 
 - [ ] **Step 3: Rodar e ver falhar**
 
-Run: `TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres .venv/Scripts/python.exe -m pytest tests/banco/test_atendimento_id_loja.py -q`
+Run: `.venv/Scripts/python.exe -m pytest tests/banco/test_atendimento_id_loja.py -q`
 Expected: FAIL: `fab.atendimento` falha com `UndefinedColumn: column "id_loja" of relation "atendimento" does not exist`.
 
 - [ ] **Step 4: Criar a revisão A**
@@ -752,7 +790,7 @@ def downgrade() -> None:
 
 - [ ] **Step 5: Rodar e ver passar**
 
-Run: `TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres .venv/Scripts/python.exe -m pytest tests/banco -q`
+Run: `.venv/Scripts/python.exe -m pytest tests/banco -q`
 Expected: PASS em todos os testes de banco (os 5 novos mais os da Task 1). Se `psycopg` reclamar de `%` ou `:` na execução da revisão, ajuste o SQL conforme as Global Constraints e anote em relatório.
 
 - [ ] **Step 6: Lint e commit**
@@ -949,7 +987,7 @@ def test_app_papel_na_loja_tabela_verdade(conn, fab):
 
 - [ ] **Step 2: Rodar e ver falhar**
 
-Run: `TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres .venv/Scripts/python.exe -m pytest tests/banco/test_rls_privilegios.py -q`
+Run: `.venv/Scripts/python.exe -m pytest tests/banco/test_rls_privilegios.py -q`
 Expected: FAIL: RLS não forçado, `anon` com privilégios amplos, funções inexistentes (`UndefinedFunction`).
 
 - [ ] **Step 3: Criar a revisão B**
@@ -1172,7 +1210,7 @@ def downgrade() -> None:
 
 - [ ] **Step 4: Rodar e ver passar**
 
-Run: `TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres .venv/Scripts/python.exe -m pytest tests/banco -q`
+Run: `.venv/Scripts/python.exe -m pytest tests/banco -q`
 Expected: PASS em todos. Pontos que costumam falhar na primeira tentativa: (a) `has_any_column_privilege('anon', oid, 'SELECT, INSERT, UPDATE, REFERENCES')` precisa aceitar a lista; se o Postgres reclamar, troque por quatro chamadas `has_table_privilege` combinadas com `OR`; (b) `%I` no `format` deve passar sem erro pelo `op.execute` (o `text()` do SQLAlchemy escapa `%`); se não passar, relate o erro exato em vez de trocar de abordagem sem registrar.
 
 - [ ] **Step 5: Lint e commit**
@@ -1301,7 +1339,7 @@ def test_so_o_supabase_auth_admin_executa_o_hook(conn, papel_do_banco, esperado)
 
 - [ ] **Step 2: Rodar e ver falhar**
 
-Run: `TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres .venv/Scripts/python.exe -m pytest tests/banco/test_hook_claims.py -q`
+Run: `.venv/Scripts/python.exe -m pytest tests/banco/test_hook_claims.py -q`
 Expected: FAIL com `UndefinedFunction: function public.hook_claims_token(jsonb) does not exist`.
 
 - [ ] **Step 3: Criar a revisão C**
@@ -1389,7 +1427,7 @@ def downgrade() -> None:
 
 - [ ] **Step 4: Rodar e ver passar**
 
-Run: `TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres .venv/Scripts/python.exe -m pytest tests/banco -q`
+Run: `.venv/Scripts/python.exe -m pytest tests/banco -q`
 Expected: PASS em todos. O `GRANT USAGE ON SCHEMA public TO supabase_auth_admin` já vem do bootstrap de teste; no Supabase real esse papel já tem uso do schema `public`.
 
 - [ ] **Step 5: Lint e commit**
@@ -1637,7 +1675,7 @@ def test_avaliacao_e_visivel_para_dono_e_equipe_da_loja(conn, cenario):
 
 - [ ] **Step 2: Rodar e ver falhar**
 
-Run: `TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres .venv/Scripts/python.exe -m pytest tests/banco/test_policies_atendimento.py -q`
+Run: `.venv/Scripts/python.exe -m pytest tests/banco/test_policies_atendimento.py -q`
 Expected: FAIL: `authenticated` ainda sem `SELECT` nas tabelas (`InsufficientPrivilege` nas consultas dos testes de visibilidade).
 
 - [ ] **Step 3: Criar a revisão D1**
@@ -1752,7 +1790,7 @@ def downgrade() -> None:
 
 - [ ] **Step 4: Rodar e ver passar**
 
-Run: `TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres .venv/Scripts/python.exe -m pytest tests/banco -q`
+Run: `.venv/Scripts/python.exe -m pytest tests/banco -q`
 Expected: PASS em todos. Se algum caso de visibilidade falhar, **corrija a policy ou a função auxiliar na revisão correspondente** (B ou D1), nunca o teste para acomodar um comportamento que deixe um usuário ver o que não deve.
 
 - [ ] **Step 5: Lint e commit**
@@ -1963,7 +2001,7 @@ def test_opcoes_de_pedido_so_para_logados(conn, cenario, tabela):
 
 - [ ] **Step 2: Rodar e ver falhar**
 
-Run: `TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres .venv/Scripts/python.exe -m pytest tests/banco/test_policies_pedidos_estoque.py -q`
+Run: `.venv/Scripts/python.exe -m pytest tests/banco/test_policies_pedidos_estoque.py -q`
 Expected: FAIL: `InsufficientPrivilege` nas consultas de visibilidade (sem `GRANT SELECT` ainda).
 
 - [ ] **Step 3: Criar a revisão D2**
@@ -2063,7 +2101,7 @@ def downgrade() -> None:
 
 - [ ] **Step 4: Rodar e ver passar**
 
-Run: `TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres .venv/Scripts/python.exe -m pytest tests/banco -q`
+Run: `.venv/Scripts/python.exe -m pytest tests/banco -q`
 Expected: PASS em todos os testes de banco. As mesmas regras da Task 5 valem: corrigir policy, não teste.
 
 - [ ] **Step 5: Lint e commit**
@@ -2186,7 +2224,7 @@ def test_downgrade_remove_tudo_e_upgrade_reaplica(banco_migrado):
 Run:
 ```bash
 .venv/Scripts/python.exe -m pytest tests/banco/test_cadeia_alembic.py -q
-TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres .venv/Scripts/python.exe -m pytest tests/banco -q
+.venv/Scripts/python.exe -m pytest tests/banco -q
 ```
 Expected: cadeia: 2 passed sem banco. Com banco: tudo passa, e `test_zz_downgrade` é o último a rodar. Contagens esperadas (já fixadas no teste): 9 funções (7 `app_*` + `hook_claims_token` + `preencher_id_loja_atendimento`) e 19 policies com " - " no nome (12 da revisão D1, sendo 7 explícitas + 5 de tabelas de opções, e 7 da D2; as 5 policies antigas do catálogo usam ": " e não entram na conta). Se algum número divergir, **descubra a causa** (policy ou função faltando, ou sobrando) e corrija a revisão; só altere o número no teste se a contagem real estiver comprovadamente certa, e justifique no relatório.
 
@@ -2208,14 +2246,22 @@ com credencial privilegiada e ignora RLS).
 
 ### Testar localmente (Postgres de teste, não o Supabase)
 
-```bash
-docker compose -f docker-compose.test.yml up -d --wait
-TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres pytest tests/banco -q
-docker compose -f docker-compose.test.yml down
+Pré-requisito, uma vez: PostgreSQL 15 ou superior instalado e rodando em `localhost`, um banco
+dedicado `CREATE DATABASE lorenzi_teste;` e a variável `TEST_DATABASE_URL` (no ambiente ou numa
+linha do `.env`, que o git ignora):
+
+```text
+TEST_DATABASE_URL=postgresql://postgres:<senha>@127.0.0.1:5432/lorenzi_teste
 ```
 
-Sem `TEST_DATABASE_URL` os testes de banco são pulados. A variável só aceita `localhost` ou
-`127.0.0.1`: apontar para o Supabase remoto faz os testes falharem de propósito.
+```bash
+pytest tests/banco -q
+```
+
+Os testes **recriam o schema `public` e o `auth`** desse banco a cada execução. Por isso a variável
+só é aceita se o host for `localhost`/`127.0.0.1` **e** o nome do banco terminar em `_teste`;
+qualquer outro destino (como o Supabase remoto) faz os testes falharem de propósito. Sem a
+variável, os testes de banco são pulados.
 
 ### Aplicar no banco do Supabase (passo manual, com cuidado)
 
@@ -2246,13 +2292,11 @@ Run:
 ```bash
 .venv/Scripts/python.exe -m ruff check alembic/versions/20261007000000_atendimento_id_loja.py alembic/versions/20261007000100_rls_privilegios_helpers.py alembic/versions/20261007000200_hook_claims_token.py alembic/versions/20261007000300_policies_atendimento.py alembic/versions/20261007000400_policies_pedidos_estoque.py tests/banco
 .venv/Scripts/python.exe -m pytest -q
-TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54329/postgres .venv/Scripts/python.exe -m pytest -q
 git status --short
 git diff --stat 36b8846..HEAD -- app alembic/versions/20261005000000_baseline_supabase_sql.py alembic/versions/20261006213000_criar_tabelas_atendimento.py
 ```
-Expected: `ruff` limpo; a suíte sem `TEST_DATABASE_URL` passa com os testes de banco **pulados** (os 181 anteriores continuam passando); a suíte com banco passa inteira; `git status` limpo; o último `git diff --stat` **vazio** (nenhum arquivo de `app/` nem as revisões do outro integrante foram alterados).
+Expected: `ruff` limpo; a suíte inteira passa (os 181 testes anteriores continuam passando, mais os de `tests/banco`; se `TEST_DATABASE_URL` não estiver definida, os testes de banco aparecem como `skipped`); `git status` limpo; o último `git diff --stat` **vazio** (nenhum arquivo de `app/` nem as revisões do outro integrante foram alterados).
 
-Derrubar o container: `docker compose -f docker-compose.test.yml down`.
 
 - [ ] **Step 6: Commit**
 
@@ -2273,7 +2317,7 @@ git commit -m "test(banco): valida cadeia, downgrade e documenta a aplicacao das
 - `atendimento.id_loja` nullable, FK, índice e trigger a partir do pedido: Task 2.
 - Policies da tabela do spec: `usuario`, `atendimento`, `atendimento_item`, `mensagem`, `avaliacao_atendimento` (Task 5); `pedido`, `item_pedido`, `pagamento`, `estoque`, `movimentacao_estoque` (Task 6); tabelas de opções (Tasks 5 e 6). Sem `UPDATE`/`DELETE`: testado.
 - `downgrade` completo por revisão e teste de ida e volta: Tasks 2 a 7.
-- Postgres real em container, bootstrap dos papéis e do schema `auth`, fixture que aplica os 3 SQLs e o `upgrade head`, transação com rollback, claims injetadas, opt-in por `TEST_DATABASE_URL` com marcador `banco`: Task 1.
+- Postgres real local (instalado no Windows, banco dedicado `lorenzi_teste`), bootstrap dos papéis e do schema `auth`, fixture que aplica os 3 SQLs e o `upgrade head`, transação com rollback, claims injetadas, opt-in por `TEST_DATABASE_URL` com marcador `banco`: Task 1.
 - Testes de RLS pedidos no spec: cliente só vê os próprios chamados, atendente de outra loja não vê nada, `anon` sem acesso, mensagem só do autor e em chamado em andamento, avaliação só do dono e só depois de resolvido, nenhuma escrita direta fora das duas exceções, hook devolve as claims certas: Tasks 4 a 6.
 - "Aplicação no remoto só com autorização explícita": Global Constraints e README. O plano não roda nada contra o remoto.
 
@@ -2281,6 +2325,6 @@ git commit -m "test(banco): valida cadeia, downgrade e documenta a aplicacao das
 - A guarda de URL **falha** (não pula) quando o host não é local, para o `.env` remoto nunca ser usado por engano. Todo `alembic` dos testes recebe `DATABASE_URL` do banco de teste.
 - O baseline vazio do outro integrante depende dos 3 SQLs de `supabase/migrations/`; a fixture os aplica em ordem alfabética (que coincide com a cronológica) antes do `upgrade head`.
 - A contagem de policies no teste de downgrade (Task 7) deve ser conferida contra o número real ao rodar; o plano manda conferir e justificar, não ajustar às cegas.
-- Requer Docker Desktop aberto e o download único da imagem `postgres:15`. É a única atividade de rede, e o plano manda parar e pedir o OK ao usuário antes.
+- Requer o PostgreSQL local já instalado pelo usuário e um banco dedicado `lorenzi_teste`. O plano não baixa nem instala nada, e não faz nenhuma requisição externa. A guarda de URL só aceita host local e banco terminado em `_teste`, porque os testes recriam o schema `public`.
 
 **Consistência de nomes:** `como`, `tenta`, `e_erro` (Task 1) são usados nas Tasks 3 a 6; `Fabrica` e `Usuario` (Task 2) são usados nas Tasks 3 a 6 com os mesmos nomes de método; `como_usuario` é definida localmente em cada arquivo de teste (Tasks 3, 5 e 6); as assinaturas das funções `app_*` na Task 3 são as mesmas que as policies das Tasks 5 e 6 chamam; os IDs das revisões formam a cadeia `20261006213000 → 20261007000000 → 100 → 200 → 300 → 400`, igual ao teste da Task 7.
