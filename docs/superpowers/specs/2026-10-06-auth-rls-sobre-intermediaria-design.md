@@ -94,7 +94,7 @@ nada. Com a flag ligada:
 | Módulo | Exige |
 |---|---|
 | `/admin` | `admin` |
-| `/estoques`, `/movimentacoes` | `operador_estoque`, `gerente_loja` ou `admin` |
+| `/estoques`, `/movimentacoes-estoque` | `operador_estoque`, `gerente_loja` ou `admin` |
 | `/atendimentos`, `/compras` | qualquer usuário autenticado e ativo |
 | `/health` | nada |
 

@@ -216,3 +216,23 @@ Para testar sem tocar no banco remoto (os testes nunca leem o `.env`):
 pip install pytest
 pytest
 ```
+
+## Autenticação (JWT do Supabase)
+
+O login é do Supabase Auth; a API só valida o token (`Authorization: Bearer <jwt>`), com chaves
+públicas em `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` (ES256).
+
+A trava é controlada por `AUTENTICACAO_OBRIGATORIA` (padrão `false`):
+
+| Valor | Efeito |
+|---|---|
+| `false` | Nenhuma rota exige token (comportamento atual, usado pela tela do cliente). |
+| `true` | `/admin` exige `admin`; `/estoques` e `/movimentacoes-estoque` exigem `operador_estoque`, `gerente_loja` ou `admin`; `/atendimentos` e `/compras` exigem qualquer usuário autenticado; `/health` segue aberto. Exige `SUPABASE_URL`. |
+
+**Limite:** a trava só barra acesso anônimo e papel inadequado. Ela não impede que um cliente logado
+leia dados de outro cliente, nem que uma loja mexa na outra; esse filtro precisa ser feito dentro dos
+handlers de cada módulo (ver "Fora do escopo" do spec de auth).
+
+**Antes de ligar a flag**, o hook de claims precisa estar ativo no painel do Supabase
+(Authentication → Hooks → Custom Access Token). Sem ele, todo token de equipe vem sem `papel` e a
+API responde 403. O hook é entregue pelo Plano 2 (revisão Alembic de RLS e claims).
