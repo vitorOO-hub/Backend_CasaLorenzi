@@ -15,6 +15,7 @@ ID_ITEM = "5f1c3a52-6a4e-4c8e-9a39-0f1f2b6f2f10"
 ID_PAGAMENTO = "6f1c3a52-6a4e-4c8e-9a39-0f1f2b6f2f10"
 ID_CHAMADO = "7f1c3a52-6a4e-4c8e-9a39-0f1f2b6f2f10"
 ID_MENSAGEM = "8f1c3a52-6a4e-4c8e-9a39-0f1f2b6f2f10"
+ID_CARRINHO = "af1c3a52-6a4e-4c8e-9a39-0f1f2b6f2f10"
 
 PEDIDO = {
     "id_pedido": ID_PEDIDO,
@@ -98,6 +99,26 @@ PERFIL = {
     "loja_preferida": "Casa Lorenzi Centro",
 }
 
+CARRINHO = {
+    "itens": [
+        {
+            "id_carrinho": ID_CARRINHO,
+            "id_variacao": ID_VARIACAO,
+            "sku": "CL-CAM-LIN-BR-P",
+            "produto": "Camisa Linho Essencial",
+            "imagem_url": "/img/produtos/CL-0101.jpg",
+            "imagem_alt": "Camisa Linho Essencial",
+            "tecido": "em linho lavado",
+            "cor": "Branco",
+            "tamanho": "P",
+            "quantidade": 2,
+            "preco_unitario": "149.90",
+            "valor_total": "299.80",
+        }
+    ],
+    "subtotal": "299.80",
+}
+
 
 def usar_cliente(app):
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
@@ -130,6 +151,11 @@ def test_rotas_do_cliente_estao_registradas(app, cliente):
     assert ("GET", "/api/v1/cliente/pedidos") in registradas
     assert ("POST", "/api/v1/cliente/pedidos") in registradas
     assert ("GET", "/api/v1/cliente/pedidos/{id_pedido}") in registradas
+    assert ("GET", "/api/v1/cliente/carrinho") in registradas
+    assert ("POST", "/api/v1/cliente/carrinho/itens") in registradas
+    assert ("PATCH", "/api/v1/cliente/carrinho/itens/{id_variacao}") in registradas
+    assert ("DELETE", "/api/v1/cliente/carrinho/itens/{id_variacao}") in registradas
+    assert ("DELETE", "/api/v1/cliente/carrinho") in registradas
     assert ("GET", "/api/v1/cliente/chamados/opcoes") in registradas
     assert ("GET", "/api/v1/cliente/chamados") in registradas
     assert ("POST", "/api/v1/cliente/chamados") in registradas
@@ -171,6 +197,46 @@ def test_fechar_pedido_do_cliente_responde_201(app, cliente):
     )
     assert resposta.status_code == 201
     assert resposta.json()["itens"][0]["sku"] == "CL-CAM-LIN-BR-P"
+
+
+def test_listar_carrinho_do_cliente_responde_200(app, cliente):
+    usar_cliente(app)
+    usar_executor(app, devolve(CARRINHO))
+    resposta = cliente.get("/api/v1/cliente/carrinho")
+    assert resposta.status_code == 200
+    assert resposta.json()["subtotal"] == "299.80"
+    assert resposta.json()["itens"][0]["imagem_url"] == "/img/produtos/CL-0101.jpg"
+
+
+def test_adicionar_item_ao_carrinho_responde_201(app, cliente):
+    usar_cliente(app)
+    usar_executor(app, devolve(CARRINHO))
+    resposta = cliente.post(
+        "/api/v1/cliente/carrinho/itens",
+        json={"id_variacao": ID_VARIACAO, "quantidade": 2},
+    )
+    assert resposta.status_code == 201
+    assert resposta.json()["itens"][0]["quantidade"] == 2
+
+
+def test_atualizar_item_do_carrinho_responde_200(app, cliente):
+    usar_cliente(app)
+    usar_executor(app, devolve(CARRINHO))
+    resposta = cliente.patch(
+        f"/api/v1/cliente/carrinho/itens/{ID_VARIACAO}",
+        json={"quantidade": 2},
+    )
+    assert resposta.status_code == 200
+    assert resposta.json()["itens"][0]["sku"] == "CL-CAM-LIN-BR-P"
+
+
+def test_carrinho_nao_aceita_id_cliente_no_corpo(app, cliente):
+    usar_cliente(app)
+    resposta = cliente.post(
+        "/api/v1/cliente/carrinho/itens",
+        json={"id_cliente": "nao-pode-vir-do-front", "id_variacao": ID_VARIACAO, "quantidade": 1},
+    )
+    assert resposta.status_code == 422
 
 
 def test_checkout_nao_aceita_id_cliente_no_corpo(app, cliente):
@@ -260,4 +326,6 @@ def test_usuario_interno_nao_acessa_area_do_cliente(app, cliente):
     resposta = cliente.get("/api/v1/cliente/pedidos")
     assert resposta.status_code == 403
     resposta = cliente.get("/api/v1/cliente/chamados")
+    assert resposta.status_code == 403
+    resposta = cliente.get("/api/v1/cliente/carrinho")
     assert resposta.status_code == 403

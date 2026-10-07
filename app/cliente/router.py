@@ -10,10 +10,13 @@ from fastapi import APIRouter, Depends, Header, Query, status
 
 from app.cliente import service
 from app.cliente.schemas import (
+    CarrinhoCliente,
     ChamadoCliente,
     ChamadoCriacao,
     CheckoutCriacao,
     DetalheChamadoCliente,
+    ItemCarrinhoAtualizacao,
+    ItemCarrinhoCriacao,
     LojaCliente,
     MensagemChamadoCliente,
     MensagemChamadoCriacao,
@@ -60,6 +63,66 @@ def listar_pedidos(
 )
 def obter_pedido(id_pedido: UUID, usuario: UsuarioDep, executar: ExecutarDep):
     return executar(lambda conexao: service.obter_pedido(conexao, usuario, id_pedido))
+
+
+@router.get("/carrinho", response_model=CarrinhoCliente, summary="Carrinho do cliente logado")
+def obter_carrinho(usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(lambda conexao: service.obter_carrinho(conexao, usuario))
+
+
+@router.post(
+    "/carrinho/itens",
+    response_model=CarrinhoCliente,
+    status_code=status.HTTP_201_CREATED,
+    summary="Adicionar item ao carrinho do cliente logado",
+)
+def adicionar_item_carrinho(
+    dados: ItemCarrinhoCriacao,
+    usuario: UsuarioDep,
+    executar: ExecutarDep,
+):
+    return executar(
+        lambda conexao: service.adicionar_item_carrinho(
+            conexao,
+            usuario,
+            dados.model_dump(),
+        )
+    )
+
+
+@router.patch(
+    "/carrinho/itens/{id_variacao}",
+    response_model=CarrinhoCliente,
+    summary="Alterar quantidade de um item do carrinho",
+)
+def atualizar_item_carrinho(
+    id_variacao: UUID,
+    dados: ItemCarrinhoAtualizacao,
+    usuario: UsuarioDep,
+    executar: ExecutarDep,
+):
+    return executar(
+        lambda conexao: service.atualizar_item_carrinho(
+            conexao,
+            usuario,
+            id_variacao,
+            dados.model_dump(),
+        )
+    )
+
+
+@router.delete(
+    "/carrinho/itens/{id_variacao}",
+    response_model=CarrinhoCliente,
+    summary="Remover item do carrinho",
+)
+def remover_item_carrinho(id_variacao: UUID, usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(lambda conexao: service.remover_item_carrinho(conexao, usuario, id_variacao))
+
+
+@router.delete("/carrinho", response_model=CarrinhoCliente, summary="Limpar carrinho")
+def limpar_carrinho(usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(lambda conexao: service.limpar_carrinho(conexao, usuario))
 
 
 @router.get(

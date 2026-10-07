@@ -31,6 +31,35 @@ class ItemCheckout(EntradaRestrita):
     quantidade: int = Field(gt=0, le=99)
 
 
+class ItemCarrinhoCriacao(EntradaRestrita):
+    id_variacao: UUID
+    quantidade: int = Field(gt=0, le=99)
+
+
+class ItemCarrinhoAtualizacao(EntradaRestrita):
+    quantidade: int = Field(gt=0, le=99)
+
+
+class ItemCarrinhoCliente(BaseModel):
+    id_carrinho: UUID
+    id_variacao: UUID
+    sku: str
+    produto: str
+    imagem_url: str | None = None
+    imagem_alt: str | None = None
+    tecido: str | None = None
+    cor: str
+    tamanho: str
+    quantidade: int
+    preco_unitario: Decimal
+    valor_total: Decimal
+
+
+class CarrinhoCliente(BaseModel):
+    itens: list[ItemCarrinhoCliente]
+    subtotal: Decimal
+
+
 class EnderecoEntrega(EntradaRestrita):
     cep: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=20)]
     rua: TextoCurto

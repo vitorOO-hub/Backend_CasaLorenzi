@@ -37,6 +37,46 @@ def obter_pedido(conexao, usuario: UsuarioAtual, id_pedido: UUID):
     return repositorio.obter_pedido_cliente(conexao, id_cliente, id_pedido)
 
 
+def obter_carrinho(conexao, usuario: UsuarioAtual):
+    id_cliente = _id_cliente(conexao, usuario)
+    return repositorio.obter_carrinho(conexao, id_cliente)
+
+
+def adicionar_item_carrinho(conexao, usuario: UsuarioAtual, dados: dict[str, object]):
+    id_cliente = _id_cliente(conexao, usuario)
+    return repositorio.adicionar_item_carrinho(
+        conexao,
+        id_cliente,
+        id_variacao=dados["id_variacao"],
+        quantidade=dados["quantidade"],
+    )
+
+
+def atualizar_item_carrinho(
+    conexao,
+    usuario: UsuarioAtual,
+    id_variacao: UUID,
+    dados: dict[str, object],
+):
+    id_cliente = _id_cliente(conexao, usuario)
+    return repositorio.atualizar_item_carrinho(
+        conexao,
+        id_cliente,
+        id_variacao=id_variacao,
+        quantidade=dados["quantidade"],
+    )
+
+
+def remover_item_carrinho(conexao, usuario: UsuarioAtual, id_variacao: UUID):
+    id_cliente = _id_cliente(conexao, usuario)
+    return repositorio.remover_item_carrinho(conexao, id_cliente, id_variacao)
+
+
+def limpar_carrinho(conexao, usuario: UsuarioAtual):
+    id_cliente = _id_cliente(conexao, usuario)
+    return repositorio.limpar_carrinho(conexao, id_cliente)
+
+
 def opcoes_chamado(conexao, usuario: UsuarioAtual):
     _garantir_cliente(usuario)
     return repositorio.opcoes_chamado(conexao)
