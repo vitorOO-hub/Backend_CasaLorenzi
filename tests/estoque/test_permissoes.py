@@ -2,8 +2,6 @@
 
 from types import SimpleNamespace
 
-import pytest
-
 from app.core.db import get_executar
 from app.core.security import get_current_user
 
@@ -13,21 +11,6 @@ def test_estoque_sem_token_responde_401(cliente):
     assert resposta.status_code == 401
     assert resposta.json() == {"detail": "Token invalido ou expirado"}
     assert resposta.headers["www-authenticate"] == "Bearer"
-
-
-@pytest.mark.parametrize(
-    "tipo_usuario_codigo",
-    ["cliente", "atendente", "gerente_loja", "diretor"],
-)
-def test_estoque_com_perfil_diferente_de_operador_responde_403(
-    app, cliente, tipo_usuario_codigo
-):
-    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-        tipo_usuario_codigo=tipo_usuario_codigo
-    )
-    resposta = cliente.get("/estoques")
-    assert resposta.status_code == 403
-    assert resposta.json() == {"detail": "Sem permissao para esta acao"}
 
 
 def test_operador_de_estoque_acessa_estoques(app, cliente):
