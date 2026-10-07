@@ -76,6 +76,21 @@ def test_falha_de_rede_vira_autenticacao_indisponivel():
         provedor_com(buscar).obter_chave("qualquer")
 
 
+def test_cache_vazio_apos_falha_de_rede_continua_indisponivel_dentro_do_intervalo():
+    chamadas = []
+
+    def buscar():
+        chamadas.append(1)
+        raise httpx.ConnectError("sem rede")
+
+    provedor = provedor_com(buscar)
+    with pytest.raises(AutenticacaoIndisponivel):
+        provedor.obter_chave("qualquer")
+    with pytest.raises(AutenticacaoIndisponivel):
+        provedor.obter_chave("qualquer")
+    assert len(chamadas) == 1
+
+
 @pytest.mark.parametrize("corpo", [{"keys": []}, {}, {"keys": "lixo"}, []])
 def test_resposta_sem_chaves_validas_vira_autenticacao_indisponivel(corpo):
     with pytest.raises(AutenticacaoIndisponivel):

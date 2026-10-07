@@ -61,7 +61,13 @@ def test_admin_nao_tem_loja(par, provedor):
 
 def test_token_expirado(par, provedor):
     with pytest.raises(NaoAutenticado):
-        validar(par.emitir(exp=int(time.time()) - 10), provedor)
+        validar(par.emitir(exp=int(time.time()) - 120), provedor)
+
+
+def test_token_expirado_ha_poucos_segundos_ainda_e_aceito_pela_tolerancia(par, provedor):
+    sub = uuid4()
+    usuario = validar(par.emitir(sub=str(sub), exp=int(time.time()) - 5), provedor)
+    assert usuario.id_auth == sub
 
 
 def test_audience_errada(par, provedor):

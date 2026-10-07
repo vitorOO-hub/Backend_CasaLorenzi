@@ -15,6 +15,8 @@ ALGORITMO = "ES256"
 AUDIENCE = "authenticated"
 TAMANHO_MAXIMO_TOKEN = 8192
 CLAIMS_OBRIGATORIAS = ["exp", "sub", "aud", "iss"]
+# Tolerancia de relogio entre o Supabase e a API, em segundos.
+LEEWAY_SEGUNDOS = 30
 
 
 def decodificar_token(token: str, *, provedor: ProvedorChaves, issuer: str) -> UsuarioAtual:
@@ -35,6 +37,7 @@ def decodificar_token(token: str, *, provedor: ProvedorChaves, issuer: str) -> U
             algorithms=[ALGORITMO],
             audience=AUDIENCE,
             issuer=issuer,
+            leeway=LEEWAY_SEGUNDOS,
             options={"require": CLAIMS_OBRIGATORIAS},
         )
     except jwt.PyJWTError as erro:

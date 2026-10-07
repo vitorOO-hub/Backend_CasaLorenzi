@@ -46,6 +46,9 @@ class ProvedorChaves:
                     self._atualizar()
                     chave = self._chaves.get(kid)
         if chave is None:
+            if not self._chaves:
+                # Sem nenhuma chave em cache nao da para dizer que o token e invalido.
+                raise AutenticacaoIndisponivel()
             raise NaoAutenticado()
         return chave.key
 

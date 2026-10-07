@@ -207,8 +207,9 @@ Rode sempre da raiz do projeto. O `app` do modulo `app.main` e criado sob demand
 do `.env`; os testes usam `criar_app(settings)` e nunca leem o `.env`. O comando equivalente
 `uvicorn app.main:criar_app --factory --reload` tambem funciona.
 
-Atencao: as rotas de estoque ainda **nao exigem login** e usam uma conexao que ignora RLS.
-Rode apenas em `127.0.0.1` ate a autenticacao do Supabase entrar.
+Atencao: com `AUTENTICACAO_OBRIGATORIA=false` (o padrao) as rotas de estoque ainda **nao exigem login**
+e usam uma conexao que ignora RLS. Rode apenas em `127.0.0.1` nesse modo; para exigir token, veja
+a secao "Autenticação (JWT do Supabase)" abaixo.
 
 Para testar sem tocar no banco remoto (os testes nunca leem o `.env`):
 
@@ -234,5 +235,15 @@ leia dados de outro cliente, nem que uma loja mexa na outra; esse filtro precisa
 handlers de cada módulo (ver "Fora do escopo" do spec de auth).
 
 **Antes de ligar a flag**, o hook de claims precisa estar ativo no painel do Supabase
-(Authentication → Hooks → Custom Access Token). Sem ele, todo token de equipe vem sem `papel` e a
-API responde 403. O hook é entregue pelo Plano 2 (revisão Alembic de RLS e claims).
+(Authentication → Hooks → Custom Access Token). Sem ele, todo token de equipe vem sem `papel`: em `/admin`, `/estoques` e
+`/movimentacoes-estoque` a API responde 403, mas `/atendimentos` e `/compras` aceitam qualquer usuário
+autenticado, então um token de equipe sem `papel` passa ali como se fosse cliente. O hook é entregue
+pelo Plano 2 (revisão Alembic de RLS e claims).
+
+**Limites conhecidos das claims:**
+
+- O token não traz `ativo`. A equipe inativa perde o `papel` no hook de claims (Plano 2) e passa a ser
+  tratada como cliente, então ainda passa em `/atendimentos` e `/compras`. Um cliente inativo mantém o
+  acesso até ser banido no Supabase Auth.
+- `atendente`, `operador_estoque` e `gerente_loja` precisam de `loja_id` no token. Um atendente
+  cadastrado sem loja recebe 401 em todas as rotas com a flag ligada.
