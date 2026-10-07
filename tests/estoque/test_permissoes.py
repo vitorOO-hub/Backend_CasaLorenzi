@@ -27,3 +27,21 @@ def test_movimentacoes_sem_token_responde_401(cliente):
     resposta = cliente.get("/movimentacoes-estoque")
     assert resposta.status_code == 401
     assert resposta.json() == {"detail": "Token invalido ou expirado"}
+
+
+def test_transferencias_sem_token_responde_401(cliente):
+    resposta = cliente.get("/transferencias-estoque")
+    assert resposta.status_code == 401
+    assert resposta.json() == {"detail": "Token invalido ou expirado"}
+
+
+def test_operador_de_estoque_acessa_transferencias(app, cliente):
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id_usuario="6f1c3a52-6a4e-4c8e-9a39-0f1f2b6f2f10",
+        id_loja="6f1c3a52-6a4e-4c8e-9a39-0f1f2b6f2f10",
+        tipo_usuario_codigo="operador_estoque",
+    )
+    app.dependency_overrides[get_executar] = lambda: lambda _operacao: []
+    resposta = cliente.get("/transferencias-estoque")
+    assert resposta.status_code == 200
+    assert resposta.json() == []

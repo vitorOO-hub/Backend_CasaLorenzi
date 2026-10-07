@@ -31,3 +31,10 @@ class EstoqueDuplicado(ErroDeNegocio):
 
     status_code = status.HTTP_409_CONFLICT
     detalhe = "Ja existe estoque para esta loja e variacao"
+
+
+class TipoMovimentacaoEstoqueNaoEncontrado(ErroDeNegocio):
+    """Tipo de movimentacao esperado nao existe na tabela de opcoes."""
+
+    status_code = status.HTTP_409_CONFLICT
+    detalhe = "Tipo de movimentacao de estoque nao encontrado"

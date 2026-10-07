@@ -1,96 +1,89 @@
 """Rotas do modulo de estoque."""
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, status
-from sqlalchemy.exc import IntegrityError
+from fastapi import APIRouter, Depends
 
-from app.core.db import ExecutarDep, eh_violacao_unicidade
-from app.core.security import requer_papeis
-from app.estoque.erros import EstoqueDuplicado
+from app.core.db import ExecutarDep
+from app.core.security import UsuarioAtual, requer_papeis
 from app.estoque.repositorio import (
-    atualizar_estoque_minimo,
-    criar_estoque,
+    ajustar_inventario_com_historico,
     listar_estoques,
     normalizar_id,
     obter_estoque,
-    registrar_entrada,
-    registrar_saida,
-    remover_estoque_sem_saldo,
+    registrar_entrada_com_historico,
+    registrar_saida_com_historico,
 )
-from app.estoque.schemas import EstoqueCriacao, EstoqueMinimoEntrada, QuantidadeEntrada
+from app.estoque.schemas import AjusteInventarioEntrada, QuantidadeEntrada
 
-PermissaoEstoque = Depends(requer_papeis("operador_estoque"))
+OperadorEstoque = Annotated[UsuarioAtual, Depends(requer_papeis("operador_estoque"))]
 
-router = APIRouter(prefix="/estoques", tags=["estoque"], dependencies=[PermissaoEstoque])
+router = APIRouter(prefix="/estoques", tags=["estoque"])
 
 
 @router.get("")
-def listar(executar: ExecutarDep) -> list[dict[str, Any]]:
+def listar(_usuario: OperadorEstoque, executar: ExecutarDep) -> list[dict[str, Any]]:
     return executar(listar_estoques)
 
 
 @router.get("/{id_estoque}")
-def obter(id_estoque: str, executar: ExecutarDep) -> dict[str, Any]:
+def obter(id_estoque: str, _usuario: OperadorEstoque, executar: ExecutarDep) -> dict[str, Any]:
     estoque_id = normalizar_id(id_estoque)
     return executar(lambda conexao: obter_estoque(conexao, estoque_id))
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
-def criar(dados: EstoqueCriacao, executar: ExecutarDep) -> dict[str, Any]:
-    try:
-        return executar(
-            lambda conexao: criar_estoque(
-                conexao,
-                id_loja=normalizar_id(dados.id_loja),
-                id_variacao=normalizar_id(dados.id_variacao),
-                quantidade=dados.quantidade,
-                estoque_minimo=dados.estoque_minimo,
-            )
-        )
-    except IntegrityError as erro:
-        if eh_violacao_unicidade(erro):
-            raise EstoqueDuplicado from erro
-        raise
-
-
 @router.post("/{id_estoque}/entrada")
-def entrada(id_estoque: str, dados: QuantidadeEntrada, executar: ExecutarDep) -> dict[str, Any]:
+def entrada(
+    id_estoque: str,
+    dados: QuantidadeEntrada,
+    usuario: OperadorEstoque,
+    executar: ExecutarDep,
+) -> dict[str, Any]:
     estoque_id = normalizar_id(id_estoque)
     return executar(
-        lambda conexao: registrar_entrada(
+        lambda conexao: registrar_entrada_com_historico(
             conexao,
             id_estoque=estoque_id,
+            id_usuario_responsavel=normalizar_id(usuario.id_usuario),
             quantidade=dados.quantidade,
+            motivo=dados.motivo,
         )
     )
 
 
 @router.post("/{id_estoque}/saida")
-def saida(id_estoque: str, dados: QuantidadeEntrada, executar: ExecutarDep) -> dict[str, Any]:
+def saida(
+    id_estoque: str,
+    dados: QuantidadeEntrada,
+    usuario: OperadorEstoque,
+    executar: ExecutarDep,
+) -> dict[str, Any]:
     estoque_id = normalizar_id(id_estoque)
     return executar(
-        lambda conexao: registrar_saida(
+        lambda conexao: registrar_saida_com_historico(
             conexao,
             id_estoque=estoque_id,
+            id_usuario_responsavel=normalizar_id(usuario.id_usuario),
             quantidade=dados.quantidade,
+            motivo=dados.motivo,
         )
     )
 
 
-@router.patch("/{id_estoque}/minimo")
-def minimo(id_estoque: str, dados: EstoqueMinimoEntrada, executar: ExecutarDep) -> dict[str, Any]:
+@router.post("/{id_estoque}/ajuste")
+def ajuste(
+    id_estoque: str,
+    dados: AjusteInventarioEntrada,
+    usuario: OperadorEstoque,
+    executar: ExecutarDep,
+) -> dict[str, Any]:
     estoque_id = normalizar_id(id_estoque)
     return executar(
-        lambda conexao: atualizar_estoque_minimo(
+        lambda conexao: ajustar_inventario_com_historico(
             conexao,
             id_estoque=estoque_id,
-            estoque_minimo=dados.estoque_minimo,
+            id_usuario_responsavel=normalizar_id(usuario.id_usuario),
+            quantidade_real=dados.quantidade,
+            motivo=dados.motivo,
         )
     )
-
-
-@router.delete("/{id_estoque}")
-def remover(id_estoque: str, executar: ExecutarDep) -> dict[str, Any]:
-    estoque_id = normalizar_id(id_estoque)
-    return executar(lambda conexao: remover_estoque_sem_saldo(conexao, id_estoque=estoque_id))

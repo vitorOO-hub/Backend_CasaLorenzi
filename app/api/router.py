@@ -8,6 +8,7 @@ from app.atendimento.router import router as atendimento_router
 from app.compras.router import router as compras_router
 from app.estoque.router import router as estoque_router
 from app.movimentacoes.router import router as movimentacoes_router
+from app.transferencias.router import router as transferencias_router
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -16,3 +17,4 @@ api_router.include_router(atendimento_router)
 api_router.include_router(compras_router)
 api_router.include_router(estoque_router)
 api_router.include_router(movimentacoes_router)
+api_router.include_router(transferencias_router)

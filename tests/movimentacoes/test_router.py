@@ -40,40 +40,8 @@ def test_rotas_de_movimentacao_estao_registradas(cliente):
         (metodo.upper(), caminho) for caminho, itens in caminhos.items() for metodo in itens
     }
     assert ("GET", "/movimentacoes-estoque") in registradas
-    assert ("POST", "/movimentacoes-estoque") in registradas
     assert ("GET", "/movimentacoes-estoque/{id_movimentacao}") in registradas
-
-
-def test_criar_movimentacao_responde_201(app, cliente):
-    usar_executor(app, devolve(LINHA))
-    resposta = cliente.post(
-        "/movimentacoes-estoque",
-        json={
-            "id_loja": ID_UUID,
-            "id_variacao": ID_UUID,
-            "id_tipo_movimentacao_estoque": ID_UUID,
-            "quantidade": 2,
-            "quantidade_anterior": 10,
-            "quantidade_posterior": 8,
-        },
-    )
-    assert resposta.status_code == 201
-    assert resposta.json() == LINHA
-
-
-def test_criar_movimentacao_rejeita_quantidade_invalida(cliente):
-    resposta = cliente.post(
-        "/movimentacoes-estoque",
-        json={
-            "id_loja": ID_UUID,
-            "id_variacao": ID_UUID,
-            "id_tipo_movimentacao_estoque": ID_UUID,
-            "quantidade": 0,
-            "quantidade_anterior": 10,
-            "quantidade_posterior": 10,
-        },
-    )
-    assert resposta.status_code == 422
+    assert ("POST", "/movimentacoes-estoque") not in registradas
 
 
 def test_movimentacao_inexistente_responde_404(app, cliente):
@@ -83,18 +51,3 @@ def test_movimentacao_inexistente_responde_404(app, cliente):
     assert resposta.json() == {"detail": "Movimentacao de estoque nao encontrada"}
 
 
-def test_movimentacao_invalida_responde_409(app, cliente, erro_integridade):
-    usar_executor(app, levanta(erro_integridade("23514")))
-    resposta = cliente.post(
-        "/movimentacoes-estoque",
-        json={
-            "id_loja": ID_UUID,
-            "id_variacao": ID_UUID,
-            "id_tipo_movimentacao_estoque": ID_UUID,
-            "quantidade": 2,
-            "quantidade_anterior": 10,
-            "quantidade_posterior": 10,
-        },
-    )
-    assert resposta.status_code == 409
-    assert resposta.json() == {"detail": "Movimentacao de estoque invalida para os dados informados"}

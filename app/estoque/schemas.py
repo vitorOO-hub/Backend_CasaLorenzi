@@ -7,16 +7,11 @@ esses valores vem do token (CLAUDE.md, secao 3).
 from pydantic import BaseModel, Field
 
 
-class EstoqueCriacao(BaseModel):
-    id_loja: str | int
-    id_variacao: str | int
-    quantidade: int = Field(default=0, ge=0)
-    estoque_minimo: int = Field(default=0, ge=0)
-
-
 class QuantidadeEntrada(BaseModel):
     quantidade: int = Field(gt=0)
+    motivo: str | None = Field(default=None, max_length=1000)
 
 
-class EstoqueMinimoEntrada(BaseModel):
-    estoque_minimo: int = Field(ge=0)
+class AjusteInventarioEntrada(BaseModel):
+    quantidade: int = Field(ge=0)
+    motivo: str | None = Field(default=None, max_length=1000)

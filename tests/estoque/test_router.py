@@ -7,7 +7,6 @@ import pytest
 from app.core.db import get_executar
 from app.core.security import get_current_user
 from app.estoque.erros import (
-    EstoqueComSaldo,
     EstoqueInsuficiente,
     RegistroNaoEncontrado,
 )
@@ -18,11 +17,15 @@ LINHA = {"id_estoque": ID_UUID, "quantidade": 8}
 ROTAS_ESPERADAS = {
     ("GET", "/health"),
     ("GET", "/estoques"),
-    ("POST", "/estoques"),
     ("GET", "/estoques/{id_estoque}"),
-    ("DELETE", "/estoques/{id_estoque}"),
     ("POST", "/estoques/{id_estoque}/entrada"),
     ("POST", "/estoques/{id_estoque}/saida"),
+    ("POST", "/estoques/{id_estoque}/ajuste"),
+}
+
+ROTAS_NAO_PERMITIDAS_OPERADOR = {
+    ("POST", "/estoques"),
+    ("DELETE", "/estoques/{id_estoque}"),
     ("PATCH", "/estoques/{id_estoque}/minimo"),
 }
 
@@ -30,7 +33,8 @@ ROTAS_ESPERADAS = {
 @pytest.fixture(autouse=True)
 def liberar_operador_de_estoque(app):
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-        tipo_usuario_codigo="operador_estoque"
+        id_usuario=ID_UUID,
+        tipo_usuario_codigo="operador_estoque",
     )
 
 
@@ -55,6 +59,7 @@ def test_todas_as_rotas_do_estoque_estao_registradas(cliente):
         (metodo.upper(), caminho) for caminho, itens in caminhos.items() for metodo in itens
     }
     assert ROTAS_ESPERADAS.issubset(registradas)
+    assert ROTAS_NAO_PERMITIDAS_OPERADOR.isdisjoint(registradas)
 
 
 def test_listar_devolve_o_que_o_repositorio_devolve(app, cliente):
@@ -64,29 +69,13 @@ def test_listar_devolve_o_que_o_repositorio_devolve(app, cliente):
     assert resposta.json() == [LINHA]
 
 
-def test_criar_responde_201(app, cliente):
-    usar_executor(app, devolve(LINHA))
-    corpo = {"id_loja": ID_UUID, "id_variacao": ID_UUID, "quantidade": 8}
-    resposta = cliente.post("/estoques", json=corpo)
-    assert resposta.status_code == 201
-    assert resposta.json() == LINHA
-
-
-def test_criar_duplicado_responde_409_em_portugues(app, cliente, erro_integridade):
-    usar_executor(app, levanta(erro_integridade("23505")))
-    resposta = cliente.post("/estoques", json={"id_loja": ID_UUID, "id_variacao": ID_UUID})
-    assert resposta.status_code == 409
-    assert resposta.json() == {"detail": "Ja existe estoque para esta loja e variacao"}
-
-
 @pytest.mark.parametrize(
     ("metodo", "caminho", "corpo"),
     [
         ("GET", f"/estoques/{ID_UUID}", None),
         ("POST", f"/estoques/{ID_UUID}/entrada", {"quantidade": 1}),
         ("POST", f"/estoques/{ID_UUID}/saida", {"quantidade": 1}),
-        ("PATCH", f"/estoques/{ID_UUID}/minimo", {"estoque_minimo": 1}),
-        ("DELETE", f"/estoques/{ID_UUID}", None),
+        ("POST", f"/estoques/{ID_UUID}/ajuste", {"quantidade": 1}),
     ],
 )
 def test_registro_inexistente_responde_404(app, cliente, metodo, caminho, corpo):
@@ -103,13 +92,6 @@ def test_saida_maior_que_o_saldo_responde_409(app, cliente):
     assert resposta.json() == {"detail": "Estoque insuficiente para realizar a saida"}
 
 
-def test_remover_com_saldo_responde_409(app, cliente):
-    usar_executor(app, levanta(EstoqueComSaldo()))
-    resposta = cliente.delete(f"/estoques/{ID_UUID}")
-    assert resposta.status_code == 409
-    assert resposta.json() == {"detail": "Nao e possivel remover estoque com saldo maior que zero"}
-
-
 @pytest.mark.parametrize(
     ("caminho", "corpo"),
     [
@@ -117,14 +99,11 @@ def test_remover_com_saldo_responde_409(app, cliente):
         ("/estoques/1/saida", {"quantidade": -3}),
         ("/estoques/1/entrada", {"quantidade": 0}),
         ("/estoques/1/entrada", {}),
+        ("/estoques/1/ajuste", {"quantidade": -1}),
+        ("/estoques/1/ajuste", {}),
     ],
 )
 def test_quantidade_invalida_e_rejeitada_antes_do_banco(cliente, caminho, corpo):
     # Sem trocar o executor: se a rota abrisse conexao, o teste falharia (nao ha banco de teste).
     resposta = cliente.post(caminho, json=corpo)
-    assert resposta.status_code == 422
-
-
-def test_minimo_negativo_e_rejeitado_antes_do_banco(cliente):
-    resposta = cliente.patch("/estoques/1/minimo", json={"estoque_minimo": -1})
     assert resposta.status_code == 422
