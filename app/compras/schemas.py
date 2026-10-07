@@ -1,6 +1,7 @@
 """Schemas do modulo de compras."""
 
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,6 +21,9 @@ class PedidoCriacao(EntradaRestrita):
     id_usuario_responsavel: str | int | None = None
     id_status_pedido: str | int
     valor_total: Decimal = Field(default=Decimal("0.00"), ge=0, decimal_places=2)
+    # Sem informar, o banco assume 'online' (o portal) e frete zero.
+    canal_venda: Literal["loja", "online"] | None = None
+    valor_frete: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     observacao: str | None = Field(default=None, max_length=1000)
 
 

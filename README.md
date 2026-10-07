@@ -411,3 +411,32 @@ Migration `20261007120000_chat_ao_vivo`: tabela `chamado_leitura` (RLS forcado, 
 Se faltar permissao para criar as policies, a migration avisa e segue: rode
 `supabase/realtime_chat_policies.sql` pelo SQL Editor. A revisao encadeia depois de
 `20261007110000` (correcao de RLS das transferencias).
+
+## Início do gerente (vendas, reposição e pendências)
+
+Rotas privadas em `/api/v1/painel/gerencia`, só para `gerente_loja` e `admin`. O gerente enxerga
+sempre a própria loja (a do token; pedir outra dá 403); o admin vê a rede ou escolhe uma loja.
+
+| Método | Rota | Para que serve |
+| --- | --- | --- |
+| GET | `/dashboard?inicio=&fim=&categoria=&canal=&id_loja=` | Faturamento, pedidos, ticket médio e peças do período contra o anterior; série diária; movimento por dia da semana; peças mais vendidas; mix loja × online; opções de filtro |
+| GET | `/reposicao?categoria=&limit=` | Peças que acabam primeiro: saldo contra o ritmo de venda dos últimos 30 dias |
+| GET | `/pendencias` | Ajustes a aprovar, transferências aguardando a loja e chamados sem resposta |
+
+Os chamados da unidade (por motivo, taxa de resolução, primeira resposta) já vêm de
+`GET /dashboard/atendimento`, que o gerente também pode usar.
+
+Regras: venda é pedido `pago`, `separado` ou `entregue`; o faturamento soma os itens (sem frete) e o
+dia é o de São Paulo. A migration `20261007130000` cria `pedido.canal_venda` (`loja`/`online`),
+`pedido.valor_frete` e a tabela `ajuste_estoque` (RLS forçado, sem acesso do front).
+
+### Dados de exemplo
+
+```
+python scripts/semear_vendas.py             # mostra o que seria criado
+python scripts/semear_vendas.py --aplicar   # grava (uma transação, uma única vez)
+```
+
+Cria 2 lojas, o catálogo da coleção, clientes fictícios (sem login), ~13 meses de pedidos com
+pagamentos e movimentações de estoque coerentes, ajustes a aprovar e transferências. Exige
+`alembic upgrade head`.
