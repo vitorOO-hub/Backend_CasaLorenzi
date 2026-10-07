@@ -1,6 +1,7 @@
 """Fabrica de dados para os testes de banco. Roda como superusuario, antes de trocar de papel."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID, uuid4
 
 
@@ -68,34 +69,64 @@ class Fabrica:
         loja: UUID | None = None,
         pedido: UUID | None = None,
         status: str = "aberto",
+        canal: str | None = None,
+        categoria: str | None = None,
+        prioridade: str | None = None,
+        aberto_em: datetime | None = None,
+        assunto: str | None = None,
     ) -> UUID:
+        """Cria um chamado. Sem codigos, usa a primeira opcao (menor `ordem`) de cada tabela."""
         return self._um(
             """
             INSERT INTO atendimento (
                 id_cliente, id_loja, id_pedido, id_canal_atendimento,
-                id_categoria_atendimento, id_prioridade_atendimento, id_status_atendimento
+                id_categoria_atendimento, id_prioridade_atendimento, id_status_atendimento,
+                aberto_em, assunto
             )
             VALUES (
-                %s, %s, %s,
-                (SELECT id_canal_atendimento FROM canal_atendimento ORDER BY ordem LIMIT 1),
-                (SELECT id_categoria_atendimento FROM categoria_atendimento ORDER BY ordem LIMIT 1),
+                %(cliente)s, %(loja)s, %(pedido)s,
+                (SELECT id_canal_atendimento FROM canal_atendimento
+                 WHERE codigo = coalesce(%(canal)s, (
+                     SELECT codigo FROM canal_atendimento ORDER BY ordem LIMIT 1))),
+                (SELECT id_categoria_atendimento FROM categoria_atendimento
+                 WHERE codigo = coalesce(%(categoria)s, (
+                     SELECT codigo FROM categoria_atendimento ORDER BY ordem LIMIT 1))),
                 (SELECT id_prioridade_atendimento FROM prioridade_atendimento
-                 ORDER BY ordem LIMIT 1),
-                (SELECT id_status_atendimento FROM status_atendimento WHERE codigo = %s)
+                 WHERE codigo = coalesce(%(prioridade)s, (
+                     SELECT codigo FROM prioridade_atendimento ORDER BY ordem LIMIT 1))),
+                (SELECT id_status_atendimento FROM status_atendimento WHERE codigo = %(status)s),
+                coalesce(%(aberto_em)s, now()), %(assunto)s
             )
             RETURNING id_atendimento
             """,
-            (cliente.id, loja, pedido, status),
+            {
+                "cliente": cliente.id,
+                "loja": loja,
+                "pedido": pedido,
+                "status": status,
+                "canal": canal,
+                "categoria": categoria,
+                "prioridade": prioridade,
+                "aberto_em": aberto_em,
+                "assunto": assunto,
+            },
         )
 
-    def mensagem(self, *, atendimento: UUID, remetente: Usuario, texto: str = "ola") -> UUID:
+    def mensagem(
+        self,
+        *,
+        atendimento: UUID,
+        remetente: Usuario,
+        texto: str = "ola",
+        enviada_em: datetime | None = None,
+    ) -> UUID:
         return self._um(
             """
-            INSERT INTO mensagem (id_atendimento, id_usuario_remetente, texto)
-            VALUES (%s, %s, %s)
+            INSERT INTO mensagem (id_atendimento, id_usuario_remetente, texto, enviada_em)
+            VALUES (%s, %s, %s, coalesce(%s, now()))
             RETURNING id_mensagem
             """,
-            (atendimento, remetente.id, texto),
+            (atendimento, remetente.id, texto, enviada_em),
         )
 
     def variacao(self) -> UUID:

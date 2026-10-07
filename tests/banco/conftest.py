@@ -90,3 +90,25 @@ def fab(conn):
     from tests.banco.fabrica import Fabrica
 
     return Fabrica(conn)
+
+
+@pytest.fixture
+def sa_conn(banco_migrado: str):
+    """Conexao SQLAlchemy (a mesma que a API usa) com transacao desfeita no fim do teste."""
+    from sqlalchemy import create_engine
+
+    from app.core.db import _url_sqlalchemy
+
+    engine = create_engine(_url_sqlalchemy(banco_migrado))
+    with engine.connect() as conexao:
+        yield conexao
+        conexao.rollback()
+    engine.dispose()
+
+
+@pytest.fixture
+def fab_sa(sa_conn):
+    """Fabrica que grava na MESMA transacao da `sa_conn`, para a consulta enxergar os dados."""
+    from tests.banco.fabrica import Fabrica
+
+    return Fabrica(sa_conn.connection.driver_connection)
