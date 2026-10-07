@@ -49,7 +49,7 @@ def test_email_base_gera_enderecos_com_etiqueta_na_mesma_caixa():
     assert emails == [
         "pessoa+cliente@gmail.com",
         "pessoa+atendente@gmail.com",
-        "pessoa+operador@gmail.com",
+        "pessoa+operadorestoque@gmail.com",
         "pessoa+gerente@gmail.com",
         "pessoa+admin@gmail.com",
     ]
