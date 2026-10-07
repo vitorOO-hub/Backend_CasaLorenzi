@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from app.admin.router import router as admin_router
 from app.api import health
 from app.atendimento.router import router as atendimento_router
+from app.chamados.router import router as chamados_router
 from app.compras.router import router as compras_router
 from app.core.papeis import Papel
 from app.core.security import trava
@@ -23,7 +24,7 @@ api_router.include_router(atendimento_router, dependencies=[Depends(trava())])
 api_router.include_router(compras_router, dependencies=[Depends(trava())])
 # O dashboard exige token e papel sempre (ver app/dashboard/router.py), sem depender da flag.
 api_router.include_router(dashboard_router)
+# Area de chamados do painel, em /api/v1 (o prefixo que o cliente HTTP do front espera).
+api_router.include_router(chamados_router, prefix="/api/v1")
 api_router.include_router(estoque_router, dependencies=[Depends(trava(*EQUIPE_DE_ESTOQUE))])
-api_router.include_router(
-    movimentacoes_router, dependencies=[Depends(trava(*EQUIPE_DE_ESTOQUE))]
-)
+api_router.include_router(movimentacoes_router, dependencies=[Depends(trava(*EQUIPE_DE_ESTOQUE))])
