@@ -456,3 +456,22 @@ rede ou escolhe uma loja. O operador ainda so ve as movimentacoes que ele mesmo 
 Situacao: `esgotado` (saldo 0), `baixo` (no minimo ou abaixo) e `ok`. Tipos agrupados em entrada,
 saida (inclui venda), ajuste e transferencia; o nome exato do tipo vem em cada linha. O periodo usa o
 dia de Sao Paulo nas duas pontas. A busca nunca vira curinga nem SQL.
+
+## Clientes do painel (atendente, gerente e admin)
+
+Rotas privadas em `/api/v1/painel/clientes`, com token e papel `atendente`, `gerente_loja` ou
+`admin` (independente de `AUTENTICACAO_OBRIGATORIA`):
+
+| Rota | O que faz |
+|---|---|
+| `GET /` | lista paginada; `busca` (nome, e-mail ou telefone), `secao` (`todos`, `com_aberto`, `meus`), `id_loja` (só admin) |
+| `GET /{id}` | ficha: contato, resumo, chamados do escopo e, só para gerente e admin, as compras |
+
+Seções da lista: **todos**, **com chamado em aberto** e **meus clientes** (os que têm chamado que o
+usuário assumiu). Quem vê quem: o admin vê todos os clientes; a equipe de loja vê os que têm pedido
+na loja ou chamado no escopo dela (a loja mais os chamados sem loja). Cliente fora do escopo
+responde 404, como se não existisse.
+
+Privacidade: o atendente recebe contato e chamados, mas **compras, total gasto e ticket médio vêm
+nulos e nem são calculados no banco**; documento (CPF) nunca é devolvido. A busca trata `%` e `_`
+como letras, e as respostas recusam campo que não foi combinado (`extra="forbid"`).
