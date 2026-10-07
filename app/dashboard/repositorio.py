@@ -31,6 +31,9 @@ class Filtro:
         }
 
 
+# Bandit B608: os textos SQL abaixo so juntam constantes deste modulo; todo valor vindo da
+# requisicao entra por parametro nomeado (:inicio, :id_loja, ...), nunca por concatenacao.
+#
 # Chamados abertos no periodo, com a primeira resposta da equipe (primeira mensagem de quem nao
 # e cliente). O filtro por data usa o fuso de Sao Paulo para o "dia" bater com o do front.
 BASE = """
@@ -86,7 +89,7 @@ def resumo(conexao: Connection, filtro: Filtro, inicio: date, fim: date) -> dict
                         AS resolvidos,
                     {HORAS_ATE_RESPOSTA} AS resposta_media_horas
                 FROM base
-                """
+                """  # nosec B608
             ),
             _parametros(filtro, inicio, fim),
         )
@@ -110,7 +113,7 @@ def volume_diario(
             LEFT JOIN base ON base.dia = dias.dia::date
             GROUP BY dias.dia
             ORDER BY dias.dia
-            """
+            """  # nosec B608
         ),
         _parametros(filtro, inicio, fim),
     ).mappings()
@@ -130,7 +133,7 @@ def por_categoria(
             WHERE c.ativo
             GROUP BY c.codigo, c.nome, c.ordem
             ORDER BY c.ordem
-            """
+            """  # nosec B608
         ),
         _parametros(filtro, inicio, fim),
     ).mappings()
@@ -154,7 +157,7 @@ def resposta_por_canal(
             WHERE c.ativo
             GROUP BY c.codigo, c.nome, c.ordem
             ORDER BY c.ordem
-            """
+            """  # nosec B608
         ),
         _parametros(filtro, inicio, fim),
     ).mappings()
