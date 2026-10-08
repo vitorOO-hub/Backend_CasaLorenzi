@@ -45,10 +45,11 @@ def listar_lojas(usuario: UsuarioDep, executar: ExecutarDep):
 @router.get(
     "/catalogo/estoque",
     response_model=list[EstoqueVariacaoCliente],
-    summary="Estoque disponivel para o catalogo do cliente",
+    summary="Estoque disponivel para o catalogo (publico, sem login)",
 )
-def listar_estoque_catalogo(usuario: UsuarioDep, executar: ExecutarDep):
-    return executar(lambda conexao: service.listar_estoque_catalogo(conexao, usuario))
+def listar_estoque_catalogo(executar: ExecutarDep):
+    # Publica como o proprio catalogo: visitantes e equipe tambem navegam pela loja.
+    return executar(service.listar_estoque_catalogo)
 
 
 @router.get("/perfil", response_model=PerfilCliente, summary="Perfil do cliente logado")

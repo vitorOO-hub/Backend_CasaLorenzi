@@ -22,8 +22,8 @@ def listar_lojas(conexao, usuario: UsuarioAtual):
     return repositorio.listar_lojas(conexao)
 
 
-def listar_estoque_catalogo(conexao, usuario: UsuarioAtual):
-    _garantir_cliente(usuario)
+def listar_estoque_catalogo(conexao):
+    """Saldo por loja das pecas ativas; sem dado de cliente, por isso nao exige login."""
     return repositorio.listar_estoque_catalogo(conexao)
 
 

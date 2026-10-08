@@ -1,8 +1,8 @@
 """Rede de seguranca: com o Supabase configurado, NENHUMA rota responde sem token.
 
 Percorre todas as rotas registradas (as de hoje e as que vierem) e chama cada uma sem credencial.
-So a saude e a documentacao do FastAPI ficam abertas. Se alguem criar uma rota nova e esquecer de
-trancar, este teste quebra.
+So a saude, a documentacao do FastAPI e o estoque do catalogo ficam abertos. Se alguem criar
+uma rota nova e esquecer de trancar, este teste quebra.
 """
 
 import re
@@ -17,7 +17,16 @@ from app.main import criar_app
 from tests.auth_util import SUPABASE_URL
 from tests.conftest import DATABASE_URL_TESTE
 
-ABERTAS = {"/health", "/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"}
+# O estoque do catalogo e publico como o proprio catalogo: so le saldo de pecas ativas, sem dado
+# de cliente, e a loja precisa dele para quem navega sem login.
+ABERTAS = {
+    "/health",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/docs/oauth2-redirect",
+    "/api/v1/cliente/catalogo/estoque",
+}
 METODOS = {"get", "post", "put", "patch", "delete"}
 
 

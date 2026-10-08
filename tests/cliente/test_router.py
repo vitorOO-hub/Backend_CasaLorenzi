@@ -202,8 +202,7 @@ def test_perfil_do_cliente_responde_200(app, cliente):
     assert resposta.json()["total_pedidos"] == 2
 
 
-def test_estoque_do_catalogo_do_cliente_responde_200(app, cliente):
-    usar_cliente(app)
+def test_estoque_do_catalogo_responde_200_sem_login(app, cliente):
     usar_executor(app, devolve(ESTOQUE_CATALOGO))
     resposta = cliente.get("/api/v1/cliente/catalogo/estoque")
     assert resposta.status_code == 200
@@ -414,7 +413,19 @@ def test_usuario_interno_nao_acessa_area_do_cliente(app, cliente):
     assert resposta.status_code == 403
     resposta = cliente.get("/api/v1/cliente/carrinho")
     assert resposta.status_code == 403
-    resposta = cliente.get("/api/v1/cliente/catalogo/estoque")
-    assert resposta.status_code == 403
     resposta = cliente.get("/api/v1/cliente/agendamentos/opcoes")
     assert resposta.status_code == 403
+
+
+def test_equipe_tambem_ve_o_estoque_do_catalogo(app, cliente):
+    # A loja e publica: quem esta logado como equipe navega por ela como qualquer visitante.
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id_auth=ID_AUTH,
+        papel=Papel.ADMIN,
+        id_loja=None,
+    )
+    usar_executor(app, devolve(ESTOQUE_CATALOGO))
+    resposta = cliente.get(
+        "/api/v1/cliente/catalogo/estoque", headers={"Authorization": "Bearer qualquer"}
+    )
+    assert resposta.status_code == 200
