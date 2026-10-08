@@ -24,8 +24,9 @@ CENTAVOS = Decimal("0.01")
 STATUS_FINAIS_CHAMADO = ("resolvido", "encerrado", "cancelado")
 
 
-def _dinheiro(valor: Decimal) -> Decimal:
-    return valor.quantize(CENTAVOS)
+def _dinheiro(valor: Decimal | str) -> Decimal:
+    # As linhas ja serializadas (`serializar_linha`) trazem o dinheiro como texto.
+    return Decimal(valor).quantize(CENTAVOS)
 
 
 def id_cliente_ativo(conexao, id_auth: UUID) -> UUID:
@@ -84,9 +85,10 @@ def listar_estoque_catalogo(conexao) -> list[dict[str, object]]:
 
 
 def perfil_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, object]:
-    linha = conexao.execute(
-        text(
-            """
+    linha = (
+        conexao.execute(
+            text(
+                """
             WITH resumo_pedidos AS (
                 SELECT
                     count(*)::int AS total_pedidos,
@@ -125,9 +127,12 @@ def perfil_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, object]:
             LEFT JOIN loja_preferida lp ON TRUE
             WHERE u.id_usuario = CAST(:cliente AS uuid)
             """
-        ),
-        {"cliente": str(id_cliente)},
-    ).mappings().first()
+            ),
+            {"cliente": str(id_cliente)},
+        )
+        .mappings()
+        .first()
+    )
     if not linha:
         raise CadastroClienteNaoEncontrado
     return dict(linha)
@@ -481,17 +486,21 @@ def opcoes_agendamento(conexao: Connection) -> dict[str, object]:
 def _obter_id_opcao_atendimento(
     conexao: Connection, tabela: str, coluna_id: str, codigo: str
 ) -> object:
-    linha = conexao.execute(
-        text(
-            f"""
+    linha = (
+        conexao.execute(
+            text(
+                f"""
             SELECT {coluna_id}
             FROM {tabela}
             WHERE codigo = :codigo
               AND ativo
             """  # nosec B608 - tabela e coluna sao constantes escolhidas pelo codigo.
-        ),
-        {"codigo": codigo},
-    ).mappings().first()
+            ),
+            {"codigo": codigo},
+        )
+        .mappings()
+        .first()
+    )
     if not linha:
         raise ReferenciaChamadoInvalida
     return linha[coluna_id]
@@ -827,9 +836,10 @@ def criar_agendamento_cliente(
 ) -> dict[str, object]:
     try:
         horario = str(dados["horario"])
-        slot = conexao.execute(
-            text(
-                """
+        slot = (
+            conexao.execute(
+                text(
+                    """
                 WITH ocupacao AS (
                     SELECT count(*)::int AS usados
                     FROM agendamento_cliente
@@ -849,13 +859,16 @@ def criar_agendamento_cliente(
                   AND CAST(:data AS date) >= current_date
                 FOR UPDATE OF ah
                 """
-            ),
-            {
-                "loja": str(dados["id_loja"]),
-                "data": dados["data"],
-                "horario": horario,
-            },
-        ).mappings().first()
+                ),
+                {
+                    "loja": str(dados["id_loja"]),
+                    "data": dados["data"],
+                    "horario": horario,
+                },
+            )
+            .mappings()
+            .first()
+        )
         if not slot or int(slot["usados"]) >= int(slot["capacidade"]):
             raise ReferenciaChamadoInvalida
 
@@ -995,9 +1008,10 @@ def enviar_mensagem_chamado_cliente(
     texto_mensagem: str,
 ) -> dict[str, object]:
     try:
-        linha = conexao.execute(
-            text(
-                """
+        linha = (
+            conexao.execute(
+                text(
+                    """
                 SELECT st.codigo AS status_codigo
                 FROM atendimento a
                 JOIN status_atendimento st ON st.id_status_atendimento = a.id_status_atendimento
@@ -1005,9 +1019,12 @@ def enviar_mensagem_chamado_cliente(
                   AND a.id_cliente = CAST(:cliente AS uuid)
                 FOR UPDATE
                 """
-            ),
-            {"id": str(id_atendimento), "cliente": str(id_cliente)},
-        ).mappings().first()
+                ),
+                {"id": str(id_atendimento), "cliente": str(id_cliente)},
+            )
+            .mappings()
+            .first()
+        )
         if not linha:
             raise ChamadoClienteNaoEncontrado
         if linha["status_codigo"] in STATUS_FINAIS_CHAMADO:
@@ -1090,7 +1107,9 @@ def criar_checkout(
     try:
         id_loja = dados["id_loja"]
         _garantir_loja_ativa(conexao, id_loja)
-        id_status_pedido = _obter_id_por_codigo(conexao, "status_pedido", "id_status_pedido", "pago")
+        id_status_pedido = _obter_id_por_codigo(
+            conexao, "status_pedido", "id_status_pedido", "pago"
+        )
         id_metodo_pagamento = _obter_id_por_codigo(
             conexao,
             "metodo_pagamento",
@@ -1130,9 +1149,10 @@ def criar_checkout(
                 partes_observacao.append(f"Endereco de entrega: {texto_endereco}.")
         observacao = " ".join(partes_observacao)
 
-        pedido = executar_sql(
-            conexao,
-            """
+        pedido = (
+            executar_sql(
+                conexao,
+                """
             INSERT INTO pedido (
                 numero_pedido,
                 id_loja,
@@ -1144,8 +1164,11 @@ def criar_checkout(
             VALUES (%s, %s, %s, %s, 0, %s)
             RETURNING id_pedido
             """,
-            (numero, id_loja, id_cliente, id_status_pedido, observacao),
-        ).mappings().first()
+                (numero, id_loja, id_cliente, id_status_pedido, observacao),
+            )
+            .mappings()
+            .first()
+        )
         id_pedido = pedido["id_pedido"]
 
         subtotal = Decimal("0.00")
