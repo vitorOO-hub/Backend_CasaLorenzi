@@ -15,6 +15,7 @@ from app.core.security import trava
 from app.dashboard.router import router as dashboard_router
 from app.estoque.router import router as estoque_router
 from app.gerencia.router import router as gerencia_router
+from app.gestao.router import router as gestao_router
 from app.movimentacoes.router import router as movimentacoes_router
 from app.painel_estoque.router import router as painel_estoque_router
 from app.transferencias.router import router as transferencias_router
@@ -34,6 +35,7 @@ api_router.include_router(dashboard_router)
 api_router.include_router(chamados_router, prefix="/api/v1")
 api_router.include_router(chat_router, prefix="/api/v1")
 api_router.include_router(gerencia_router, prefix="/api/v1")
+api_router.include_router(gestao_router, prefix="/api/v1")
 api_router.include_router(painel_estoque_router, prefix="/api/v1")
 api_router.include_router(cliente_router, prefix="/api/v1")
 api_router.include_router(clientes_router, prefix="/api/v1")
