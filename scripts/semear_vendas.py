@@ -220,6 +220,7 @@ SOBRENOMES = (
     "Rangel",
 )
 CIDADES = ("São Paulo", "Rio de Janeiro", "Belo Horizonte", "Campinas", "Niterói", "Santos")
+BAIRROS = ("Centro", "Jardins", "Moema", "Savassi", "Copacabana", "Pinheiros")
 QUANTIDADE_DE_CLIENTES = 36
 
 DIA_DA_SEMANA = (0.75, 0.8, 0.9, 1.0, 1.35, 1.7, 0.6)  # segunda ... domingo
@@ -780,10 +781,21 @@ def preparar(conexao: psycopg.Connection):
             "ascii", "ignore"
         ).decode()
         conexao.execute(
-            "INSERT INTO usuario (id_tipo_usuario, nome, email, telefone, cidade) VALUES "
-            "((SELECT id_tipo_usuario FROM tipo_usuario WHERE codigo = 'cliente'), %s, %s, %s, %s) "
+            "INSERT INTO usuario (id_tipo_usuario, nome, email, telefone, cidade, "
+            "rua, bairro, numero_endereco, cep) VALUES "
+            "((SELECT id_tipo_usuario FROM tipo_usuario WHERE codigo = 'cliente'), "
+            "%s, %s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT (email) DO NOTHING",
-            (nome, email, f"(11) 9{8000 + n:04d}-{1000 + n * 7:04d}", CIDADES[n % len(CIDADES)]),
+            (
+                nome,
+                email,
+                f"119{8000 + n:04d}{1000 + n * 7:04d}"[:11],
+                CIDADES[n % len(CIDADES)],
+                f"Rua {SOBRENOMES[(n * 3) % len(SOBRENOMES)]}",
+                BAIRROS[n % len(BAIRROS)],
+                str(10 + n * 7),
+                f"{1000000 + n * 1111:08d}",
+            ),
         )
         clientes.append(_um(conexao, "SELECT id_usuario FROM usuario WHERE email = %s", (email,)))
     return lojas, equipes, variacoes, clientes

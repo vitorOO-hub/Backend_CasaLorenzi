@@ -35,16 +35,20 @@ class Fabrica:
     def usuario(self, tipo: str, *, loja: UUID | None = None, ativo: bool = True) -> Usuario:
         n = self._proximo()
         auth = uuid4()
+        # Todo cliente tem endereco (regra do banco); a equipe nao tem.
+        endereco = ("Rua Teste", "Centro", "10", "01001000") if tipo == "cliente" else (None,) * 4
         id_usuario = self._um(
             """
-            INSERT INTO usuario (id_tipo_usuario, id_loja, auth_user_id, nome, email, ativo)
+            INSERT INTO usuario (
+                id_tipo_usuario, id_loja, auth_user_id, nome, email, ativo,
+                rua, bairro, numero_endereco, cep)
             VALUES (
                 (SELECT id_tipo_usuario FROM tipo_usuario WHERE codigo = %s),
-                %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
             RETURNING id_usuario
             """,
-            (tipo, loja, auth, f"Usuario {n}", f"u{n}@teste.local", ativo),
+            (tipo, loja, auth, f"Usuario {n}", f"u{n}@teste.local", ativo, *endereco),
         )
         return Usuario(id=id_usuario, auth=auth, tipo=tipo, loja=loja)
 

@@ -520,3 +520,13 @@ nos ajustes). Escrever continua so pela API.
   em nenhuma rota do painel e que atendente e operador so entram nas areas deles.
 - **Mensagens.** Pelo Supabase direto so o cliente dono insere mensagem (policy da migration
   `20261007190000`); a equipe responde pela API, que aplica as regras do chamado.
+
+## Cadastro de cliente pelo site
+
+O botao "Criar conta" do login chama `auth.signUp` com nome, telefone e endereco nos metadados e a
+marca `cadastro_cliente`. Um trigger em `auth.users` (migration `20261007200000`) cria a linha de
+`usuario` com cargo **sempre** `cliente`: nada dos metadados escolhe cargo, loja ou status. Rua,
+bairro, numero e CEP (8 digitos) sao obrigatorios em todo cliente novo (trigger em `usuario`), e a
+equipe nao tem endereco. E-mail que ja existe barra o cadastro. Cada cliente entra com o proprio JWT
+(sem `papel`) e so le a propria linha (RLS). Sem permissao em `auth.users`, rode
+`supabase/cadastro_cliente_trigger.sql` no SQL Editor.

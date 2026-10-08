@@ -174,11 +174,18 @@ def vincular_usuario(
     """Cria ou atualiza a linha de `usuario` que o hook usa para montar papel e loja do token."""
     conexao.execute(
         """
-        INSERT INTO usuario (id_tipo_usuario, id_loja, auth_user_id, nome, email, ativo)
+        INSERT INTO usuario (
+            id_tipo_usuario, id_loja, auth_user_id, nome, email, ativo,
+            rua, bairro, numero_endereco, cep)
         SELECT
             t.id_tipo_usuario,
             CASE WHEN %(precisa_loja)s THEN (SELECT id_loja FROM loja WHERE codigo = %(loja)s) END,
-            %(auth)s::uuid, %(nome)s, %(email)s, true
+            %(auth)s::uuid, %(nome)s, %(email)s, true,
+            -- Todo cliente tem endereco; a conta de demonstracao recebe um de exemplo.
+            CASE WHEN t.codigo = 'cliente' THEN 'Rua das Flores' END,
+            CASE WHEN t.codigo = 'cliente' THEN 'Centro' END,
+            CASE WHEN t.codigo = 'cliente' THEN '100' END,
+            CASE WHEN t.codigo = 'cliente' THEN '01001000' END
         FROM tipo_usuario t
         WHERE t.codigo = %(tipo)s
         ON CONFLICT (email) DO UPDATE
