@@ -1,0 +1,27 @@
+# Blueprint do Render: cria o servico da API a partir deste repositorio (branch main).
+# Render -> New -> Blueprint -> escolha este repositorio e a branch main -> preencha as 3 variaveis
+# marcadas como "sync: false" (nao ficam no Git) -> Apply.
+services:
+  - type: web
+    name: casa-lorenzi-api
+    runtime: python
+    plan: free
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    # O plano gratis nao tem "pre-deploy": as migrations rodam antes de subir o servidor. Se a
+    # migration falhar, o deploy falha e a versao anterior continua no ar.
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      # postgresql://... do Supabase (use a string do pooler). Segredo.
+      - key: DATABASE_URL
+        sync: false
+      # https://<projeto>.supabase.co (a API valida os tokens pelas chaves publicas dele).
+      - key: SUPABASE_URL
+        sync: false
+      # URL do front na Vercel (sem barra no fim), separadas por virgula se houver mais de uma.
+      - key: CORS_ORIGINS
+        sync: false
