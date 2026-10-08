@@ -1,532 +1,322 @@
-# Backend_CasaLorenzi
+# Casa Lorenzi — Backend
 
-Repositorio do backend e do banco de dados da Casa Lorenzi.
+API e banco de dados da plataforma da **Casa Lorenzi**, rede de moda com três lojas (Ibirapuera/SP,
+Barra/RJ e Savassi/BH). A plataforma tem uma loja online para o cliente e um painel interno com
+estoque, atendimento, gerência e gestão.
 
-## Objetivo desta branch
+| | |
+|---|---|
+| **API em produção** | https://backend-casalorenzi.onrender.com (`GET /health`) |
+| **Frontend** | repositório [Frontend_CasaLorenzi](https://github.com/vitorOO-hub/Frontend_CasaLorenzi) |
+| **Branches** | `intermediaria` recebe todo trabalho novo; `main` é a versão publicada |
 
-Esta branch prepara a estrutura inicial do banco de dados no Supabase/PostgreSQL.
+## Sumário
 
-O foco aqui e somente banco de dados:
+1. [Visão geral](#1-visão-geral)
+2. [Requisitos](#2-requisitos)
+3. [Como rodar](#3-como-rodar)
+4. [Variáveis de ambiente](#4-variáveis-de-ambiente)
+5. [Estrutura do projeto](#5-estrutura-do-projeto)
+6. [Autenticação e papéis](#6-autenticação-e-papéis)
+7. [API](#7-api)
+8. [Banco de dados e migrations](#8-banco-de-dados-e-migrations)
+9. [Segurança](#9-segurança)
+10. [Testes e qualidade](#10-testes-e-qualidade)
+11. [Deploy](#11-deploy)
+12. [Scripts utilitários](#12-scripts-utilitários)
+13. [Como contribuir](#13-como-contribuir)
+14. [Problemas comuns](#14-problemas-comuns)
 
-- criar a estrutura de migrations do Supabase;
-- criar as 10 tabelas essenciais do primeiro fluxo;
-- incluir constraints, chaves estrangeiras e indices;
-- criar um seed pequeno para teste;
-- documentar como aplicar a estrutura no Supabase.
+---
 
-Backend em Python e frontend ficam para etapas separadas.
-
-## Estrutura de arquivos
-
-```text
-app/                       API FastAPI (monolito modular)
-├── main.py                criar_app(): CORS, tratadores de erro e routers
-├── core/                  config.py (Settings), db.py (conexao), erros.py (ErroDeNegocio)
-├── api/                   router.py (agrega os modulos) e health.py (GET /health)
-├── chamados/ chat/ clientes/ cliente/ gerencia/ gestao/ painel_estoque/ dashboard/
-│                          modulos do painel e da area do cliente (router, service, repositorio)
-└── core/protecoes.py      limite de requisicoes e cabecalhos de seguranca
-
-supabase/
-├── migrations/            tabelas, constraints, ids em uuid e politicas de RLS
-├── seed.sql
-└── config.toml
-
-alembic/                   migrations novas do banco via Alembic
-
-tests/                     core/, api/ e estoque/, espelhando app/
-pytest.ini
-.env.example
-.gitignore
-alembic.ini
-requirements.txt
-README.md
-```
-
-Um modulo novo segue o padrao de `app/estoque/`: `router.py` (rotas), `schemas.py` (entrada),
-`repositorio.py` (SQL parametrizado) e `erros.py` (subclasses de `ErroDeNegocio`). O router
-entra em `app/api/router.py` com uma linha.
-
-## Tabelas principais
-
-A primeira migration cria:
-
-1. `loja`
-2. `tipo_usuario`
-3. `usuario`
-4. `produto`
-5. `variacao_produto`
-6. `estoque`
-7. `status_pedido`
-8. `pedido`
-9. `item_pedido`
-10. `metodo_pagamento`
-11. `status_pagamento`
-12. `pagamento`
-13. `tipo_movimentacao_estoque`
-14. `movimentacao_estoque`
-
-As tabelas `tipo_usuario`, `status_pedido`, `metodo_pagamento`, `status_pagamento` e `tipo_movimentacao_estoque` funcionam como listas de opcoes do banco. O frontend pode consultar essas tabelas para montar selects, e as tabelas principais salvam o ID da opcao escolhida.
-
-Tipos iniciais de usuario:
-
-- Cliente
-- Operador de estoque
-- Atendente
-- Gerente da loja
-- Diretor
-
-Valores monetarios usam `DECIMAL(12,2)`, evitando `FLOAT` e mantendo duas casas decimais.
-
-## Relacao entre Supabase e codigo Python
-
-O Supabase guarda os dados e protege regras importantes do banco:
-
-- chaves primarias;
-- chaves estrangeiras;
-- campos obrigatorios;
-- valores unicos;
-- opcoes controladas por tabelas de dominio;
-- checks de quantidade e valores monetarios;
-- historico de movimentacao de estoque.
-
-O codigo Python usa essa estrutura para criar as regras da aplicacao:
-
-- receber dados do frontend;
-- validar entradas;
-- criar clientes, produtos, pedidos e pagamentos;
-- chamar o Supabase para consultar e alterar dados;
-- executar operacoes sensiveis de forma segura.
-
-Fluxo esperado:
+## 1. Visão geral
 
 ```text
-Frontend
-  -> Backend Python
-    -> Supabase/PostgreSQL
-      -> Tabelas, constraints e historico
+Navegador (React, Vercel)
+   │  login, sessão, chat ao vivo e anexos
+   ├────────────────────────────►  Supabase (Auth, Realtime, Storage)
+   │                                        ▲
+   │  Authorization: Bearer <JWT>           │ valida o token (JWKS)
+   └────────────────────────────►  API FastAPI (Render) ──► PostgreSQL (Supabase)
 ```
 
-## Versionamento do banco
+- **Supabase Auth** cuida de login, cadastro e emissão do JWT. A API **nunca** guarda senha nem emite token: ela só valida.
+- **Papel e loja** da equipe viajam no JWT, gravados por um *Custom Access Token Hook* do banco (`public.hook_claims_token`).
+- **Toda escrita passa pela API**, que usa uma conexão privilegiada (ignora RLS). Por isso a checagem de papel e de escopo de loja está no código Python, nunca só no banco.
+- Direto no Supabase, o front só lê dados protegidos por RLS e insere mensagens e avaliações do próprio cliente.
 
-As migrations SQL em `supabase/migrations/` representam o histórico inicial do projeto.
-A partir das próximas mudanças de estrutura do banco, o versionamento deve ser feito pelo Alembic.
+**Stack:** Python 3.12 · FastAPI · SQLAlchemy Core (SQL parametrizado) · Alembic · PostgreSQL (Supabase) · PyJWT (ES256/JWKS) · pytest · ruff · bandit.
 
-Para aplicar as migrations Alembic no banco configurado em `DATABASE_URL`:
+## 2. Requisitos
+
+- Python **3.12**
+- Um banco PostgreSQL (o projeto Supabase, ou um Postgres local para desenvolver)
+- Para os testes de banco: PostgreSQL 15+ local (opcional, ver [seção 10](#10-testes-e-qualidade))
+
+## 3. Como rodar
 
 ```bash
-pip install -r requirements.txt
+# 1. Ambiente virtual e dependências
+python -m venv .venv
+source .venv/bin/activate          # Windows (PowerShell): .venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+
+# 2. Configuração: copie o modelo e preencha (o .env nunca vai para o Git)
+cp .env.example .env               # Windows: copy .env.example .env
+
+# 3. Banco: aplica todas as migrations do Alembic
 alembic upgrade head
-```
 
-Para ver a versão atual do banco:
-
-```bash
-alembic current
-```
-
-Para criar uma nova migration:
-
-```bash
-alembic revision -m "descricao da mudanca"
-```
-
-## Como aplicar no Supabase pelo site
-
-Use este caminho se ainda nao estiver usando Supabase CLI.
-
-1. Abra o projeto no painel do Supabase.
-2. Entre em `SQL Editor`.
-3. Copie o conteudo de `supabase/migrations/20261005000000_criar_tabelas_essenciais.sql`.
-4. Execute o SQL.
-5. Depois copie o conteudo de `supabase/seed.sql`.
-6. Execute o seed para criar dados de teste.
-7. Abra `Table Editor` para conferir as tabelas e registros.
-
-Atencao: se o projeto estiver marcado como `PRODUCTION`, revise o SQL antes de executar.
-
-## Como aplicar usando Supabase CLI
-
-Com a Supabase CLI instalada:
-
-```bash
-supabase start
-supabase db reset
-```
-
-Para aplicar em um projeto remoto:
-
-```bash
-supabase link --project-ref <project-ref>
-supabase db push
-```
-
-## Variaveis de ambiente
-
-Copie `.env.example` para `.env` e preencha com os dados do seu ambiente.
-
-Nao coloque no Git:
-
-- senha real do banco;
-- `service_role_key`;
-- chaves privadas;
-- credenciais de producao.
-
-## Decisoes para alinhar com o grupo
-
-- Se usuarios internos poderao pertencer a mais de uma loja.
-- Quais opcoes finais serao usadas em `status_pedido`, `status_pagamento`, `metodo_pagamento` e `tipo_movimentacao_estoque`.
-- Quando configurar RLS no Supabase.
-- Se as tabelas de opcoes terao telas administrativas ou serao mantidas apenas por migration.
-
-## API FastAPI
-
-Todas as rotas do painel e da area do cliente ficam em `/api/v1/...` (mais `/dashboard/atendimento`
-e `GET /health`). **Toda rota exige token** (so `/health` e `GET /api/v1/cliente/catalogo/estoque`
-sao publicas) e cada uma confere o papel por conta propria. Nao existe modo aberto: sem
-`SUPABASE_URL` a API responde 503 nas rotas protegidas.
-
-O app le `DATABASE_URL` (obrigatoria), `SUPABASE_URL` e `CORS_ORIGINS` do `.env`.
-Esse arquivo nao deve ser versionado; use `.env.example` como modelo.
-
-Para rodar:
-
-```bash
-pip install -r requirements.txt
+# 4. Servidor de desenvolvimento (sempre da raiz do projeto)
 uvicorn app.main:app --reload
 ```
 
-A documentacao interativa (`/docs`, `/redoc`, `/openapi.json`) vem **desligada**; para ligar em
-desenvolvimento use `DOCS_HABILITADAS=true`. Rode sempre da raiz do projeto. O `app` do modulo
-`app.main` e criado sob demanda a partir do `.env`; os testes usam `criar_app(settings)` e nunca leem
-o `.env`. O comando equivalente `uvicorn app.main:criar_app --factory --reload` tambem funciona.
-
-A conexao com o banco ignora RLS (usuario privilegiado), por isso o escopo de loja e de dono e
-sempre conferido no Python.
-
-Para testar sem tocar no banco remoto (os testes nunca leem o `.env`):
+A API sobe em `http://127.0.0.1:8000`. Confira:
 
 ```bash
-pip install pytest
-pytest
+curl http://127.0.0.1:8000/health      # {"status": "ok"}
 ```
 
-## Autenticação (JWT do Supabase)
+Para ver a documentação interativa, ligue-a só em desenvolvimento com `DOCS_HABILITADAS=true` no `.env`
+e abra `http://127.0.0.1:8000/docs`. Em produção ela fica fechada (404).
 
-O login é do Supabase Auth; a API só valida o token (`Authorization: Bearer <jwt>`), com chaves
-públicas em `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` (ES256).
+> O front espera a API em `http://localhost:8000` por padrão e o CORS libera `http://localhost:5173`.
 
-Toda rota protegida usa `get_current_user` (so o token) ou `requer_papel(...)` (token + papel).
+## 4. Variáveis de ambiente
 
-**Vigencia do token.** O JWT e assinado, mas o cargo e a loja dele foram gravados na emissao.
-`requer_papel` tambem confere no banco (`app/core/vigencia.py`, cache de 20 s) que a conta continua
-**ativa** e com o **mesmo cargo e loja** do token; se nao, responde 401 e o front renova a sessao.
-Assim, desativar ou rebaixar uma pessoa vale em segundos, nao em ate uma hora. O admin invalida o
-cache na hora ao mudar uma conta pela Gestao. Reduzir o `jwt_expiry` do Supabase Auth continua sendo
-uma boa pratica (ex.: 15 min).
+Modelo em [`.env.example`](.env.example). Segredos nunca entram no Git.
 
-**Limite de requisicoes** (`app/core/protecoes.py`, em memoria, por instancia): por pessoa (hash do
-token) e por minuto, leitura 120, escrita 30, escrita sensivel (checkout, abrir chamado, agendar) 10;
-sem token, 300 no total. Excedeu: 429 em portugues com `Retry-After`. Ajustavel por
-`LIMITE_LEITURA_POR_MINUTO`, `LIMITE_ESCRITA_POR_MINUTO`, `LIMITE_SENSIVEL_POR_MINUTO`,
-`LIMITE_ANONIMO_POR_MINUTO`; `LIMITES_ATIVOS=false` so em teste. Com varias instancias do backend,
-o contador precisa ir para um Redis.
+| Variável | Obrigatória | Padrão | Para quê |
+|---|---|---|---|
+| `DATABASE_URL` | sim | — | String de conexão do Postgres. No Render use a do *pooler* do Supabase |
+| `SUPABASE_URL` | sim em produção | — | `https://<projeto>.supabase.co`. Sem ela, as rotas protegidas respondem 503 |
+| `CORS_ORIGINS` | sim em produção | `[]` | Origens do front, separadas por vírgula, **sem barra no fim** |
+| `DOCS_HABILITADAS` | não | `false` | Liga `/docs`, `/redoc` e `/openapi.json` (só em desenvolvimento) |
+| `LIMITE_LEITURA_POR_MINUTO` | não | `120` | Limite de leituras por pessoa |
+| `LIMITE_ESCRITA_POR_MINUTO` | não | `30` | Limite de escritas por pessoa |
+| `LIMITE_SENSIVEL_POR_MINUTO` | não | `10` | Checkout, abrir chamado e agendar |
+| `LIMITE_ANONIMO_POR_MINUTO` | não | `300` | Requisições sem token |
+| `LIMITES_ATIVOS` | não | `true` | `false` só em teste |
+| `TEST_DATABASE_URL` | só nos testes de banco | — | Postgres **local** com nome terminado em `_teste` |
 
-**Cabecalhos de seguranca** em toda resposta (`nosniff`, `X-Frame-Options: DENY`, `no-store`, HSTS,
-`Referrer-Policy`). **Erros** sempre em portugues e sem detalhe interno: 422 devolve so
-`{detail, campos: [{campo, mensagem}]}` (sem ecoar o corpo enviado) e qualquer erro inesperado vira
-um 500 generico (o detalhe so vai para o log).
-
-**Antes de usar a API**, o hook de claims precisa estar ativo no painel do Supabase
-(Authentication → Hooks → Custom Access Token). Sem ele, todo token de equipe vem sem `papel` e as
-rotas do painel respondem 403.
-
-**Limites conhecidos das claims:**
-
-- `atendente`, `operador_estoque` e `gerente_loja` precisam de `loja_id` no token; sem loja, 401.
-- Um cliente inativo mantem o acesso as rotas dele ate o token expirar (as rotas do cliente conferem
-  a conta ativa a cada chamada no banco, mas o Supabase Auth ainda emite token ate ser banido).
-
-## Banco: RLS, policies e hook de claims
-
-As revisões `20261007000000` a `20261007000400` em `alembic/versions/` adicionam, sobre o schema
-existente: `atendimento.id_loja` (preenchida pelo pedido), RLS ligado e forçado em todas as tabelas,
-privilégios mínimos para `anon` e `authenticated`, funções auxiliares, o hook de claims
-(`public.hook_claims_token`) e as policies de leitura por papel e por loja.
-
-Regras: o front só lê o catálogo público e os dados do próprio usuário ou da própria loja, e só
-insere direto `mensagem` e `avaliacao_atendimento`. Toda outra escrita passa pela API (que conecta
-com credencial privilegiada e ignora RLS).
-
-### Testar localmente (Postgres de teste, não o Supabase)
-
-Pré-requisito, uma vez: PostgreSQL 15 ou superior instalado e rodando em `localhost`, um banco
-dedicado `CREATE DATABASE lorenzi_teste;` e a variável `TEST_DATABASE_URL` (no ambiente ou numa
-linha do `.env`, que o git ignora):
+## 5. Estrutura do projeto
 
 ```text
+app/
+├── main.py              criar_app(): CORS, limite de requisições, cabeçalhos e routers
+├── core/                config, db, security (JWT, requer_papel), vigencia, protecoes, erros
+├── api/                 router.py (agrega os módulos) e health.py
+├── cliente/             loja online: perfil, carrinho, pedidos, chamados, agendamentos
+├── chamados/            painel: fila e atendimento de chamados
+├── chat/                painel: caixa de conversas e mensagens
+├── clientes/            painel: lista e ficha de clientes
+├── dashboard/           indicadores do atendimento
+├── gerencia/            início do gerente e do admin (vendas, reposição, pendências)
+├── painel_estoque/      saldo, movimentações, ajustes, transferências, mínimos
+└── gestao/              admin: usuários, catálogo, auditoria, integrações
+alembic/versions/        migrations do banco (histórico novo)
+supabase/                SQL inicial, seed e scripts para o SQL Editor
+scripts/                 contas de teste e dados de exemplo
+tests/                   espelha app/ (testes de banco em tests/banco)
+docs/                    referência da API e relatório de auditoria
+render.yaml              blueprint de deploy no Render
+```
+
+Cada módulo segue o mesmo padrão em camadas:
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `router.py` | só HTTP: recebe, valida o schema, chama o service, devolve |
+| `schemas.py` | modelos Pydantic de entrada (`extra="forbid"`) e de saída |
+| `service.py` | regras de negócio, escopo de loja e transações |
+| `repositorio.py` | SQL parametrizado; nenhum SQL fora dele |
+| `erros.py` | subclasses de `ErroDeNegocio`, convertidas em HTTP por um tratador único |
+
+Um módulo novo entra em `app/api/router.py` com uma linha.
+
+## 6. Autenticação e papéis
+
+O front envia `Authorization: Bearer <jwt do Supabase>`. A API valida a assinatura (ES256, chaves em
+`<SUPABASE_URL>/auth/v1/.well-known/jwks.json`), a expiração e a audiência.
+
+| Papel | Escopo | O que faz |
+|---|---|---|
+| `cliente` (sem `papel` no token) | só os próprios dados | compra, acompanha pedidos, abre chamados e agendamentos |
+| `atendente` | própria loja + chamados sem loja | fila, chat, clientes |
+| `operador_estoque` | própria loja | consulta saldo, registra entrada/saída, **solicita** ajuste e transferência |
+| `gerente_loja` | própria loja | tudo da unidade; **aprova ou recusa** ajustes, define estoque mínimo |
+| `admin` | rede inteira | tudo, mais usuários, catálogo, auditoria e integrações |
+
+Regras que valem em toda rota:
+
+- O `papel`, a loja e o dono do recurso vêm **do token**, nunca do corpo. Os modelos de entrada recusam campos desconhecidos (422).
+- **Vigência:** além do JWT, o `requer_papel` confere no banco (cache de 20 s) se a conta continua ativa e com o mesmo cargo e loja. Desativar ou rebaixar alguém vale em segundos, não em até uma hora.
+- Cliente fora do escopo ou recurso de outra loja responde **404**, como se não existisse.
+
+## 7. API
+
+Rotas em `/api/v1/...`, mais `GET /health` e `GET /dashboard/atendimento`. **Toda rota exige token**;
+só `GET /health` e `GET /api/v1/cliente/catalogo/estoque` são públicas.
+
+| Grupo | Prefixo | Quem acessa |
+|---|---|---|
+| Loja do cliente | `/api/v1/cliente` | qualquer pessoa logada (dados do próprio token) |
+| Chamados do painel | `/api/v1/painel/atendimentos` | atendente, gerente, admin |
+| Chat do atendimento | `/api/v1/painel/chat` | atendente, gerente, admin |
+| Clientes do painel | `/api/v1/painel/clientes` | atendente, gerente, admin |
+| Estoque do painel | `/api/v1/painel/estoque` | operador, gerente, admin |
+| Gerência | `/api/v1/painel/gerencia` | gerente, admin (`/rede`: só admin) |
+| Gestão | `/api/v1/painel/gestao` | só admin |
+| Dashboard de atendimento | `/dashboard/atendimento` | atendente, gerente, admin |
+
+A lista completa de rotas, com parâmetros e regras de cada uma, está em **[docs/api.md](docs/api.md)**.
+
+**Convenções**
+
+- Erros em português e sem detalhe interno: `401` token inválido, `403` sem permissão, `404` não encontrado, `409` estado não permite a ação (ex.: ajuste já decidido), `422` validação, `429` limite de requisições.
+- O `422` devolve `{detail, campos: [{campo, mensagem}]}` sem ecoar o corpo enviado. Erro inesperado vira um `500` genérico; o detalhe só vai para o log.
+- Toda listagem é paginada (`limit` padrão 20, máximo 100, e `offset`).
+- Dinheiro é `Decimal` (`numeric(12,2)`), nunca `float`. Datas em `timestamptz`; "dia" é o de São Paulo.
+- `POST /cliente/pedidos` aceita o header `Idempotency-Key`: repetir a mesma chave devolve o mesmo pedido, sem baixar o estoque duas vezes.
+
+## 8. Banco de dados e migrations
+
+O schema inicial está em `supabase/migrations/` (histórico) e **toda mudança nova usa Alembic**.
+
+```bash
+alembic upgrade head                    # aplica tudo
+alembic current                         # versão atual do banco
+alembic revision -m "descricao"         # cria uma migration nova
+alembic downgrade <revisao>             # desfaz até uma revisão
+```
+
+Principais tabelas: `loja`, `usuario` (e `tipo_usuario`), `produto`, `variacao_produto`, `estoque`,
+`movimentacao_estoque`, `ajuste_estoque`, `transferencia_estoque`, `carrinho`, `pedido`, `item_pedido`,
+`pagamento`, `atendimento`, `mensagem`, `avaliacao_atendimento`, `agendamento_cliente`, `auditoria`,
+`importacao_lote` e `importacao_registro`. Tabelas de opções
+(status, métodos, tipos) são listas controladas pelo banco.
+
+Regras de integridade que o banco garante: chaves estrangeiras, `UNIQUE (id_loja, id_variacao)` no
+estoque, `CHECK (quantidade >= 0)`, valores monetários com 2 casas e histórico de movimentação.
+
+**RLS** está ligado e forçado em todas as tabelas do `public`. O front só lê catálogo público e os
+dados do próprio usuário ou da própria loja.
+
+**Hook de claims.** No painel do Supabase, ative *Authentication → Hooks → Custom Access Token* com a
+função `public.hook_claims_token`. Sem ele, o token da equipe sai sem `papel` e o login do painel é
+recusado.
+
+**Triggers de conta** (rodar pelo SQL Editor se a migration avisar que faltou permissão):
+
+- `supabase/cadastro_cliente_trigger.sql` — cadastro pelo site cria o `usuario` sempre como `cliente`.
+- `supabase/excluir_conta_trigger.sql` — excluir a conta no Auth desativa o usuário e solta o vínculo.
+- `supabase/realtime_chat_policies.sql` — policies do chat ao vivo.
+
+> **Antes de rodar `alembic upgrade head` no banco compartilhado:** avise a equipe, use a conexão
+> direta (porta 5432) e confira que `atendente`, `operador_estoque` e `gerente_loja` têm `usuario.id_loja`
+> preenchida (sem loja, o token sai sem `loja_id` e a API responde 401).
+
+## 9. Segurança
+
+- **Login em tudo.** O teste `tests/api/test_todas_as_rotas_exigem_login.py` chama todas as rotas sem token e falha se alguma responder diferente de 401.
+- **Papel por área.** Cliente logado não entra em nenhuma rota do painel; atendente e operador só entram nas áreas deles.
+- **Limite de requisições** por pessoa (hash do token) e por minuto: leitura 120, escrita 30, escrita sensível 10, sem token 300. Excedeu: `429` com `Retry-After`. O contador é em memória, por instância; com várias instâncias, troque por Redis.
+- **Cabeçalhos** em toda resposta: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Cache-Control: no-store`, HSTS e `Referrer-Policy`.
+- **Documentação da API fechada** em produção (`/docs`, `/redoc`, `/openapi.json` respondem 404).
+- **SQL sempre parametrizado**; o `bandit` analisa o código (seção 10). Nenhum dado de cartão é guardado.
+- **Segredos:** a *service role key* nunca vai para o `.env`, o front ou o Git. Só é usada em `scripts/criar_contas.py`, numa variável de ambiente temporária.
+
+O relatório da última auditoria está em [docs/auditoria-2026-10-08.md](docs/auditoria-2026-10-08.md).
+
+## 10. Testes e qualidade
+
+```bash
+pytest                        # testes sem banco (os de banco são pulados)
+pytest tests/banco -q         # testes contra um Postgres local
+ruff check . && ruff format --check .
+bandit -r app -q              # análise de segurança
+pip-audit -r requirements.txt # vulnerabilidades nas dependências
+```
+
+**Testes de banco.** Exigem um PostgreSQL 15+ local, um banco dedicado e a variável:
+
+```text
+CREATE DATABASE lorenzi_teste;
 TEST_DATABASE_URL=postgresql://postgres:<senha>@127.0.0.1:5432/lorenzi_teste
 ```
 
-```bash
-pytest tests/banco -q
-```
+Esses testes **recriam os schemas `public` e `auth`** do banco indicado. Por isso a variável só é aceita
+se o host for `localhost`/`127.0.0.1` **e** o nome terminar em `_teste`; qualquer outro destino (como o
+Supabase) faz os testes falharem de propósito. Sem a variável, eles são pulados.
 
-Os testes **recriam o schema `public` e o `auth`** desse banco a cada execução. Por isso a variável
-só é aceita se o host for `localhost`/`127.0.0.1` **e** o nome do banco terminar em `_teste`;
-qualquer outro destino (como o Supabase remoto) faz os testes falharem de propósito. Sem a
-variável, os testes de banco são pulados.
+Os testes nunca leem o `.env` e rodam com `LIMITES_ATIVOS=false`. Cobrem, entre outros: papel por rota,
+escopo de loja, concorrência (aprovar o mesmo ajuste duas vezes dá um 200 e um 409) e transações que
+falham no meio sem deixar estado parcial.
 
-### Aplicar no banco do Supabase (passo manual, com cuidado)
+## 11. Deploy
 
-O banco remoto é compartilhado. Antes de rodar `alembic upgrade head` nele:
+**Render** (API). O arquivo [`render.yaml`](render.yaml) descreve o serviço `casa-lorenzi-api`:
 
-1. Avise quem mais usa o banco: `authenticated` deixa de escrever direto nas tabelas (só
-   `mensagem` e `avaliacao_atendimento`) e passa a enxergar só o que as policies liberam.
-   A API não é afetada.
-2. Rode com a `DATABASE_URL` da conexão **direta** (porta 5432), não a do pooler.
-3. Ative o hook em Authentication → Hooks → Custom Access Token → função
-   `public.hook_claims_token`. Sem isso, os tokens de equipe saem sem `papel`.
-4. `atendente`, `operador_estoque` e `gerente_loja` precisam de `usuario.id_loja` preenchida; sem
-   loja, o token sai sem `loja_id` e a API responde 401.
+- **Build:** `pip install -r requirements.txt`
+- **Start:** `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'`. As migrations rodam antes de subir; se uma falhar, a versão anterior continua no ar.
+- **Health check:** `/health`
+- **Variáveis** (Environment): `DATABASE_URL`, `SUPABASE_URL` e `CORS_ORIGINS`. O `CORS_ORIGINS` precisa conter a URL exata do front na Vercel, sem barra no fim.
+- Deploy automático a cada push na `main`.
 
-Para desfazer: `alembic downgrade 20261006213000` (restaura RLS sem `FORCE` e os privilégios
-anteriores).
+> O plano gratuito do Render hiberna a instância; a primeira requisição depois de um tempo parado leva uns 50 s.
 
-## Dashboard de atendimento
+**Supabase** guarda o banco, o Auth, o Realtime e o Storage. A ordem da primeira publicação:
+1. criar as tabelas (`alembic upgrade head`);
+2. ativar o hook de claims;
+3. criar as contas da equipe (`scripts/criar_contas.py`);
+4. configurar as três variáveis no Render.
 
-Alimenta a home do atendente. Todas as rotas exigem o JWT do Supabase e um destes papéis:
-`atendente`, `gerente_loja` ou `admin` (mesmo com `AUTENTICACAO_OBRIGATORIA=false`).
+## 12. Scripts utilitários
 
-| Rota | O que devolve |
+Todos mostram o plano e **não alteram nada** sem `--aplicar`. São só para desenvolvimento.
+
+| Script | O que faz |
 |---|---|
-| `GET /dashboard/atendimento?inicio=&fim=` | Resumo do período e do período anterior (mesma duração), volume por dia, chamados por categoria, tempo até a primeira resposta por canal, opções de filtro e o escopo do usuário |
-| `GET /dashboard/atendimento/fila` | Chamados não finalizados, com contadores (`total_aberto`, `sem_resposta`, `urgentes`), ordenados por prioridade e depois pelos mais antigos |
+| `scripts/criar_contas.py` | cria uma conta para cada papel pelo Supabase Auth e liga à linha de `usuario` |
+| `scripts/semear_vendas.py` | lojas, catálogo, clientes fictícios e ~13 meses de pedidos coerentes |
+| `scripts/semear_chamados.py` | chamados de exemplo para ver a fila funcionando |
+| `scripts/semear_integracao.py` | registros de exemplo para a tela de integrações |
 
-Filtros opcionais: `id_loja`, `canal` e `categoria` (códigos das tabelas de opções). A fila aceita
-`limit` (padrão 20, máximo 100) e `offset`. O período vai de `inicio` a `fim` (datas, inclusivas,
-no fuso de São Paulo) e tem no máximo 400 dias.
-
-Escopo (aplicado no código, porque a conexão da API ignora RLS): `atendente` e `gerente_loja`
-veem sempre a loja do token e recebem 403 se pedirem outra; `admin` vê a rede inteira ou filtra por
-loja. Chamados sem loja (sem pedido) só aparecem para o `admin`. A resposta nunca traz e-mail,
-telefone nem documento do cliente.
-
-Definições: "resolvido" é `resolvido` ou `encerrado`; "sem resposta" é o status `aberto`; "primeira
-resposta" é a primeira mensagem de alguém que não é cliente; a fila exclui `resolvido`,
-`encerrado` e `cancelado`. `atendimento.assunto` é opcional (a revisão `20261007000500` a cria); sem
-ele, a fila mostra o nome da categoria.
-
-## Contas de acesso por tipo de usuário
-
-`scripts/criar_contas.py` cria uma conta para cada tipo (cliente, atendente, operador de estoque,
-gerente e administrador) pelo Supabase Auth e a liga à linha de `usuario`, de onde o hook de claims
-tira o `papel` e a `loja_id` do token. Usa só a chave pública do projeto (nunca a service role).
-
-```bash
-python scripts/criar_contas.py             # mostra o plano e não altera nada
-python scripts/criar_contas.py --aplicar   # cria as contas e imprime e-mail e senha uma única vez
-```
-
-O cadastro público deste projeto está desligado, então a criação usa a Admin API do Supabase, que
-precisa da *secret/service role key* (Project Settings > API Keys). Use-a só naquela execução e
-nunca grave no `.env` nem no git:
+Para `criar_contas.py`, a service role key entra só numa variável do terminal, nunca no `.env`:
 
 ```powershell
-$env:SUPABASE_SERVICE_ROLE_KEY = '<chave secreta do painel>'
+$env:SUPABASE_SERVICE_ROLE_KEY = '<chave do painel do Supabase>'
 python scripts/criar_contas.py --email-base voce@gmail.com --aplicar
 Remove-Item Env:SUPABASE_SERVICE_ROLE_KEY
 ```
 
-Alternativa sem a chave: crie as contas no painel (Authentication > Users > Add user, com Auto
-Confirm) e rode `python scripts/criar_contas.py --email-base voce@gmail.com --so-vincular --aplicar`,
-que só liga cada conta à sua linha em `usuario`.
+As senhas são geradas na hora e aparecem uma única vez na saída; guarde-as em um gerenciador de senhas.
 
-As senhas são geradas na hora e só aparecem na saída do comando; guarde-as em um gerenciador de
-senhas. Quem já tem conta no Auth é pulado (sem a service role não há como ler nem trocar a senha de
-outra conta; para recuperar o acesso, use "Reset password" no painel do Supabase). Se o projeto
-exigir confirmação de e-mail, o script avisa: desligue "Confirm email" em Authentication > Providers
-> Email, ou confirme as contas no painel.
+## 13. Como contribuir
 
-## Chamados do painel (atendente, gerente e admin)
+- Trabalhe em uma **branch própria** a partir de `intermediaria` (`feat/...`, `fix/...`, `docs/...`).
+- `intermediaria` é o branch compartilhado; `main` só recebe o que veio dela, já testado.
+- Commits no padrão `<tipo>: <descrição>` com os tipos `feat`, `fix`, `refactor`, `test`, `docs` e `chore`. Exemplo: `feat: aprova ajuste de inventario`.
+- Antes de abrir o pull request: `pytest`, `ruff check .` e `bandit -r app -q` limpos.
+- **Checklist de um endpoint novo:**
+  1. schema de entrada com `extra="forbid"` e `response_model` de saída;
+  2. `get_current_user` ou `requer_papel(...)` e checagem do escopo de loja/cliente;
+  3. SQL parametrizado, só no repositório;
+  4. se mexe em mais de uma tabela ou depende do estado atual: transação com `FOR UPDATE` e checagem do status;
+  5. listagem paginada com máximo;
+  6. erros em português com o código HTTP certo;
+  7. testes do caso feliz, do caso sem permissão e do caso de conflito.
+- Mudança de schema é sempre uma migration do Alembic. Nunca altere tabela ou policy só pelo painel do Supabase.
 
-Rotas em `/api/v1/painel/atendimentos`, sempre com token e papel `atendente`, `gerente_loja` ou
-`admin` (independente de `AUTENTICACAO_OBRIGATORIA`). O remetente, o papel e a loja vêm do token,
-nunca do corpo.
+## 14. Problemas comuns
 
-| Rota | O que faz |
+| Sintoma | Causa provável |
 |---|---|
-| `GET /opcoes` | status, canais, categorias, prioridades e lojas para os filtros |
-| `GET /resumo` | contadores: sem resposta, em andamento, prioridade alta, resolvidos, na fila, meus |
-| `GET /` | lista paginada; filtros `situacao`, `responsavel` (`fila`, `eu`, `todos`), `prioridade`, `canal`, `categoria`, `id_loja` |
-| `GET /{id}` | detalhe: cliente, pedido, peças, anexos, outros chamados e (só gerente/admin) compras |
-| `GET /{id}/mensagens` | conversa em ordem |
-| `POST /{id}/mensagens` | responder; quem responde primeiro assume o chamado e ele sai de "aberto" |
-| `POST /{id}/assumir` | assume; 409 se outra pessoa chegou antes |
-| `POST /{id}/resolver` | resolve; atendente só o que assumiu, gestão qualquer um |
-
-Escopo: atendente e gerente veem a própria loja **e os chamados sem loja**; o admin vê a rede e
-pode filtrar por loja. Chamado fora do escopo responde 404. As escritas travam a linha
-(`FOR UPDATE`): duas pessoas assumindo ao mesmo tempo resultam em um sucesso e um 409.
-
-Campos novos (revisão `20261007000600`): `atendimento.protocolo` (`AT-AAAA-NNNN`, gerado por
-trigger), `usuario.cidade` e a tabela `chamado_anexo` (com RLS).
-
-`python scripts/semear_chamados.py --aplicar` cria chamados de exemplo para ver a fila funcionando
-(só se a tabela estiver vazia; só para desenvolvimento).
-
-## Chat ao vivo do atendente
-
-O chat usa o **Supabase Realtime** (sem servidor de websocket proprio). A API cuida da sessao, da
-caixa de conversas e da escrita; o Realtime entrega o que acontece ao vivo.
-
-### Endpoints (`/api/v1/painel/chat`, privados: atendente, gerente e admin)
-
-| Metodo | Rota | Para que serve |
-| --- | --- | --- |
-| GET | `/conversas?secao=todas\|fila\|minhas&apenas_nao_lidas=&limit=&offset=` | Caixa de conversas abertas (ultima mensagem, nao lidas, aguardando resposta) |
-| GET | `/conversas/resumo` | Contadores da caixa: fila, minhas, nao lidas, aguardando |
-| GET | `/conversas/{id}/sessao` | Abre a sessao do chat: canal privado, filtro do Realtime, quem sou eu, se posso responder |
-| GET | `/conversas/{id}/mensagens?apos=<id>&limit=` | Historico e recuperacao apos reconexao (cursor por mensagem) |
-| POST | `/conversas/{id}/mensagens` | Envia mensagem (assume o chamado se estiver sem responsavel) |
-| POST | `/conversas/{id}/lido` | Marca a conversa como lida para quem chamou |
-
-Escopo: equipe ve a propria loja e os chamados sem loja; admin ve a rede; conversa fora do escopo
-devolve 404. O remetente sempre vem do token, nunca do corpo.
-
-### Como o front se conecta
-
-1. `GET /conversas/{id}/sessao` devolve `topico` (`chamado:<uuid>`) e `filtro_mensagens`.
-2. **Mensagens novas**: Postgres Changes em `public.mensagem` com o filtro recebido. O RLS decide
-   quem recebe.
-3. **Digitando e presenca**: canal **privado** `supabase.channel(topico, { config: { private: true } })`
-   (Broadcast e Presence). As policies em `realtime.messages` so liberam quem enxerga o chamado.
-4. Apos reconectar, `GET /mensagens?apos=<ultimo_id_mensagem>` busca o que ficou pendente.
-
-### Banco
-
-Migration `20261007120000_chat_ao_vivo`: tabela `chamado_leitura` (RLS forcado, fechada ao front),
-`mensagem` e `atendimento` na publicacao `supabase_realtime` e as policies de `realtime.messages`.
-Se faltar permissao para criar as policies, a migration avisa e segue: rode
-`supabase/realtime_chat_policies.sql` pelo SQL Editor. A revisao encadeia depois de
-`20261007110000` (correcao de RLS das transferencias).
-
-## Início do gerente (vendas, reposição e pendências)
-
-Rotas privadas em `/api/v1/painel/gerencia`, só para `gerente_loja` e `admin`. O gerente enxerga
-sempre a própria loja (a do token; pedir outra dá 403); o admin vê a rede ou escolhe uma loja.
-
-| Método | Rota | Para que serve |
-| --- | --- | --- |
-| GET | `/dashboard?inicio=&fim=&categoria=&canal=&id_loja=` | Faturamento, pedidos, ticket médio e peças do período contra o anterior; série diária; movimento por dia da semana; peças mais vendidas; mix loja × online; opções de filtro |
-| GET | `/reposicao?categoria=&limit=` | Peças que acabam primeiro: saldo contra o ritmo de venda dos últimos 30 dias |
-| GET | `/pendencias` | Ajustes a aprovar, transferências aguardando a loja e chamados sem resposta |
-
-Os chamados da unidade (por motivo, taxa de resolução, primeira resposta) já vêm de
-`GET /dashboard/atendimento`, que o gerente também pode usar.
-
-Regras: venda é pedido `pago`, `separado` ou `entregue`; o faturamento soma os itens (sem frete) e o
-dia é o de São Paulo. A migration `20261007130000` cria `pedido.canal_venda` (`loja`/`online`),
-`pedido.valor_frete` e a tabela `ajuste_estoque` (RLS forçado, sem acesso do front).
-
-### Dados de exemplo
-
-```
-python scripts/semear_vendas.py             # mostra o que seria criado
-python scripts/semear_vendas.py --aplicar   # grava (uma transação, uma única vez)
-```
-
-Cria 2 lojas, o catálogo da coleção, clientes fictícios (sem login), ~13 meses de pedidos com
-pagamentos e movimentações de estoque coerentes, ajustes a aprovar e transferências. Exige
-`alembic upgrade head`.
-
-## Estoque do painel: saldo e historico de movimentacoes
-
-Rotas privadas em `/api/v1/painel/estoque` para `operador_estoque`, `gerente_loja` e `admin`.
-Operador e gerente enxergam sempre a propria loja (a do token; pedir outra da 403); o admin ve a
-rede ou escolhe uma loja. O operador ainda so ve as movimentacoes que ele mesmo registrou.
-
-| Metodo | Rota | Para que serve |
-| --- | --- | --- |
-| GET | `/opcoes` | Categorias, pecas, tipos de movimentacao, lojas e escopo de quem chamou |
-| GET | `/saldo?busca=&categoria=&situacao=&id_loja=&limit=&offset=` | Resumo (unidades, baixo, esgotadas, valor) e saldo por peca, com a coluna de cada loja |
-| GET | `/movimentacoes?tipo=&sku=&de=&ate=&id_loja=&limit=&offset=` | Historico: quantidade com sinal, saldo antes e depois, responsavel, motivo e pedido |
-
-Situacao: `esgotado` (saldo 0), `baixo` (no minimo ou abaixo) e `ok`. Tipos agrupados em entrada,
-saida (inclui venda), ajuste e transferencia; o nome exato do tipo vem em cada linha. O periodo usa o
-dia de Sao Paulo nas duas pontas. A busca nunca vira curinga nem SQL.
-
-## Clientes do painel (atendente, gerente e admin)
-
-Rotas privadas em `/api/v1/painel/clientes`, com token e papel `atendente`, `gerente_loja` ou
-`admin` (independente de `AUTENTICACAO_OBRIGATORIA`):
-
-| Rota | O que faz |
-|---|---|
-| `GET /` | lista paginada; `busca` (nome, e-mail ou telefone), `secao` (`todos`, `com_aberto`, `meus`), `id_loja` (só admin) |
-| `GET /{id}` | ficha: contato, resumo, chamados do escopo e, só para gerente e admin, as compras |
-
-Seções da lista: **todos**, **com chamado em aberto** e **meus clientes** (os que têm chamado que o
-usuário assumiu). Quem vê quem: o admin vê todos os clientes; a equipe de loja vê os que têm pedido
-na loja ou chamado no escopo dela (a loja mais os chamados sem loja). Cliente fora do escopo
-responde 404, como se não existisse.
-
-Privacidade: o atendente recebe contato e chamados, mas **compras, total gasto e ticket médio vêm
-nulos e nem são calculados no banco**; documento (CPF) nunca é devolvido. A busca trata `%` e `_`
-como letras, e as respostas recusam campo que não foi combinado (`extra="forbid"`).
-
-### Estoque do painel: escrita (entrada, saida e ajustes)
-
-| Metodo | Rota | Quem | Para que serve |
-| --- | --- | --- | --- |
-| POST | `/movimentacoes` | operador, gerente, admin | Registra entrada ou saida (`sku`, `tipo`, `quantidade`, `motivo`) e ja mexe no saldo |
-| GET | `/ajustes?situacao=` | operador (so os seus), gerente, admin | Pedidos de ajuste de inventario e quantos estao pendentes |
-| POST | `/ajustes` | operador, gerente, admin | Pede ajuste: informa a quantidade contada; o saldo so muda na aprovacao |
-| POST | `/ajustes/{id}/aprovar` | gerente, admin | Aplica a diferenca ao saldo de agora e lanca a movimentacao de ajuste |
-| POST | `/ajustes/{id}/recusar` | gerente, admin | Recusa com motivo; o estoque nao muda |
-
-Quem opera e sempre o dono do token (o corpo nao aceita usuario, saldo nem status). A loja e a do
-token; o admin informa `id_loja`. A linha do estoque e travada antes de ler o saldo: duas saidas ao
-mesmo tempo se enfileiram e o saldo nunca fica negativo (409 "Saldo insuficiente"). Aprovar de novo
-um ajuste decidido da 409. A migration `20261007170000` cria `ajuste_estoque.motivo_recusa`.
-
-### Estoque do painel: transferencias, reposicoes e estoque minimo
-
-Rotas em `/api/v1/painel/estoque` (operador de estoque, gerente e admin; `/minimos` so gerente e admin).
-
-| Metodo | Rota | Para que serve |
-| --- | --- | --- |
-| GET | `/transferencias?situacao=acao\|andamento\|todas&tipo=` | Transferencias e reposicoes da loja, com `acoes` possiveis para quem consulta e o contador `aguardando_voce` |
-| POST | `/transferencias` | A loja de destino pede pecas a uma origem |
-| POST | `/transferencias/reposicoes` | Pedido de reposicao a rede toda (sem origem) |
-| POST | `/transferencias/{id}/aceitar` | A origem aceita: a peca SAI do estoque dela (409 se faltar saldo). Na reposicao, quem atende vira a origem |
-| POST | `/transferencias/{id}/recusar` | A origem recusa (motivo opcional); o estoque nao muda |
-| POST | `/transferencias/{id}/receber` | O destino confirma a chegada: a peca ENTRA no estoque dele |
-| GET/PUT | `/minimos` | Lista e define o estoque minimo por peca (o PUT e tudo-ou-nada) |
-
-Cada passo trava a transferencia e a linha do estoque; repetir uma etapa da 409 e a peca nunca se
-move duas vezes. A migration `20261007180000` cria os status `recebida` e `recusada`, e as policies
-de SELECT (equipe das lojas envolvidas nas transferencias; gerente da loja, ou o proprio operador,
-nos ajustes). Escrever continua so pela API.
-
-## Seguranca: o que fecha cada rota
-
-- **Login obrigatorio em tudo.** Nao existe modo aberto: os modulos antigos (admin, compras,
-  atendimento, estoque, movimentacoes, transferencias) foram removidos, e o painel novo cobre tudo. So
-  `/health` e o estoque publico do catalogo ficam abertos. O teste
-  `tests/api/test_todas_as_rotas_exigem_login.py` chama TODAS as rotas sem token e quebra se alguma
-  responder diferente de 401.
-- **Papel por area.** `tests/api/test_painel_so_para_equipe.py` garante que um cliente logado nao entra
-  em nenhuma rota do painel e que atendente e operador so entram nas areas deles.
-- **Mensagens.** Pelo Supabase direto so o cliente dono insere mensagem (policy da migration
-  `20261007190000`); a equipe responde pela API, que aplica as regras do chamado.
-
-## Cadastro de cliente pelo site
-
-O botao "Criar conta" do login chama `auth.signUp` com nome, telefone e endereco nos metadados e a
-marca `cadastro_cliente`. Um trigger em `auth.users` (migration `20261007200000`) cria a linha de
-`usuario` com cargo **sempre** `cliente`: nada dos metadados escolhe cargo, loja ou status. Rua,
-bairro, numero e CEP (8 digitos) sao obrigatorios em todo cliente novo (trigger em `usuario`), e a
-equipe nao tem endereco. E-mail que ja existe barra o cadastro. Cada cliente entra com o proprio JWT
-(sem `papel`) e so le a propria linha (RLS). Sem permissao em `auth.users`, rode
-`supabase/cadastro_cliente_trigger.sql` no SQL Editor.
+| `503` nas rotas protegidas | `SUPABASE_URL` não definida no ambiente |
+| `401` com token válido | conta inativa, cargo/loja diferente do token, ou equipe sem `usuario.id_loja` |
+| `403` em todas as rotas do painel | hook de claims desligado: o token sai sem `papel` |
+| Erro de CORS no navegador (`Disallowed CORS origin`) | `CORS_ORIGINS` sem a URL do front, ou com barra no fim |
+| `429 Aguarde...` | limite de requisições por minuto; espere o `Retry-After` |
+| `Port scan timeout` no Render | servidor não está em `0.0.0.0:$PORT`; confira o *Start Command* |
+| Testes de banco "pulados" | `TEST_DATABASE_URL` não definida |
+| `/docs` retorna 404 | é o esperado; use `DOCS_HABILITADAS=true` só em desenvolvimento |
