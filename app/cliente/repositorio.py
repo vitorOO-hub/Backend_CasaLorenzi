@@ -60,6 +60,29 @@ def listar_lojas(conexao) -> list[dict[str, object]]:
     return [serializar_linha(linha) for linha in linhas]
 
 
+def listar_estoque_catalogo(conexao) -> list[dict[str, object]]:
+    linhas = buscar_todos(
+        conexao,
+        """
+        SELECT
+            v.id_variacao,
+            v.sku,
+            l.id_loja,
+            l.nome AS loja,
+            GREATEST(e.quantidade, 0)::int AS quantidade
+        FROM estoque e
+        JOIN loja l ON l.id_loja = e.id_loja
+        JOIN variacao_produto v ON v.id_variacao = e.id_variacao
+        JOIN produto p ON p.id_produto = v.id_produto
+        WHERE l.ativa IS TRUE
+          AND v.ativa IS TRUE
+          AND p.ativo IS TRUE
+        ORDER BY v.sku, l.nome
+        """,
+    )
+    return [serializar_linha(linha) for linha in linhas]
+
+
 def perfil_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, object]:
     linha = conexao.execute(
         text(

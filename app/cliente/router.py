@@ -15,6 +15,7 @@ from app.cliente.schemas import (
     ChamadoCriacao,
     CheckoutCriacao,
     DetalheChamadoCliente,
+    EstoqueVariacaoCliente,
     ItemCarrinhoAtualizacao,
     ItemCarrinhoCriacao,
     LojaCliente,
@@ -37,6 +38,15 @@ ChaveIdempotencia = Annotated[str | None, Header(alias="Idempotency-Key", max_le
 @router.get("/lojas", response_model=list[LojaCliente], summary="Lojas disponiveis")
 def listar_lojas(usuario: UsuarioDep, executar: ExecutarDep):
     return executar(lambda conexao: service.listar_lojas(conexao, usuario))
+
+
+@router.get(
+    "/catalogo/estoque",
+    response_model=list[EstoqueVariacaoCliente],
+    summary="Estoque disponivel para o catalogo do cliente",
+)
+def listar_estoque_catalogo(usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(lambda conexao: service.listar_estoque_catalogo(conexao, usuario))
 
 
 @router.get("/perfil", response_model=PerfilCliente, summary="Perfil do cliente logado")

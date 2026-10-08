@@ -22,6 +22,11 @@ def listar_lojas(conexao, usuario: UsuarioAtual):
     return repositorio.listar_lojas(conexao)
 
 
+def listar_estoque_catalogo(conexao, usuario: UsuarioAtual):
+    _garantir_cliente(usuario)
+    return repositorio.listar_estoque_catalogo(conexao)
+
+
 def obter_perfil(conexao, usuario: UsuarioAtual):
     id_cliente = _id_cliente(conexao, usuario)
     return repositorio.perfil_cliente(conexao, id_cliente)
