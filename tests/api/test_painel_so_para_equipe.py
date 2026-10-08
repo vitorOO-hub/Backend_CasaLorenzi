@@ -126,3 +126,9 @@ def test_so_a_gestao_decide_ajuste_define_minimo_e_ve_a_gerencia(cliente, par):
         for papel in (Papel.ATENDENTE, Papel.OPERADOR_ESTOQUE):
             resposta = chamar(cliente, metodo, caminho, cabecalho(par, papel))
             assert resposta.status_code == 403, (metodo, caminho, papel)
+
+
+def test_a_rede_do_admin_nao_abre_para_gerente_nem_demais(cliente, par):
+    for papel in (Papel.GERENTE_LOJA, Papel.ATENDENTE, Papel.OPERADOR_ESTOQUE):
+        resposta = chamar(cliente, "GET", "/api/v1/painel/gerencia/rede", cabecalho(par, papel))
+        assert resposta.status_code == 403, papel

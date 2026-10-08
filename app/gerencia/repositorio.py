@@ -28,10 +28,13 @@ class Filtro:
     id_loja: UUID | None = None
     categoria: str | None = None
     canal: str | None = None
+    # Varias lojas ao mesmo tempo (comparacao do admin). Vazio = nao restringe por esta lista.
+    ids_loja: tuple[UUID, ...] = ()
 
     def parametros(self) -> dict[str, Any]:
         return {
             "id_loja": str(self.id_loja) if self.id_loja else None,
+            "ids_loja": [str(i) for i in self.ids_loja],
             "categoria": self.categoria,
             "canal": self.canal,
             "status_de_venda": list(STATUS_DE_VENDA),
@@ -44,6 +47,7 @@ VENDAS = """
 WITH venda AS (
     SELECT
         p.id_pedido,
+        p.id_loja,
         p.canal_venda,
         (p.criado_em AT TIME ZONE :fuso)::date AS dia,
         i.quantidade,
@@ -60,6 +64,8 @@ WITH venda AS (
       AND p.criado_em >= CAST(:inicio AS date)::timestamp AT TIME ZONE :fuso
       AND p.criado_em < (CAST(:fim AS date) + 1)::timestamp AT TIME ZONE :fuso
       AND (CAST(:id_loja AS uuid) IS NULL OR p.id_loja = CAST(:id_loja AS uuid))
+      AND (cardinality(CAST(:ids_loja AS uuid[])) = 0
+           OR p.id_loja = ANY(CAST(:ids_loja AS uuid[])))
       AND (CAST(:canal AS text) IS NULL OR p.canal_venda = CAST(:canal AS text))
       AND (CAST(:categoria AS text) IS NULL OR produto.categoria = CAST(:categoria AS text))
 )
@@ -361,3 +367,104 @@ def transferencias_aguardando(conexao: Connection, filtro: Filtro) -> int:
         ),
         {"id_loja": filtro.parametros()["id_loja"]},
     ).scalar_one()
+
+
+def vendas_por_categoria(
+    conexao: Connection, filtro: Filtro, inicio: date, fim: date
+) -> list[dict[str, Any]]:
+    linhas = conexao.execute(
+        text(
+            VENDAS
+            + """
+            SELECT COALESCE(categoria, 'Sem categoria') AS categoria,
+                   sum(valor) AS faturamento
+            FROM venda
+            GROUP BY 1
+            ORDER BY faturamento DESC, categoria
+            """  # nosec B608
+        ),
+        _parametros(filtro, inicio, fim),
+    ).mappings()
+    return [dict(linha) for linha in linhas]
+
+
+def vendas_por_loja(
+    conexao: Connection, filtro: Filtro, inicio: date, fim: date
+) -> list[dict[str, Any]]:
+    linhas = conexao.execute(
+        text(
+            VENDAS
+            + """
+            SELECT
+                id_loja,
+                COALESCE(sum(valor), 0) AS faturamento,
+                count(DISTINCT id_pedido) AS pedidos,
+                COALESCE(sum(quantidade), 0) AS pecas,
+                COALESCE(sum(valor) FILTER (WHERE canal_venda = 'online'), 0)
+                    AS faturamento_online
+            FROM venda
+            WHERE id_loja IS NOT NULL
+            GROUP BY id_loja
+            """  # nosec B608
+        ),
+        _parametros(filtro, inicio, fim),
+    ).mappings()
+    return [dict(linha) for linha in linhas]
+
+
+ESTOQUE_DE = """
+FROM estoque e
+JOIN variacao_produto v ON v.id_variacao = e.id_variacao AND v.ativa
+JOIN produto ON produto.id_produto = v.id_produto AND produto.ativo
+WHERE (CAST(:categoria AS text) IS NULL OR produto.categoria = CAST(:categoria AS text))
+  AND (cardinality(CAST(:ids_loja AS uuid[])) = 0
+       OR e.id_loja = ANY(CAST(:ids_loja AS uuid[])))
+"""
+
+
+# O trecho comum (FROM/WHERE) e fixo neste modulo; so os parametros nomeados recebem valores.
+ESTOQUE_POR_LOJA = """
+    SELECT e.id_loja,
+           COALESCE(sum(e.quantidade), 0) AS unidades,
+           count(*) FILTER (WHERE e.quantidade = 0) AS esgotadas
+    __ESTOQUE_DE__
+    GROUP BY e.id_loja
+""".replace("__ESTOQUE_DE__", ESTOQUE_DE)  # nosec B608
+
+# Posicao das lojas escolhidas (ou da rede) somada por peca: esgotada = saldo total zero.
+ESTOQUE_TOTAL = """
+    SELECT COALESCE(sum(saldo), 0) AS unidades,
+           count(*) AS pecas,
+           count(*) FILTER (WHERE saldo = 0) AS esgotadas
+    FROM (
+        SELECT e.id_variacao, sum(e.quantidade) AS saldo
+        __ESTOQUE_DE__
+        GROUP BY e.id_variacao
+    ) por_peca
+""".replace("__ESTOQUE_DE__", ESTOQUE_DE)  # nosec B608
+
+
+def estoque_por_loja(conexao: Connection, filtro: Filtro) -> list[dict[str, Any]]:
+    linhas = conexao.execute(text(ESTOQUE_POR_LOJA), filtro.parametros()).mappings()
+    return [dict(linha) for linha in linhas]
+
+
+def estoque_total(conexao: Connection, filtro: Filtro) -> dict[str, Any]:
+    return dict(conexao.execute(text(ESTOQUE_TOTAL), filtro.parametros()).mappings().one())
+
+
+def lojas_ativas(conexao: Connection, ids_loja: tuple[UUID, ...]) -> list[dict[str, Any]]:
+    linhas = conexao.execute(
+        text(
+            """
+            SELECT id_loja, codigo, nome, cidade
+            FROM loja
+            WHERE ativa
+              AND (cardinality(CAST(:ids_loja AS uuid[])) = 0
+                   OR id_loja = ANY(CAST(:ids_loja AS uuid[])))
+            ORDER BY nome
+            """
+        ),
+        {"ids_loja": [str(i) for i in ids_loja]},
+    ).mappings()
+    return [dict(linha) for linha in linhas]

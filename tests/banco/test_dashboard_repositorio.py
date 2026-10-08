@@ -148,7 +148,10 @@ def test_serie_diaria_completa_o_periodo_com_zeros_e_usa_o_fuso_de_sao_paulo(sa_
 
 
 def test_chamados_por_categoria_listam_todas_as_categorias(sa_conn, cenario):
-    r = dashboard(sa_conn, cenario.admin)
+    # A migration do agendamento acrescentou a categoria "agendamento" as seis originais.
+    assert {"pedido", "produto", "entrega", "pagamento", "troca_devolucao", "outro"} <= set(
+        por_codigo
+    )
     por_codigo = {linha["codigo"]: linha["total"] for linha in r["por_categoria"]}
     assert len(por_codigo) == 6
     assert por_codigo["entrega"] == 1

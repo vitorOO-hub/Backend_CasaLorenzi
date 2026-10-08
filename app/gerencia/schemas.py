@@ -134,3 +134,73 @@ class Pendencias(Saida):
     transferencias_aguardando: int
     chamados_sem_resposta: int
     total: int
+
+
+class FaturamentoCategoria(Saida):
+    categoria: str
+    faturamento: float
+
+
+class ChamadosMotivo(Saida):
+    codigo: str
+    nome: str
+    total: int
+
+
+class GrupoDaRede(Saida):
+    """Uma serie do comparativo: a rede inteira ou uma loja escolhida."""
+
+    id: str
+    nome: str
+    id_loja: UUID | None
+    serie_diaria: list[VendaDia]
+    categorias: list[FaturamentoCategoria]
+    motivos: list[ChamadosMotivo]
+
+
+class ResumoAtendimento(Saida):
+    total: int
+    resolvidos: int
+    taxa_resolucao: float
+    resposta_media_horas: float | None
+
+
+class AtendimentoDaRede(Saida):
+    atual: ResumoAtendimento
+    anterior: ResumoAtendimento
+    abertos_agora: int
+
+
+class EstoqueDaRede(Saida):
+    unidades: int
+    pecas: int
+    pecas_esgotadas: int
+
+
+class UnidadeDaRede(Saida):
+    id_loja: UUID
+    codigo: str
+    nome: str
+    cidade: str | None
+    faturamento: float
+    faturamento_anterior: float
+    pedidos: int
+    ticket_medio: float
+    participacao_online: float
+    unidades_em_estoque: int
+    pecas_esgotadas: int
+    chamados_abertos: int
+    resposta_media_horas: float | None
+
+
+class DashboardRede(Saida):
+    periodo: Periodo
+    periodo_anterior: Periodo
+    atual: ResumoVendas
+    anterior: ResumoVendas
+    grupos: list[GrupoDaRede]
+    pecas_mais_vendidas: list[PecaMaisVendida]
+    atendimento: AtendimentoDaRede
+    estoque: EstoqueDaRede
+    unidades: list[UnidadeDaRede]
+    opcoes: Opcoes

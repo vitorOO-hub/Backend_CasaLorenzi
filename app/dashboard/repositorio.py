@@ -24,10 +24,13 @@ class Filtro:
     categoria: str | None = None
     # Equipe de loja tambem atende os chamados sem loja (fila geral); o admin filtra a rede.
     incluir_sem_loja: bool = False
+    # Varias lojas ao mesmo tempo (comparacao do admin); vazio = nao restringe por esta lista.
+    ids_loja: tuple[UUID, ...] = ()
 
     def parametros(self) -> dict[str, Any]:
         return {
             "id_loja": str(self.id_loja) if self.id_loja else None,
+            "ids_loja": [str(i) for i in self.ids_loja],
             "canal": self.canal,
             "categoria": self.categoria,
             "incluir_sem_loja": self.incluir_sem_loja,
@@ -43,6 +46,7 @@ BASE = """
 WITH base AS (
     SELECT
         a.id_atendimento,
+        a.id_loja,
         a.aberto_em,
         (a.aberto_em AT TIME ZONE :fuso)::date AS dia,
         status.codigo AS status_codigo,
@@ -64,8 +68,9 @@ WITH base AS (
     WHERE a.aberto_em >= CAST(:inicio AS date)::timestamp AT TIME ZONE :fuso
       AND a.aberto_em < (CAST(:fim AS date) + 1)::timestamp AT TIME ZONE :fuso
       AND (
-        CAST(:id_loja AS uuid) IS NULL
+        (CAST(:id_loja AS uuid) IS NULL AND cardinality(CAST(:ids_loja AS uuid[])) = 0)
         OR a.id_loja = CAST(:id_loja AS uuid)
+        OR a.id_loja = ANY(CAST(:ids_loja AS uuid[]))
         OR (CAST(:incluir_sem_loja AS boolean) AND a.id_loja IS NULL)
     )
       AND (CAST(:canal AS text) IS NULL OR canal.codigo = CAST(:canal AS text))
@@ -271,5 +276,46 @@ def fila(conexao: Connection, filtro: Filtro, *, limit: int, offset: int) -> lis
             """
         ),
         {**filtro.parametros(), "limite": limit, "deslocamento": offset},
+    ).mappings()
+    return [dict(linha) for linha in linhas]
+
+
+def resumo_por_loja(
+    conexao: Connection, filtro: Filtro, inicio: date, fim: date
+) -> list[dict[str, Any]]:
+    """Chamados do periodo e primeira resposta media, uma linha por loja (comparacao do admin)."""
+    linhas = conexao.execute(
+        text(
+            BASE
+            + f"""
+            SELECT
+                id_loja,
+                count(*) AS total,
+                {HORAS_ATE_RESPOSTA} AS resposta_media_horas
+            FROM base
+            WHERE id_loja IS NOT NULL
+            GROUP BY id_loja
+            """  # nosec B608
+        ),
+        _parametros(filtro, inicio, fim),
+    ).mappings()
+    return [dict(linha) for linha in linhas]
+
+
+def abertos_agora(conexao: Connection, ids_loja: tuple[UUID, ...]) -> list[dict[str, Any]]:
+    """Chamados ainda nao finalizados hoje, por loja (id_loja nulo = fila geral sem loja)."""
+    linhas = conexao.execute(
+        text(
+            """
+            SELECT a.id_loja, count(*) AS total
+            FROM atendimento a
+            JOIN status_atendimento s ON s.id_status_atendimento = a.id_status_atendimento
+            WHERE s.codigo <> ALL(CAST(:finalizados AS text[]))
+              AND (cardinality(CAST(:ids_loja AS uuid[])) = 0
+                   OR a.id_loja = ANY(CAST(:ids_loja AS uuid[])))
+            GROUP BY a.id_loja
+            """
+        ),
+        {"finalizados": list(STATUS_FINALIZADOS), "ids_loja": [str(i) for i in ids_loja]},
     ).mappings()
     return [dict(linha) for linha in linhas]

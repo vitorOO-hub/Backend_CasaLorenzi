@@ -16,7 +16,13 @@ from app.core.papeis import Papel, UsuarioAtual
 from app.core.security import requer_papel
 from app.gerencia import service
 from app.gerencia.repositorio import Filtro
-from app.gerencia.schemas import DashboardGerente, LojasDaRede, Pendencias, Reposicao
+from app.gerencia.schemas import (
+    DashboardGerente,
+    DashboardRede,
+    LojasDaRede,
+    Pendencias,
+    Reposicao,
+)
 
 router = APIRouter(prefix="/painel/gerencia", tags=["painel-gerencia"])
 
@@ -71,5 +77,35 @@ def pendencias(usuario: UsuarioDep, executar: ExecutarDep, id_loja: IdLoja = Non
     return executar(
         lambda conexao: service.montar_pendencias(
             conexao, filtro, incluir_chamados_sem_loja=sem_loja
+        )
+    )
+
+
+AdminDep = Annotated[UsuarioAtual, Depends(requer_papel(Papel.ADMIN))]
+IdsLoja = Annotated[
+    list[UUID] | None, Query(max_length=10, description="Lojas a comparar; vazio = a rede toda")
+]
+
+
+@router.get("/rede", response_model=DashboardRede, summary="Inicio do admin: a rede e as lojas")
+def rede(
+    usuario: AdminDep,
+    executar: ExecutarDep,
+    inicio: date,
+    fim: date,
+    ids_loja: IdsLoja = None,
+    categoria: Categoria = None,
+    canal: Canal = None,
+):
+    service.validar_periodo(inicio, fim)
+    return executar(
+        lambda conexao: service.montar_rede(
+            conexao,
+            usuario,
+            inicio=inicio,
+            fim=fim,
+            ids_loja=tuple(dict.fromkeys(ids_loja or ())),
+            categoria=categoria,
+            canal=canal,
         )
     )
