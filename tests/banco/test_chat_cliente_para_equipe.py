@@ -183,13 +183,30 @@ def test_chamado_sem_loja_no_payload_cai_na_fila_geral_da_equipe(sa_conn, fab_sa
         }
 
 
-def test_chamado_com_pedido_usa_a_loja_do_pedido(sa_conn, fab_sa):
+def _ids_na_fila(sa_conn, usuario) -> set[str]:
+    escopo = chamados.montar_escopo(sa_conn, como_token(usuario), None)
+    fila = chamados.listar(
+        sa_conn,
+        escopo,
+        situacao="abertos",
+        responsavel="todos",
+        prioridade=None,
+        canal=None,
+        categoria=None,
+        limit=20,
+        offset=0,
+    )
+    return {str(item["id_atendimento"]) for item in fila["itens"]}
+
+
+def test_chamado_com_pedido_sem_loja_escolhida_vai_para_a_fila_geral(sa_conn, fab_sa):
+    # O pedido e contexto, nao decide a loja: sem escolha do cliente, qualquer atendente ve.
     fab = fab_sa
     loja, outra_loja = fab.loja(), fab.loja()
     cliente = fab.usuario("cliente")
     pedido = fab.pedido(loja=loja, cliente=cliente)
-    atendente = fab.usuario("atendente", loja=loja)
-    fora = fab.usuario("atendente", loja=outra_loja)
+    da_loja = fab.usuario("atendente", loja=loja)
+    de_outra = fab.usuario("atendente", loja=outra_loja)
 
     aberto = cliente_repo.criar_chamado_cliente(
         sa_conn,
@@ -202,33 +219,32 @@ def test_chamado_com_pedido_usa_a_loja_do_pedido(sa_conn, fab_sa):
         },
     )
 
-    assert aberto["id_loja"] == loja
-    escopo = chamados.montar_escopo(sa_conn, como_token(atendente), None)
-    fila = chamados.listar(
-        sa_conn,
-        escopo,
-        situacao="abertos",
-        responsavel="todos",
-        prioridade=None,
-        canal=None,
-        categoria=None,
-        limit=20,
-        offset=0,
-    )
-    assert str(aberto["id_atendimento"]) in {str(item["id_atendimento"]) for item in fila["itens"]}
+    assert aberto["id_loja"] is None
+    assert str(aberto["id_pedido"]) == str(pedido)
+    assert str(aberto["id_atendimento"]) in _ids_na_fila(sa_conn, da_loja)
+    assert str(aberto["id_atendimento"]) in _ids_na_fila(sa_conn, de_outra)
 
-    escopo_fora = chamados.montar_escopo(sa_conn, como_token(fora), None)
-    fila_fora = chamados.listar(
+
+def test_chamado_com_pedido_e_loja_escolhida_vai_so_para_essa_loja(sa_conn, fab_sa):
+    fab = fab_sa
+    loja_do_pedido, escolhida = fab.loja(), fab.loja()
+    cliente = fab.usuario("cliente")
+    pedido = fab.pedido(loja=loja_do_pedido, cliente=cliente)
+    da_escolhida = fab.usuario("atendente", loja=escolhida)
+    da_loja_do_pedido = fab.usuario("atendente", loja=loja_do_pedido)
+
+    aberto = cliente_repo.criar_chamado_cliente(
         sa_conn,
-        escopo_fora,
-        situacao="abertos",
-        responsavel="todos",
-        prioridade=None,
-        canal=None,
-        categoria=None,
-        limit=20,
-        offset=0,
+        cliente.id,
+        {
+            "assunto": "Chamado sobre pedido",
+            "categoria": "outro",
+            "descricao": "Quero resolver na loja que escolhi.",
+            "id_pedido": str(pedido),
+            "id_loja": str(escolhida),
+        },
     )
-    assert str(aberto["id_atendimento"]) not in {
-        str(item["id_atendimento"]) for item in fila_fora["itens"]
-    }
+
+    assert aberto["id_loja"] == escolhida
+    assert str(aberto["id_atendimento"]) in _ids_na_fila(sa_conn, da_escolhida)
+    assert str(aberto["id_atendimento"]) not in _ids_na_fila(sa_conn, da_loja_do_pedido)
