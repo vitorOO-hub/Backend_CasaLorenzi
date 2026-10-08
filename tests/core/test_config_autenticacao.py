@@ -18,8 +18,17 @@ def criar(**valores) -> Settings:
     return Settings(_env_file=None, **valores)
 
 
-def test_autenticacao_vem_desligada_por_padrao():
+def test_sem_supabase_a_autenticacao_vem_desligada():
     assert criar().autenticacao_obrigatoria is False
+
+
+def test_com_supabase_a_autenticacao_liga_sozinha():
+    assert criar(supabase_url="https://abc.supabase.co").autenticacao_obrigatoria is True
+
+
+def test_so_desliga_quem_escreve_false_de_proposito():
+    s = criar(supabase_url="https://abc.supabase.co", autenticacao_obrigatoria=False)
+    assert s.autenticacao_obrigatoria is False
 
 
 def test_le_a_flag_do_ambiente(monkeypatch):

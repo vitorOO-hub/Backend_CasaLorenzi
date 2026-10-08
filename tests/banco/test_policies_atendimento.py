@@ -145,12 +145,20 @@ def test_mensagem_so_e_visivel_para_quem_ve_o_atendimento(conn, cenario, fab):
         assert ids_visiveis(conn, cenario.usuarios[quem], consulta) == esperado, quem
 
 
-@pytest.mark.parametrize("quem", ["cliente1", "atendente_a", "gerente_a", "admin"])
-def test_pode_enviar_mensagem_em_chamado_aberto_que_ve(conn, cenario, quem):
-    usuario = cenario.usuarios[quem]
+def test_cliente_dono_envia_mensagem_direto_em_chamado_aberto(conn, cenario):
+    usuario = cenario.usuarios["cliente1"]
     with como_usuario(conn, usuario):
         resultado = tenta(conn, INSERIR_MENSAGEM, (cenario.atendimentos["a1"], usuario.id))
     assert resultado == []
+
+
+@pytest.mark.parametrize("quem", ["atendente_a", "gerente_a", "admin"])
+def test_equipe_nao_insere_mensagem_direto_so_pela_api(conn, cenario, quem):
+    """Direto pelo Supabase a equipe pularia as regras da API (quem assumiu, primeira resposta)."""
+    usuario = cenario.usuarios[quem]
+    with como_usuario(conn, usuario):
+        resultado = tenta(conn, INSERIR_MENSAGEM, (cenario.atendimentos["a1"], usuario.id))
+    assert e_erro(resultado)
 
 
 @pytest.mark.parametrize("quem", ["cliente2", "atendente_b", "operador_a", "atendente_a_inativo"])

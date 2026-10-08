@@ -509,3 +509,14 @@ Cada passo trava a transferencia e a linha do estoque; repetir uma etapa da 409 
 move duas vezes. A migration `20261007180000` cria os status `recebida` e `recusada`, e as policies
 de SELECT (equipe das lojas envolvidas nas transferencias; gerente da loja, ou o proprio operador,
 nos ajustes). Escrever continua so pela API.
+
+## Seguranca: o que fecha cada rota
+
+- **Login obrigatorio em tudo.** Com `SUPABASE_URL` definida, `AUTENTICACAO_OBRIGATORIA` liga sozinha e
+  os modulos antigos (admin, compras, estoques, movimentacoes...) tambem exigem JWT. So `/health` e a
+  documentacao ficam abertas. O teste `tests/api/test_todas_as_rotas_exigem_login.py` chama TODAS as
+  rotas sem token e quebra se alguma responder diferente de 401.
+- **Papel por area.** `tests/api/test_painel_so_para_equipe.py` garante que um cliente logado nao entra
+  em nenhuma rota do painel e que atendente e operador so entram nas areas deles.
+- **Mensagens.** Pelo Supabase direto so o cliente dono insere mensagem (policy da migration
+  `20261007190000`); a equipe responde pela API, que aplica as regras do chamado.

@@ -20,9 +20,10 @@ class Settings(BaseSettings):
     database_url: SecretStr
     supabase_url: str | None = None
     cors_origins: Annotated[list[str], NoDecode] = []
-    # Liga a trava de autenticacao em app/api/router.py. Desligada por padrao enquanto o
-    # front do cliente ainda nao envia o JWT do Supabase.
-    autenticacao_obrigatoria: bool = False
+    # Trava de autenticacao dos modulos antigos em app/api/router.py (admin, compras, estoques...).
+    # Sem valor explicito, liga sozinha sempre que o Supabase esta configurado: o padrao e fechado e
+    # so abre quem escrever AUTENTICACAO_OBRIGATORIA=false de proposito (ex.: rodando sem Supabase).
+    autenticacao_obrigatoria: bool | None = None
 
     @field_validator("database_url")
     @classmethod
@@ -45,6 +46,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _exigir_supabase_url_com_autenticacao(self) -> Self:
+        if self.autenticacao_obrigatoria is None:
+            self.autenticacao_obrigatoria = bool(self.supabase_url)
         if self.autenticacao_obrigatoria and not self.supabase_url:
             raise ValueError(
                 "SUPABASE_URL e obrigatoria quando AUTENTICACAO_OBRIGATORIA esta ligada"
