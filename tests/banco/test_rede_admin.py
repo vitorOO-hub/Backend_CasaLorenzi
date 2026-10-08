@@ -95,10 +95,11 @@ def test_estoque_conta_peca_esgotada_pelo_saldo_somado(sa_conn, cena):
     assert linha(rede_toda, cena.loja_b)["pecas_esgotadas"] == 1
     assert rede_toda["estoque"]["unidades"] >= 12
     so_a = rede(sa_conn, cena, cena.loja_a)
-    assert so_a["estoque"] == {"unidades": 7, "pecas": 3, "pecas_esgotadas": 2}
+    assert so_a["estoque"] == {"unidades": 7, "pecas": 3, "produtos": 2, "pecas_esgotadas": 2}
     assert rede(sa_conn, cena, cena.loja_a, categoria="Calcas")["estoque"] == {
         "unidades": 7,
         "pecas": 1,
+        "produtos": 1,
         "pecas_esgotadas": 0,
     }
 

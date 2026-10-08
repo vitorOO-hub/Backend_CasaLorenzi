@@ -72,7 +72,9 @@ class ItemSaldo(Saida):
 
 class ResumoSaldo(Saida):
     unidades: int
+    # SKUs (peca + cor + tamanho) que a loja ou a rede mantem; `produtos` sao as pecas do catalogo.
     pecas: int
+    produtos: int
     estoque_baixo: int
     esgotadas: int
     # Unidades a preco de venda.

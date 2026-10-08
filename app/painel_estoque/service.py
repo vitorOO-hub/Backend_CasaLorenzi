@@ -66,6 +66,7 @@ def montar_saldo(
         "resumo": {
             "unidades": int(resumo["unidades"]),
             "pecas": int(resumo["pecas"]),
+            "produtos": int(resumo["produtos"]),
             "estoque_baixo": int(resumo["estoque_baixo"]),
             "esgotadas": int(resumo["esgotadas"]),
             "valor_em_estoque": round(float(resumo["valor_em_estoque"]), 2),

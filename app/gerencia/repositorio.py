@@ -435,11 +435,12 @@ ESTOQUE_POR_LOJA = """
 ESTOQUE_TOTAL = """
     SELECT COALESCE(sum(saldo), 0) AS unidades,
            count(*) AS pecas,
+           count(DISTINCT id_produto) AS produtos,
            count(*) FILTER (WHERE saldo = 0) AS esgotadas
     FROM (
-        SELECT e.id_variacao, sum(e.quantidade) AS saldo
+        SELECT e.id_variacao, produto.id_produto, sum(e.quantidade) AS saldo
         __ESTOQUE_DE__
-        GROUP BY e.id_variacao
+        GROUP BY e.id_variacao, produto.id_produto
     ) por_peca
 """.replace("__ESTOQUE_DE__", ESTOQUE_DE)  # nosec B608
 

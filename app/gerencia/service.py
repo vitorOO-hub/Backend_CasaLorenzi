@@ -342,6 +342,7 @@ def montar_rede(
         "estoque": {
             "unidades": int(estoque["unidades"]),
             "pecas": int(estoque["pecas"]),
+            "produtos": int(estoque["produtos"]),
             "pecas_esgotadas": int(estoque["esgotadas"]),
         },
         "unidades": _unidades(

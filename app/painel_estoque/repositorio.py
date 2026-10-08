@@ -83,6 +83,7 @@ SALDO_BASE = """
 WITH saldo AS (
     SELECT
         v.id_variacao,
+        produto.id_produto,
         v.sku,
         produto.nome AS produto,
         v.cor,
@@ -100,8 +101,8 @@ WITH saldo AS (
     JOIN variacao_produto v ON v.id_variacao = e.id_variacao AND v.ativa
     JOIN produto ON produto.id_produto = v.id_produto AND produto.ativo
     WHERE CAST(:id_loja AS uuid) IS NULL OR e.id_loja = CAST(:id_loja AS uuid)
-    GROUP BY v.id_variacao, v.sku, produto.nome, v.cor, v.tamanho, produto.categoria,
-             v.preco_venda
+    GROUP BY v.id_variacao, produto.id_produto, v.sku, produto.nome, v.cor, v.tamanho,
+             produto.categoria, v.preco_venda
 )
 """
 
@@ -177,6 +178,7 @@ def resumo_do_saldo(conexao: Connection, id_loja: UUID | None) -> dict[str, Any]
                 SELECT
                     COALESCE(sum(total), 0) AS unidades,
                     count(*) AS pecas,
+                    count(DISTINCT id_produto) AS produtos,
                     count(*) FILTER (WHERE situacao = 'baixo') AS estoque_baixo,
                     count(*) FILTER (WHERE situacao = 'esgotado') AS esgotadas,
                     COALESCE(sum(total * preco), 0) AS valor_em_estoque
@@ -199,7 +201,9 @@ def itens_do_saldo(
     linhas = conexao.execute(
         text(ITENS_SQL), {**parametros, "limite": limit, "deslocamento": offset}
     ).mappings()
-    return int(total), [dict(linha) for linha in linhas]
+    # `id_produto` so serve para contar as pecas do catalogo no resumo; a linha da tela nao o traz.
+    itens = [{k: v for k, v in linha.items() if k != "id_produto"} for linha in linhas]
+    return int(total), itens
 
 
 def saldo_por_loja(

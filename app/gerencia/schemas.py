@@ -173,7 +173,9 @@ class AtendimentoDaRede(Saida):
 
 class EstoqueDaRede(Saida):
     unidades: int
+    # `pecas` sao SKUs (peca + cor + tamanho); `produtos` sao as pecas do catalogo.
     pecas: int
+    produtos: int
     pecas_esgotadas: int
 
 

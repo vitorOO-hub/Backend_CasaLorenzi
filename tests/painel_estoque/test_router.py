@@ -39,6 +39,7 @@ SALDO = {
     "resumo": {
         "unidades": 10,
         "pecas": 2,
+        "produtos": 1,
         "estoque_baixo": 1,
         "esgotadas": 0,
         "valor_em_estoque": 1500.5,

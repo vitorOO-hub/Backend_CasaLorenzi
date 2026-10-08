@@ -171,7 +171,8 @@ def test_resumo_conta_unidades_situacoes_e_valor(sa_conn, cena):
     r = saldo(sa_conn, FiltroSaldo(cena.a))["resumo"]
     assert r == {
         "unidades": 25,
-        "pecas": 3,
+        "pecas": 3,  # SKUs
+        "produtos": 2,  # as pecas do catalogo (camisa e calca; a camisa tem 2 SKUs)
         "estoque_baixo": 1,
         "esgotadas": 1,
         "valor_em_estoque": 20 * 100 + 5 * 200,  # a preco de venda
