@@ -541,6 +541,11 @@ def _contexto_pedido_item(
     id_pedido: UUID | None,
     id_item_pedido: UUID | None,
 ) -> dict[str, object]:
+    # A loja do chamado e so a que o cliente escolheu: sem escolha, vai para a fila geral e
+    # qualquer atendente ve. O pedido entra como contexto, mas nao decide a loja.
+    if id_loja is not None:
+        _garantir_loja_ativa(conexao, id_loja)
+
     if id_item_pedido is not None:
         linhas = _mapas(
             conexao,
@@ -560,7 +565,7 @@ def _contexto_pedido_item(
         )
         if not linhas:
             raise PedidoClienteNaoEncontrado
-        return linhas[0]
+        return {**linhas[0], "id_loja": id_loja}
 
     if id_pedido is not None:
         linhas = _mapas(
@@ -575,10 +580,7 @@ def _contexto_pedido_item(
         )
         if not linhas:
             raise PedidoClienteNaoEncontrado
-        return linhas[0]
-
-    if id_loja is not None:
-        _garantir_loja_ativa(conexao, id_loja)
+        return {**linhas[0], "id_loja": id_loja}
 
     return {"id_pedido": None, "id_loja": id_loja, "numero_pedido": None, "id_item_pedido": None}
 
