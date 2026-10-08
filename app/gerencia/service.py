@@ -130,6 +130,23 @@ def montar_reposicao(conexao: Connection, filtro: Filtro, *, limite: int) -> dic
     }
 
 
+def montar_lojas(conexao: Connection, filtro: Filtro) -> dict[str, Any]:
+    """O gerente ve so a propria loja; o admin, a rede. O escopo vem do filtro (do token)."""
+    return {
+        "itens": [
+            {
+                **linha,
+                "equipe": int(linha["equipe"]),
+                "unidades_em_estoque": int(linha["unidades_em_estoque"]),
+                "pecas_em_alerta": int(linha["pecas_em_alerta"]),
+                "vendas_30_dias": _dinheiro(linha["vendas_30_dias"]),
+                "chamados_abertos": int(linha["chamados_abertos"]),
+            }
+            for linha in repositorio.lojas_da_rede(conexao, filtro.id_loja)
+        ]
+    }
+
+
 def montar_pendencias(
     conexao: Connection, filtro: Filtro, *, incluir_chamados_sem_loja: bool
 ) -> dict[str, int]:

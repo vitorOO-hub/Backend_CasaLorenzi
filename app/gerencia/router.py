@@ -16,7 +16,7 @@ from app.core.papeis import Papel, UsuarioAtual
 from app.core.security import requer_papel
 from app.gerencia import service
 from app.gerencia.repositorio import Filtro
-from app.gerencia.schemas import DashboardGerente, Pendencias, Reposicao
+from app.gerencia.schemas import DashboardGerente, LojasDaRede, Pendencias, Reposicao
 
 router = APIRouter(prefix="/painel/gerencia", tags=["painel-gerencia"])
 
@@ -55,6 +55,12 @@ def reposicao(
 ):
     filtro = Filtro(service.loja_do_escopo(usuario, id_loja), categoria)
     return executar(lambda conexao: service.montar_reposicao(conexao, filtro, limite=limit))
+
+
+@router.get("/lojas", response_model=LojasDaRede, summary="Cartao de cada loja")
+def lojas(usuario: UsuarioDep, executar: ExecutarDep, id_loja: IdLoja = None):
+    filtro = Filtro(service.loja_do_escopo(usuario, id_loja))
+    return executar(lambda conexao: service.montar_lojas(conexao, filtro))
 
 
 @router.get("/pendencias", response_model=Pendencias, summary="O que espera uma acao do gerente")

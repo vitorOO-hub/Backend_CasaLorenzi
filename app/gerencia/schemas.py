@@ -108,6 +108,27 @@ class Reposicao(Saida):
     itens: list[ItemReposicao]
 
 
+class LojaDaRede(Saida):
+    id_loja: UUID
+    codigo: str
+    nome: str
+    cidade: str | None
+    uf: str | None
+    endereco: str | None
+    # Nome do gerente da loja (o mais antigo ativo), se houver.
+    gerente: str | None
+    equipe: int
+    unidades_em_estoque: int
+    pecas_em_alerta: int
+    # Faturamento de produtos dos ultimos 30 dias (mesma regra do dashboard).
+    vendas_30_dias: float
+    chamados_abertos: int
+
+
+class LojasDaRede(Saida):
+    itens: list[LojaDaRede]
+
+
 class Pendencias(Saida):
     ajustes_para_aprovar: int
     transferencias_aguardando: int

@@ -273,6 +273,51 @@ def reposicao(
     return int(total), [dict(linha) for linha in linhas]
 
 
+LOJAS_DA_REDE = """
+SELECT
+    l.id_loja,
+    l.codigo,
+    l.nome,
+    l.cidade,
+    l.uf,
+    l.endereco,
+    (SELECT u.nome FROM usuario u JOIN tipo_usuario t USING (id_tipo_usuario)
+     WHERE u.id_loja = l.id_loja AND u.ativo AND t.codigo = 'gerente_loja'
+     ORDER BY u.criado_em, u.id_usuario LIMIT 1) AS gerente,
+    (SELECT count(*) FROM usuario u WHERE u.id_loja = l.id_loja AND u.ativo) AS equipe,
+    COALESCE((SELECT sum(e.quantidade) FROM estoque e WHERE e.id_loja = l.id_loja), 0)
+        AS unidades_em_estoque,
+    (SELECT count(*) FROM estoque e
+     JOIN variacao_produto v ON v.id_variacao = e.id_variacao AND v.ativa
+     WHERE e.id_loja = l.id_loja AND e.quantidade <= e.estoque_minimo) AS pecas_em_alerta,
+    COALESCE((
+        SELECT sum(i.valor_total)
+        FROM pedido p
+        JOIN status_pedido s ON s.id_status_pedido = p.id_status_pedido
+        JOIN item_pedido i ON i.id_pedido = p.id_pedido
+        WHERE p.id_loja = l.id_loja
+          AND s.codigo = ANY(CAST(:status_de_venda AS text[]))
+          AND p.criado_em >= now() - interval '30 days'
+    ), 0) AS vendas_30_dias,
+    (SELECT count(*) FROM atendimento a
+     JOIN status_atendimento sa ON sa.id_status_atendimento = a.id_status_atendimento
+     WHERE a.id_loja = l.id_loja AND sa.codigo NOT IN ('resolvido', 'encerrado', 'cancelado'))
+        AS chamados_abertos
+FROM loja l
+WHERE l.ativa AND (CAST(:id_loja AS uuid) IS NULL OR l.id_loja = CAST(:id_loja AS uuid))
+ORDER BY l.nome
+"""
+
+
+def lojas_da_rede(conexao: Connection, id_loja: UUID | None) -> list[dict[str, Any]]:
+    """Cartao de cada loja visivel: gerente, equipe, estoque, vendas e chamados."""
+    linhas = conexao.execute(
+        text(LOJAS_DA_REDE),
+        {"id_loja": str(id_loja) if id_loja else None, "status_de_venda": list(STATUS_DE_VENDA)},
+    ).mappings()
+    return [dict(linha) for linha in linhas]
+
+
 def ajustes_para_aprovar(conexao: Connection, filtro: Filtro) -> int:
     return conexao.execute(
         text(
