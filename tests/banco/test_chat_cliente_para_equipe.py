@@ -141,3 +141,93 @@ def test_chamado_aberto_no_portal_aparece_na_fila_de_chamados(sa_conn, fab_sa):
     assert str(aberto["id_atendimento"]) not in {
         str(item["id_atendimento"]) for item in fila_fora["itens"]
     }
+
+
+def test_chamado_sem_loja_no_payload_cai_na_fila_geral_da_equipe(sa_conn, fab_sa):
+    fab = fab_sa
+    loja, outra_loja = fab.loja(), fab.loja()
+    cliente = fab.usuario("cliente")
+    atendente = fab.usuario("atendente", loja=loja)
+    gerente = fab.usuario("gerente_loja", loja=loja)
+    atendente_outra_loja = fab.usuario("atendente", loja=outra_loja)
+    gerente_outra_loja = fab.usuario("gerente_loja", loja=outra_loja)
+
+    aberto = cliente_repo.criar_chamado_cliente(
+        sa_conn,
+        cliente.id,
+        {
+            "assunto": "Ajuste sem loja selecionada",
+            "categoria": "outro",
+            "descricao": "Abri pelo portal sem escolher uma loja.",
+        },
+    )
+
+    assert aberto["id_loja"] is None
+    for quem in (atendente, gerente, atendente_outra_loja, gerente_outra_loja):
+        token = como_token(quem)
+        escopo = chamados.montar_escopo(sa_conn, token, None)
+        fila = chamados.listar(
+            sa_conn,
+            escopo,
+            situacao="abertos",
+            responsavel="todos",
+            prioridade=None,
+            canal=None,
+            categoria=None,
+            limit=20,
+            offset=0,
+        )
+        assert str(aberto["id_atendimento"]) in {
+            str(item["id_atendimento"]) for item in fila["itens"]
+        }
+
+
+def test_chamado_com_pedido_usa_a_loja_do_pedido(sa_conn, fab_sa):
+    fab = fab_sa
+    loja, outra_loja = fab.loja(), fab.loja()
+    cliente = fab.usuario("cliente")
+    pedido = fab.pedido(loja=loja, cliente=cliente)
+    atendente = fab.usuario("atendente", loja=loja)
+    fora = fab.usuario("atendente", loja=outra_loja)
+
+    aberto = cliente_repo.criar_chamado_cliente(
+        sa_conn,
+        cliente.id,
+        {
+            "assunto": "Chamado sobre pedido",
+            "categoria": "outro",
+            "descricao": "Preciso falar sobre um pedido especifico.",
+            "id_pedido": str(pedido),
+        },
+    )
+
+    assert aberto["id_loja"] == loja
+    escopo = chamados.montar_escopo(sa_conn, como_token(atendente), None)
+    fila = chamados.listar(
+        sa_conn,
+        escopo,
+        situacao="abertos",
+        responsavel="todos",
+        prioridade=None,
+        canal=None,
+        categoria=None,
+        limit=20,
+        offset=0,
+    )
+    assert str(aberto["id_atendimento"]) in {str(item["id_atendimento"]) for item in fila["itens"]}
+
+    escopo_fora = chamados.montar_escopo(sa_conn, como_token(fora), None)
+    fila_fora = chamados.listar(
+        sa_conn,
+        escopo_fora,
+        situacao="abertos",
+        responsavel="todos",
+        prioridade=None,
+        canal=None,
+        categoria=None,
+        limit=20,
+        offset=0,
+    )
+    assert str(aberto["id_atendimento"]) not in {
+        str(item["id_atendimento"]) for item in fila_fora["itens"]
+    }
