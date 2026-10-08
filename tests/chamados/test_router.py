@@ -291,7 +291,7 @@ def test_erros_de_negocio_viram_o_status_certo(cliente, par, monkeypatch, erro, 
 
 
 def test_rotas_estao_sob_api_v1(cliente):
-    caminhos = set(cliente.get("/openapi.json").json()["paths"])
+    caminhos = set(cliente.app.openapi()["paths"])
     esperados = {
         f"{BASE}",
         f"{BASE}/opcoes",

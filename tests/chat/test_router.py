@@ -266,7 +266,7 @@ def test_resumo_e_sessao_nao_viram_id(cliente, par):
 
 
 def test_rotas_estao_sob_api_v1(cliente):
-    caminhos = set(cliente.get("/openapi.json").json()["paths"])
+    caminhos = set(cliente.app.openapi()["paths"])
     esperados = {
         BASE,
         f"{BASE}/resumo",

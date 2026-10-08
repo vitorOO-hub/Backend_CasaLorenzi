@@ -9,13 +9,32 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import Settings
 from app.core.erros import registrar_tratadores
+from app.core.protecoes import CabecalhosDeSeguranca, LimitadorDeRequisicoes
 
 
 def criar_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
 
-    app = FastAPI(title="Casa Lorenzi API", version="0.1.0")
+    docs = settings.docs_habilitadas
+    app = FastAPI(
+        title="Casa Lorenzi API",
+        version="0.1.0",
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+    )
     app.state.settings = settings
+
+    # Ordem dos middlewares (o ultimo adicionado e o mais externo): limite -> CORS -> cabecalhos.
+    # O CORS envolve o limite para a resposta 429 tambem chegar ao navegador.
+    app.add_middleware(
+        LimitadorDeRequisicoes,
+        ativo=settings.limites_ativos,
+        leitura=settings.limite_leitura_por_minuto,
+        escrita=settings.limite_escrita_por_minuto,
+        sensivel=settings.limite_sensivel_por_minuto,
+        anonimo=settings.limite_anonimo_por_minuto,
+    )
 
     # CORS so para as origens do front (Vercel e ambiente local), vindas de CORS_ORIGINS.
     app.add_middleware(
@@ -25,6 +44,7 @@ def criar_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
         max_age=600,
     )
+    app.add_middleware(CabecalhosDeSeguranca)
     registrar_tratadores(app)
     app.include_router(api_router)
     return app

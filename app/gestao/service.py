@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.engine import Connection
 
+from app.core import vigencia
 from app.core.erros_auth import SemPermissao
 from app.core.papeis import Papel, UsuarioAtual
 from app.gestao import auditoria, repositorio
@@ -77,6 +78,8 @@ def mudar_usuario(
     except Exception:
         conexao.rollback()
         raise
+    if travado["auth_user_id"] is not None:
+        vigencia.esquecer(travado["auth_user_id"])
     novo = repositorio.um_da_equipe(conexao, id_usuario)
     if novo is None:
         raise UsuarioNaoEncontrado()

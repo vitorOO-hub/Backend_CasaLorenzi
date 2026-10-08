@@ -7,6 +7,8 @@ import jwt
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core import vigencia
+from app.core.db import ExecutarDep
 from app.core.erros_auth import AutenticacaoIndisponivel, NaoAutenticado, SemPermissao
 from app.core.jwks import ProvedorChaves
 from app.core.papeis import PAPEIS_COM_LOJA, Papel, UsuarioAtual
@@ -102,9 +104,13 @@ def requer_papel(*papeis: Papel):
     """Fabrica de dependencia: exige um dos papeis e devolve o usuario (403 se nao tiver)."""
     permitidos = frozenset(papeis)
 
-    def dependencia(usuario: Annotated[UsuarioAtual, Depends(get_current_user)]) -> UsuarioAtual:
+    def dependencia(
+        usuario: Annotated[UsuarioAtual, Depends(get_current_user)], executar: ExecutarDep
+    ) -> UsuarioAtual:
         if usuario.papel not in permitidos:
             raise SemPermissao()
+        # O papel do token precisa continuar valendo no banco (conta ativa, mesmo cargo e loja).
+        vigencia.conferir(usuario, executar)
         return usuario
 
     return dependencia

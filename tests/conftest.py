@@ -1,9 +1,14 @@
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import Settings
 from app.main import criar_app
+
+# Os testes disparam centenas de chamadas por segundo; os do limite ligam por conta propria.
+os.environ.setdefault("LIMITES_ATIVOS", "false")
 
 DATABASE_URL_TESTE = "postgresql://usuario:senha-de-teste@localhost:5432/postgres"
 
@@ -40,3 +45,11 @@ def erro_integridade():
         return IntegrityError("SQL", {}, ErroBancoFalso(sqlstate))
 
     return montar
+
+
+@pytest.fixture(autouse=True)
+def _sem_conferencia_de_vigencia(monkeypatch):
+    """A maioria dos testes simula o banco; a conferencia de vigencia tem testes proprios."""
+    from app.core import vigencia
+
+    monkeypatch.setattr(vigencia, "ATIVA", False)

@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     database_url: SecretStr
     supabase_url: str | None = None
     cors_origins: Annotated[list[str], NoDecode] = []
+    # /docs, /redoc e /openapi.json mostram o mapa inteiro da API: so ligam de proposito (dev).
+    docs_habilitadas: bool = False
+    # Limite de requisicoes por minuto (ver app/core/protecoes.py). Desligar so em teste.
+    limites_ativos: bool = True
+    limite_leitura_por_minuto: int = 120
+    limite_escrita_por_minuto: int = 30
+    limite_sensivel_por_minuto: int = 10
+    limite_anonimo_por_minuto: int = 300
 
     @field_validator("database_url")
     @classmethod

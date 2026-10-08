@@ -206,7 +206,7 @@ def test_resposta_nao_traz_documento_nem_campo_extra(cliente, par, chamadas, mon
 
 
 def test_rotas_estao_sob_api_v1(cliente):
-    caminhos = set(cliente.get("/openapi.json").json()["paths"])
+    caminhos = set(cliente.app.openapi()["paths"])
     assert {BASE, f"{BASE}/{{id_cliente}}"} <= caminhos
 
 

@@ -168,7 +168,7 @@ def executa_operacao(_resultado_ignorado=None):
 
 def test_rotas_do_cliente_estao_registradas(app, cliente):
     usar_cliente(app)
-    caminhos = cliente.get("/openapi.json").json()["paths"]
+    caminhos = cliente.app.openapi()["paths"]
     registradas = {
         (metodo.upper(), caminho) for caminho, itens in caminhos.items() for metodo in itens
     }

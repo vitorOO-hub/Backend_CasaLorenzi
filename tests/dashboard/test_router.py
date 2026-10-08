@@ -202,7 +202,7 @@ def test_dashboard_exige_token_mesmo_com_a_flag_de_autenticacao_desligada(par, c
 
 
 def test_rotas_aparecem_no_openapi(cliente):
-    caminhos = cliente.get("/openapi.json").json()["paths"]
+    caminhos = cliente.app.openapi()["paths"]
     assert set(ROTAS) <= set(caminhos)
 
 
