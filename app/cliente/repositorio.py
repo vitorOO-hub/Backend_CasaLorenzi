@@ -434,6 +434,50 @@ def opcoes_chamado(conexao: Connection) -> dict[str, object]:
     return {"categorias": categorias}
 
 
+def opcoes_agendamento(conexao: Connection) -> dict[str, object]:
+    slots = _mapas(
+        conexao,
+        """
+        WITH dias AS (
+            SELECT (current_date + offs)::date AS data
+            FROM generate_series(1, 21) AS offs
+            WHERE EXTRACT(ISODOW FROM current_date + offs) BETWEEN 1 AND 6
+        ),
+        ocupacao AS (
+            SELECT id_loja, data, horario, count(*)::int AS usados
+            FROM agendamento_cliente
+            GROUP BY id_loja, data, horario
+        )
+        SELECT
+            ah.id_loja,
+            l.nome AS loja,
+            d.data,
+            to_char(ah.horario, 'HH24:MI') AS horario,
+            (ah.capacidade - COALESCE(o.usados, 0))::int AS vagas
+        FROM dias d
+        JOIN agenda_horario ah
+          ON ah.dia_semana = EXTRACT(ISODOW FROM d.data)::int
+         AND ah.ativo IS TRUE
+        JOIN loja l ON l.id_loja = ah.id_loja
+        LEFT JOIN ocupacao o
+          ON o.id_loja = ah.id_loja
+         AND o.data = d.data
+         AND o.horario = ah.horario
+        WHERE l.ativa IS TRUE
+          AND COALESCE(o.usados, 0) < ah.capacidade
+        ORDER BY d.data, ah.horario, l.nome
+        """,
+        {},
+    )
+    return {
+        "tipos": [
+            {"codigo": "ajuste", "nome": "Ajustar uma peça"},
+            {"codigo": "prova", "nome": "Provar a pronta-entrega"},
+        ],
+        "slots": slots,
+    }
+
+
 def _obter_id_opcao_atendimento(
     conexao: Connection, tabela: str, coluna_id: str, codigo: str
 ) -> object:
@@ -766,6 +810,174 @@ def criar_chamado_cliente(
                 "atendimento": str(id_atendimento),
                 "cliente": str(id_cliente),
                 "texto": dados["descricao"],
+            },
+        )
+        conexao.commit()
+    except Exception:
+        conexao.rollback()
+        raise
+
+    return obter_chamado_cliente(conexao, id_cliente, id_atendimento)
+
+
+def criar_agendamento_cliente(
+    conexao: Connection,
+    id_cliente: UUID,
+    dados: dict[str, object],
+) -> dict[str, object]:
+    try:
+        horario = str(dados["horario"])
+        slot = conexao.execute(
+            text(
+                """
+                WITH ocupacao AS (
+                    SELECT count(*)::int AS usados
+                    FROM agendamento_cliente
+                    WHERE id_loja = CAST(:loja AS uuid)
+                      AND data = CAST(:data AS date)
+                      AND horario = CAST(:horario AS time)
+                )
+                SELECT ah.id_agenda_horario, ah.capacidade, COALESCE(o.usados, 0) AS usados
+                FROM agenda_horario ah
+                JOIN loja l ON l.id_loja = ah.id_loja
+                CROSS JOIN ocupacao o
+                WHERE ah.id_loja = CAST(:loja AS uuid)
+                  AND ah.dia_semana = EXTRACT(ISODOW FROM CAST(:data AS date))::int
+                  AND ah.horario = CAST(:horario AS time)
+                  AND ah.ativo IS TRUE
+                  AND l.ativa IS TRUE
+                  AND CAST(:data AS date) >= current_date
+                FOR UPDATE OF ah
+                """
+            ),
+            {
+                "loja": str(dados["id_loja"]),
+                "data": dados["data"],
+                "horario": horario,
+            },
+        ).mappings().first()
+        if not slot or int(slot["usados"]) >= int(slot["capacidade"]):
+            raise ReferenciaChamadoInvalida
+
+        id_status = _obter_id_opcao_atendimento(
+            conexao, "status_atendimento", "id_status_atendimento", "aberto"
+        )
+        id_canal = _obter_id_opcao_atendimento(
+            conexao, "canal_atendimento", "id_canal_atendimento", "site"
+        )
+        id_categoria = _obter_id_opcao_atendimento(
+            conexao, "categoria_atendimento", "id_categoria_atendimento", "agendamento"
+        )
+        id_prioridade = _obter_id_opcao_atendimento(
+            conexao, "prioridade_atendimento", "id_prioridade_atendimento", "baixa"
+        )
+        tipo = str(dados["tipo"])
+        tipo_rotulo = "Ajuste" if tipo == "ajuste" else "Prova"
+        assunto = f"{tipo_rotulo} agendada - {dados['data']} {horario}"
+        id_atendimento = conexao.execute(
+            text(
+                """
+                INSERT INTO atendimento (
+                    id_cliente,
+                    id_loja,
+                    id_canal_atendimento,
+                    id_categoria_atendimento,
+                    id_prioridade_atendimento,
+                    id_status_atendimento,
+                    assunto
+                )
+                VALUES (
+                    CAST(:cliente AS uuid),
+                    CAST(:loja AS uuid),
+                    CAST(:canal AS uuid),
+                    CAST(:categoria AS uuid),
+                    CAST(:prioridade AS uuid),
+                    CAST(:status AS uuid),
+                    :assunto
+                )
+                RETURNING id_atendimento
+                """
+            ),
+            {
+                "cliente": str(id_cliente),
+                "loja": str(dados["id_loja"]),
+                "canal": str(id_canal),
+                "categoria": str(id_categoria),
+                "prioridade": str(id_prioridade),
+                "status": str(id_status),
+                "assunto": assunto,
+            },
+        ).scalar_one()
+        conexao.execute(
+            text(
+                """
+                INSERT INTO agendamento_cliente (
+                    id_atendimento,
+                    id_cliente,
+                    id_loja,
+                    tipo,
+                    data,
+                    horario,
+                    nome_contato,
+                    telefone_contato,
+                    peca_sku,
+                    peca_nome,
+                    observacao
+                )
+                VALUES (
+                    CAST(:atendimento AS uuid),
+                    CAST(:cliente AS uuid),
+                    CAST(:loja AS uuid),
+                    :tipo,
+                    CAST(:data AS date),
+                    CAST(:horario AS time),
+                    :nome,
+                    :telefone,
+                    :peca_sku,
+                    :peca_nome,
+                    :observacao
+                )
+                """
+            ),
+            {
+                "atendimento": str(id_atendimento),
+                "cliente": str(id_cliente),
+                "loja": str(dados["id_loja"]),
+                "tipo": tipo,
+                "data": dados["data"],
+                "horario": horario,
+                "nome": dados["nome"],
+                "telefone": dados["telefone"],
+                "peca_sku": dados.get("peca_sku"),
+                "peca_nome": dados.get("peca_nome"),
+                "observacao": dados.get("observacao"),
+            },
+        )
+        texto_mensagem = " ".join(
+            parte
+            for parte in [
+                f"{tipo_rotulo} marcada para {dados['data']} às {horario}.",
+                f"Contato: {dados['nome']}, {dados['telefone']}.",
+                (
+                    f"Peça: {dados.get('peca_nome')} ({dados.get('peca_sku')})."
+                    if dados.get("peca_sku")
+                    else ""
+                ),
+                f"Observação: {dados.get('observacao')}" if dados.get("observacao") else "",
+            ]
+            if parte
+        )
+        conexao.execute(
+            text(
+                """
+                INSERT INTO mensagem (id_atendimento, id_usuario_remetente, texto)
+                VALUES (CAST(:atendimento AS uuid), CAST(:cliente AS uuid), :texto)
+                """
+            ),
+            {
+                "atendimento": str(id_atendimento),
+                "cliente": str(id_cliente),
+                "texto": texto_mensagem,
             },
         )
         conexao.commit()

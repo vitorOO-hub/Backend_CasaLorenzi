@@ -1,6 +1,6 @@
 """Schemas das rotas do cliente."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
@@ -154,6 +154,19 @@ class OpcoesChamadoCliente(BaseModel):
     categorias: list[OpcaoCliente]
 
 
+class SlotAgendamentoCliente(BaseModel):
+    id_loja: UUID
+    loja: str
+    data: date
+    horario: str
+    vagas: int
+
+
+class OpcoesAgendamentoCliente(BaseModel):
+    tipos: list[OpcaoCliente]
+    slots: list[SlotAgendamentoCliente]
+
+
 class ChamadoCriacao(EntradaRestrita):
     assunto: TextoCurto
     categoria: CodigoBanco
@@ -161,6 +174,18 @@ class ChamadoCriacao(EntradaRestrita):
     id_loja: UUID | None = None
     id_pedido: UUID | None = None
     id_item_pedido: UUID | None = None
+
+
+class AgendamentoCriacao(EntradaRestrita):
+    tipo: Literal["ajuste", "prova"]
+    id_loja: UUID
+    data: date
+    horario: Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^\d{2}:\d{2}$")]
+    nome: TextoCurto
+    telefone: TextoCurto
+    observacao: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] | None = None
+    peca_sku: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)] | None = None
+    peca_nome: TextoCurto | None = None
 
 
 class MensagemChamadoCriacao(EntradaRestrita):
