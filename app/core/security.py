@@ -114,22 +114,3 @@ def garantir_escopo_de_loja(usuario: UsuarioAtual, id_loja: UUID) -> None:
     """Admin acessa qualquer loja; os demais so a propria (CLAUDE.md, secao 7)."""
     if not usuario.pode_acessar_loja(id_loja):
         raise SemPermissao()
-
-
-def trava(*papeis: Papel):
-    """Dependencia de modulo, controlada por AUTENTICACAO_OBRIGATORIA.
-
-    Desligada, nao faz nada (a tela do cliente continua funcionando sem token). Ligada,
-    exige token valido e, se `papeis` nao for vazio, um desses papeis; vazio aceita
-    qualquer usuario autenticado.
-    """
-    permitidos = frozenset(papeis)
-
-    def dependencia(request: Request, credenciais: CredenciaisDep) -> None:
-        if not request.app.state.settings.autenticacao_obrigatoria:
-            return
-        usuario = _autenticar(request, credenciais)
-        if permitidos and usuario.papel not in permitidos:
-            raise SemPermissao()
-
-    return dependencia

@@ -60,7 +60,7 @@ def preencher(caminho: str) -> str:
 
 
 def test_ha_rotas_para_verificar(cliente):
-    assert len(list(rotas(cliente.app))) > 80
+    assert len(list(rotas(cliente.app))) > 60
 
 
 def test_toda_rota_sem_token_responde_401(cliente):

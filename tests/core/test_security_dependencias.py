@@ -11,17 +11,16 @@ from app.core.erros import registrar_tratadores
 from app.core.erros_auth import SemPermissao
 from app.core.jwks import ProvedorChaves
 from app.core.papeis import Papel, UsuarioAtual
-from app.core.security import garantir_escopo_de_loja, get_current_user, requer_papel, trava
+from app.core.security import garantir_escopo_de_loja, get_current_user, requer_papel
 from tests.auth_util import SUPABASE_URL, URL_JWKS, ParDeChaves, provedor_para
 from tests.conftest import DATABASE_URL_TESTE
 
 
-def montar_app(par: ParDeChaves, *, obrigatoria: bool = True, provedor=None) -> FastAPI:
+def montar_app(par: ParDeChaves, *, provedor=None) -> FastAPI:
     settings = Settings(
         _env_file=None,
         database_url=DATABASE_URL_TESTE,
         supabase_url=SUPABASE_URL,
-        autenticacao_obrigatoria=obrigatoria,
     )
     app = FastAPI()
     app.state.settings = settings
@@ -34,14 +33,6 @@ def montar_app(par: ParDeChaves, *, obrigatoria: bool = True, provedor=None) -> 
 
     @app.get("/so-gerente", dependencies=[Depends(requer_papel(Papel.GERENTE_LOJA, Papel.ADMIN))])
     def so_gerente():
-        return {"ok": True}
-
-    @app.get("/travada-admin", dependencies=[Depends(trava(Papel.ADMIN))])
-    def travada_admin():
-        return {"ok": True}
-
-    @app.get("/travada-qualquer", dependencies=[Depends(trava())])
-    def travada_qualquer():
         return {"ok": True}
 
     return app
@@ -97,7 +88,7 @@ def test_jwks_fora_do_ar_responde_503(par):
 
 
 def test_sem_supabase_url_responde_503(par):
-    app = montar_app(par, obrigatoria=False)
+    app = montar_app(par)
     del app.state.provedor_chaves
     app.state.settings = Settings(_env_file=None, database_url=DATABASE_URL_TESTE)
     resposta = TestClient(app).get("/eu", headers=cabecalho(par.emitir()))
@@ -124,32 +115,6 @@ def test_requer_papel(cliente, par, claims, esperado):
 
 def test_requer_papel_sem_token_responde_401(cliente):
     assert cliente.get("/so-gerente").status_code == 401
-
-
-# ---- trava -------------------------------------------------------------------------------
-
-
-def test_trava_desligada_nao_bloqueia_nada(par):
-    cliente = TestClient(montar_app(par, obrigatoria=False))
-    assert cliente.get("/travada-admin").status_code == 200
-    assert cliente.get("/travada-qualquer").status_code == 200
-
-
-def test_trava_ligada_sem_token_responde_401(cliente):
-    assert cliente.get("/travada-admin").status_code == 401
-    assert cliente.get("/travada-qualquer").status_code == 401
-
-
-def test_trava_ligada_respeita_o_papel(cliente, par):
-    assert cliente.get("/travada-admin", headers=cabecalho(par.emitir())).status_code == 403
-    assert (
-        cliente.get("/travada-admin", headers=cabecalho(par.emitir(papel="admin"))).status_code
-        == 200
-    )
-
-
-def test_trava_sem_papeis_aceita_qualquer_usuario_autenticado(cliente, par):
-    assert cliente.get("/travada-qualquer", headers=cabecalho(par.emitir())).status_code == 200
 
 
 # ---- escopo de loja ----------------------------------------------------------------------

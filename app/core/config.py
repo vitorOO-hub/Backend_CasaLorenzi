@@ -1,9 +1,9 @@
 """Configuracao da aplicacao, lida de variaveis de ambiente e do arquivo .env."""
 
-from typing import Annotated, Self
+from typing import Annotated
 
 from fastapi import Request
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -20,10 +20,6 @@ class Settings(BaseSettings):
     database_url: SecretStr
     supabase_url: str | None = None
     cors_origins: Annotated[list[str], NoDecode] = []
-    # Trava de autenticacao dos modulos antigos em app/api/router.py (admin, compras, estoques...).
-    # Sem valor explicito, liga sozinha sempre que o Supabase esta configurado: o padrao e fechado e
-    # so abre quem escrever AUTENTICACAO_OBRIGATORIA=false de proposito (ex.: rodando sem Supabase).
-    autenticacao_obrigatoria: bool | None = None
 
     @field_validator("database_url")
     @classmethod
@@ -43,16 +39,6 @@ class Settings(BaseSettings):
         if isinstance(valor, str):
             return [origem.strip().rstrip("/") for origem in valor.split(",") if origem.strip()]
         return valor
-
-    @model_validator(mode="after")
-    def _exigir_supabase_url_com_autenticacao(self) -> Self:
-        if self.autenticacao_obrigatoria is None:
-            self.autenticacao_obrigatoria = bool(self.supabase_url)
-        if self.autenticacao_obrigatoria and not self.supabase_url:
-            raise ValueError(
-                "SUPABASE_URL e obrigatoria quando AUTENTICACAO_OBRIGATORIA esta ligada"
-            )
-        return self
 
 
 def get_settings(request: Request) -> Settings:
