@@ -58,10 +58,11 @@ def test_mensagem_do_cliente_chega_a_equipe_e_a_resposta_volta(sa_conn, fab_sa):
     token, escopo = contexto(sa_conn, atendente)
     chat.enviar_mensagem(sa_conn, token, escopo, chamado, "Pode trazer na loja amanha")
     conversa = cliente_repo.listar_mensagens_chamado_cliente(sa_conn, helena.id, chamado)
-    assert [(m["autor"], m["texto"]) for m in conversa] == [
+    # Sem ordem: no teste as duas mensagens nascem na mesma transacao (mesmo `now()`).
+    assert {(m["autor"], m["texto"]) for m in conversa} == {
         ("cliente", "Preciso ajustar a manga"),
         ("atendente", "Pode trazer na loja amanha"),
-    ]
+    }
 
     # Chamado novo aberto pelo portal: a descricao vira a primeira mensagem na caixa da loja.
     aberto = cliente_repo.criar_chamado_cliente(

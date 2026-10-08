@@ -143,10 +143,24 @@ def perfil_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, object]:
     return dict(linha)
 
 
+# Tabelas de codigos que o checkout consulta. Nome de tabela e de coluna nunca vem da requisicao,
+# mas a lista fechada garante isso mesmo se alguem passar a chamar a funcao com outro valor.
+_TABELAS_DE_CODIGO = frozenset(
+    {
+        ("status_pedido", "id_status_pedido"),
+        ("metodo_pagamento", "id_metodo_pagamento"),
+        ("status_pagamento", "id_status_pagamento"),
+        ("tipo_movimentacao_estoque", "id_tipo_movimentacao_estoque"),
+    }
+)
+
+
 def _obter_id_por_codigo(conexao, tabela: str, coluna_id: str, codigo: str) -> object:
+    if (tabela, coluna_id) not in _TABELAS_DE_CODIGO:
+        raise ValueError("tabela de codigos nao permitida")
     linha = buscar_um(
         conexao,
-        f"SELECT {coluna_id} FROM {tabela} WHERE codigo = %s AND ativo IS TRUE",
+        f"SELECT {coluna_id} FROM {tabela} WHERE codigo = %s AND ativo IS TRUE",  # nosec B608
         (codigo,),
     )
     if not linha:
@@ -1239,8 +1253,9 @@ def criar_checkout(
         total = _dinheiro(subtotal + frete)
         executar_sql(
             conexao,
-            "UPDATE pedido SET valor_total = %s, atualizado_em = now() WHERE id_pedido = %s",
-            (total, id_pedido),
+            "UPDATE pedido SET valor_total = %s, valor_frete = %s, canal_venda = 'online', "
+            "atualizado_em = now() WHERE id_pedido = %s",
+            (total, frete, id_pedido),
         )
         executar_sql(
             conexao,

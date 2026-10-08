@@ -23,5 +23,3 @@ supabase>=2.0.0,<3.0.0
 # Cliente HTTP assincrono (busca do JWKS)
 httpx>=0.28.0,<1.0.0
 
-# Limite de requisicoes (por IP e por usuario)
-slowapi>=0.1.9,<1.0.0

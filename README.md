@@ -23,8 +23,9 @@ app/                       API FastAPI (monolito modular)
 ├── main.py                criar_app(): CORS, tratadores de erro e routers
 ├── core/                  config.py (Settings), db.py (conexao), erros.py (ErroDeNegocio)
 ├── api/                   router.py (agrega os modulos) e health.py (GET /health)
-├── estoque/               router.py, schemas.py, repositorio.py, erros.py
-└── atendimento/ compras/ admin/ integracao/ dashboard/   (vazios, proximas etapas)
+├── chamados/ chat/ clientes/ cliente/ gerencia/ gestao/ painel_estoque/ dashboard/
+│                          modulos do painel e da area do cliente (router, service, repositorio)
+└── core/protecoes.py      limite de requisicoes e cabecalhos de seguranca
 
 supabase/
 ├── migrations/            tabelas, constraints, ids em uuid e politicas de RLS
@@ -180,36 +181,28 @@ Nao coloque no Git:
 
 ## API FastAPI
 
-O modulo `estoque` expoe as acoes principais da tabela `estoque`.
-
-Rotas:
-
-- `GET /health`
-- `GET /estoques`
-- `GET /estoques/<id_estoque>`
-- `POST /estoques`
-- `POST /estoques/<id_estoque>/entrada`
-- `POST /estoques/<id_estoque>/saida`
-- `PATCH /estoques/<id_estoque>/minimo`
-- `DELETE /estoques/<id_estoque>`
+Todas as rotas do painel e da area do cliente ficam em `/api/v1/...` (mais `/dashboard/atendimento`
+e `GET /health`). **Toda rota exige token** (so `/health` e `GET /api/v1/cliente/catalogo/estoque`
+sao publicas) e cada uma confere o papel por conta propria. Nao existe modo aberto: sem
+`SUPABASE_URL` a API responde 503 nas rotas protegidas.
 
 O app le `DATABASE_URL` (obrigatoria), `SUPABASE_URL` e `CORS_ORIGINS` do `.env`.
 Esse arquivo nao deve ser versionado; use `.env.example` como modelo.
 
-Para rodar (documentacao interativa em `http://127.0.0.1:8000/docs`):
+Para rodar:
 
 ```bash
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Rode sempre da raiz do projeto. O `app` do modulo `app.main` e criado sob demanda a partir
-do `.env`; os testes usam `criar_app(settings)` e nunca leem o `.env`. O comando equivalente
-`uvicorn app.main:criar_app --factory --reload` tambem funciona.
+A documentacao interativa (`/docs`, `/redoc`, `/openapi.json`) vem **desligada**; para ligar em
+desenvolvimento use `DOCS_HABILITADAS=true`. Rode sempre da raiz do projeto. O `app` do modulo
+`app.main` e criado sob demanda a partir do `.env`; os testes usam `criar_app(settings)` e nunca leem
+o `.env`. O comando equivalente `uvicorn app.main:criar_app --factory --reload` tambem funciona.
 
-Atencao: com `AUTENTICACAO_OBRIGATORIA=false` (o padrao) as rotas de estoque ainda **nao exigem login**
-e usam uma conexao que ignora RLS. Rode apenas em `127.0.0.1` nesse modo; para exigir token, veja
-a secao "Autenticação (JWT do Supabase)" abaixo.
+A conexao com o banco ignora RLS (usuario privilegiado), por isso o escopo de loja e de dono e
+sempre conferido no Python.
 
 Para testar sem tocar no banco remoto (os testes nunca leem o `.env`):
 
@@ -223,30 +216,36 @@ pytest
 O login é do Supabase Auth; a API só valida o token (`Authorization: Bearer <jwt>`), com chaves
 públicas em `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` (ES256).
 
-A trava é controlada por `AUTENTICACAO_OBRIGATORIA` (padrão `false`):
+Toda rota protegida usa `get_current_user` (so o token) ou `requer_papel(...)` (token + papel).
 
-| Valor | Efeito |
-|---|---|
-| `false` | Nenhuma rota exige token (comportamento atual, usado pela tela do cliente). |
-| `true` | `/admin` exige `admin`; `/estoques` e `/movimentacoes-estoque` exigem `operador_estoque`, `gerente_loja` ou `admin`; `/atendimentos` e `/compras` exigem qualquer usuário autenticado; `/health` segue aberto. Exige `SUPABASE_URL`. |
+**Vigencia do token.** O JWT e assinado, mas o cargo e a loja dele foram gravados na emissao.
+`requer_papel` tambem confere no banco (`app/core/vigencia.py`, cache de 20 s) que a conta continua
+**ativa** e com o **mesmo cargo e loja** do token; se nao, responde 401 e o front renova a sessao.
+Assim, desativar ou rebaixar uma pessoa vale em segundos, nao em ate uma hora. O admin invalida o
+cache na hora ao mudar uma conta pela Gestao. Reduzir o `jwt_expiry` do Supabase Auth continua sendo
+uma boa pratica (ex.: 15 min).
 
-**Limite:** a trava só barra acesso anônimo e papel inadequado. Ela não impede que um cliente logado
-leia dados de outro cliente, nem que uma loja mexa na outra; esse filtro precisa ser feito dentro dos
-handlers de cada módulo (ver "Fora do escopo" do spec de auth).
+**Limite de requisicoes** (`app/core/protecoes.py`, em memoria, por instancia): por pessoa (hash do
+token) e por minuto, leitura 120, escrita 30, escrita sensivel (checkout, abrir chamado, agendar) 10;
+sem token, 300 no total. Excedeu: 429 em portugues com `Retry-After`. Ajustavel por
+`LIMITE_LEITURA_POR_MINUTO`, `LIMITE_ESCRITA_POR_MINUTO`, `LIMITE_SENSIVEL_POR_MINUTO`,
+`LIMITE_ANONIMO_POR_MINUTO`; `LIMITES_ATIVOS=false` so em teste. Com varias instancias do backend,
+o contador precisa ir para um Redis.
 
-**Antes de ligar a flag**, o hook de claims precisa estar ativo no painel do Supabase
-(Authentication → Hooks → Custom Access Token). Sem ele, todo token de equipe vem sem `papel`: em `/admin`, `/estoques` e
-`/movimentacoes-estoque` a API responde 403, mas `/atendimentos` e `/compras` aceitam qualquer usuário
-autenticado, então um token de equipe sem `papel` passa ali como se fosse cliente. O hook é entregue
-pelo Plano 2 (revisão Alembic de RLS e claims).
+**Cabecalhos de seguranca** em toda resposta (`nosniff`, `X-Frame-Options: DENY`, `no-store`, HSTS,
+`Referrer-Policy`). **Erros** sempre em portugues e sem detalhe interno: 422 devolve so
+`{detail, campos: [{campo, mensagem}]}` (sem ecoar o corpo enviado) e qualquer erro inesperado vira
+um 500 generico (o detalhe so vai para o log).
+
+**Antes de usar a API**, o hook de claims precisa estar ativo no painel do Supabase
+(Authentication → Hooks → Custom Access Token). Sem ele, todo token de equipe vem sem `papel` e as
+rotas do painel respondem 403.
 
 **Limites conhecidos das claims:**
 
-- O token não traz `ativo`. A equipe inativa perde o `papel` no hook de claims (Plano 2) e passa a ser
-  tratada como cliente, então ainda passa em `/atendimentos` e `/compras`. Um cliente inativo mantém o
-  acesso até ser banido no Supabase Auth.
-- `atendente`, `operador_estoque` e `gerente_loja` precisam de `loja_id` no token. Um atendente
-  cadastrado sem loja recebe 401 em todas as rotas com a flag ligada.
+- `atendente`, `operador_estoque` e `gerente_loja` precisam de `loja_id` no token; sem loja, 401.
+- Um cliente inativo mantem o acesso as rotas dele ate o token expirar (as rotas do cliente conferem
+  a conta ativa a cada chamada no banco, mas o Supabase Auth ainda emite token ate ser banido).
 
 ## Banco: RLS, policies e hook de claims
 
@@ -512,10 +511,11 @@ nos ajustes). Escrever continua so pela API.
 
 ## Seguranca: o que fecha cada rota
 
-- **Login obrigatorio em tudo.** Com `SUPABASE_URL` definida, `AUTENTICACAO_OBRIGATORIA` liga sozinha e
-  os modulos antigos (admin, compras, estoques, movimentacoes...) tambem exigem JWT. So `/health` e a
-  documentacao ficam abertas. O teste `tests/api/test_todas_as_rotas_exigem_login.py` chama TODAS as
-  rotas sem token e quebra se alguma responder diferente de 401.
+- **Login obrigatorio em tudo.** Nao existe modo aberto: os modulos antigos (admin, compras,
+  atendimento, estoque, movimentacoes, transferencias) foram removidos, e o painel novo cobre tudo. So
+  `/health` e o estoque publico do catalogo ficam abertos. O teste
+  `tests/api/test_todas_as_rotas_exigem_login.py` chama TODAS as rotas sem token e quebra se alguma
+  responder diferente de 401.
 - **Papel por area.** `tests/api/test_painel_so_para_equipe.py` garante que um cliente logado nao entra
   em nenhuma rota do painel e que atendente e operador so entram nas areas deles.
 - **Mensagens.** Pelo Supabase direto so o cliente dono insere mensagem (policy da migration
