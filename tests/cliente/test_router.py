@@ -119,6 +119,16 @@ CARRINHO = {
     "subtotal": "299.80",
 }
 
+ESTOQUE_CATALOGO = [
+    {
+        "id_variacao": ID_VARIACAO,
+        "sku": "CL-CAM-LIN-BR-P",
+        "id_loja": ID_LOJA,
+        "loja": "Casa Lorenzi Centro",
+        "quantidade": 4,
+    }
+]
+
 
 def usar_cliente(app):
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
@@ -147,6 +157,7 @@ def test_rotas_do_cliente_estao_registradas(app, cliente):
         (metodo.upper(), caminho) for caminho, itens in caminhos.items() for metodo in itens
     }
     assert ("GET", "/api/v1/cliente/lojas") in registradas
+    assert ("GET", "/api/v1/cliente/catalogo/estoque") in registradas
     assert ("GET", "/api/v1/cliente/perfil") in registradas
     assert ("GET", "/api/v1/cliente/pedidos") in registradas
     assert ("POST", "/api/v1/cliente/pedidos") in registradas
@@ -171,6 +182,15 @@ def test_perfil_do_cliente_responde_200(app, cliente):
     assert resposta.status_code == 200
     assert resposta.json()["email"] == "cliente@casalorenzi.test"
     assert resposta.json()["total_pedidos"] == 2
+
+
+def test_estoque_do_catalogo_do_cliente_responde_200(app, cliente):
+    usar_cliente(app)
+    usar_executor(app, devolve(ESTOQUE_CATALOGO))
+    resposta = cliente.get("/api/v1/cliente/catalogo/estoque")
+    assert resposta.status_code == 200
+    assert resposta.json()[0]["sku"] == "CL-CAM-LIN-BR-P"
+    assert resposta.json()[0]["quantidade"] == 4
 
 
 def test_listar_pedidos_do_cliente_responde_200(app, cliente):
@@ -328,4 +348,6 @@ def test_usuario_interno_nao_acessa_area_do_cliente(app, cliente):
     resposta = cliente.get("/api/v1/cliente/chamados")
     assert resposta.status_code == 403
     resposta = cliente.get("/api/v1/cliente/carrinho")
+    assert resposta.status_code == 403
+    resposta = cliente.get("/api/v1/cliente/catalogo/estoque")
     assert resposta.status_code == 403

@@ -85,6 +85,14 @@ class LojaCliente(BaseModel):
     endereco: str | None = None
 
 
+class EstoqueVariacaoCliente(BaseModel):
+    id_variacao: UUID
+    sku: str
+    id_loja: UUID
+    loja: str
+    quantidade: int
+
+
 class PerfilCliente(BaseModel):
     id_cliente: UUID
     nome: str
