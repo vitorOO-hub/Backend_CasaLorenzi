@@ -14,7 +14,7 @@ Create Date: 2026-10-07 20:00:00
   o metadado `cadastro_cliente` e verdadeiro, entao contas da equipe criadas pelo painel nao
   viram cliente. E-mail que ja existe no cadastro (inclusive de funcionario ainda sem login)
   faz o cadastro falhar, o que impede alguem de tomar a linha de outra pessoa.
-- Cada cliente tem a propria sessao (JWT) e so le a propria linha (policy ja existente em `usuario`).
+- Cada cliente tem a propria sessao (JWT) e so le a propria linha (policy existente em `usuario`).
 
 Se o banco nao deixar criar trigger em `auth.users` (permissao), a migration avisa e segue; o SQL
 fica em supabase/cadastro_cliente_trigger.sql para rodar no SQL Editor.
