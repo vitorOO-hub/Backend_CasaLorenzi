@@ -1,3 +1,4 @@
+# ruff: noqa: E501  (linhas de teste com URLs e payloads)
 """Pela API de verdade (token, papel, vigencia): o chamado que o cliente abre chega a quem deve atender.
 
 Cobre o caminho inteiro: cliente abre -> fila e caixa de conversas da equipe da loja certa (e so dela)
