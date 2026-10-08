@@ -129,6 +129,22 @@ ESTOQUE_CATALOGO = [
     }
 ]
 
+OPCOES_AGENDAMENTO = {
+    "tipos": [
+        {"codigo": "ajuste", "nome": "Ajustar uma peça"},
+        {"codigo": "prova", "nome": "Provar a pronta-entrega"},
+    ],
+    "slots": [
+        {
+            "id_loja": ID_LOJA,
+            "loja": "Casa Lorenzi Centro",
+            "data": "2026-10-08",
+            "horario": "14:00",
+            "vagas": 2,
+        }
+    ],
+}
+
 
 def usar_cliente(app):
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
@@ -168,6 +184,8 @@ def test_rotas_do_cliente_estao_registradas(app, cliente):
     assert ("DELETE", "/api/v1/cliente/carrinho/itens/{id_variacao}") in registradas
     assert ("DELETE", "/api/v1/cliente/carrinho") in registradas
     assert ("GET", "/api/v1/cliente/chamados/opcoes") in registradas
+    assert ("GET", "/api/v1/cliente/agendamentos/opcoes") in registradas
+    assert ("POST", "/api/v1/cliente/agendamentos") in registradas
     assert ("GET", "/api/v1/cliente/chamados") in registradas
     assert ("POST", "/api/v1/cliente/chamados") in registradas
     assert ("GET", "/api/v1/cliente/chamados/{id_atendimento}") in registradas
@@ -282,6 +300,53 @@ def test_listar_chamados_do_cliente_responde_200(app, cliente):
     assert resposta.json()[0]["protocolo"] == "AT-2026-0001"
 
 
+def test_opcoes_de_agendamento_do_cliente_responde_200(app, cliente):
+    usar_cliente(app)
+    usar_executor(app, devolve(OPCOES_AGENDAMENTO))
+    resposta = cliente.get("/api/v1/cliente/agendamentos/opcoes")
+    assert resposta.status_code == 200
+    assert resposta.json()["slots"][0]["horario"] == "14:00"
+    assert resposta.json()["tipos"][0]["codigo"] == "ajuste"
+
+
+def test_criar_agendamento_do_cliente_responde_201(app, cliente):
+    usar_cliente(app)
+    usar_executor(app, devolve(CHAMADO))
+    resposta = cliente.post(
+        "/api/v1/cliente/agendamentos",
+        json={
+            "tipo": "prova",
+            "id_loja": ID_LOJA,
+            "data": "2026-10-08",
+            "horario": "14:00",
+            "nome": "Cliente",
+            "telefone": "(11) 99999-0000",
+            "observacao": "Quero provar a peça.",
+            "peca_sku": "CL-CAM-LIN-BR-P",
+            "peca_nome": "Camisa Linho Essencial",
+        },
+    )
+    assert resposta.status_code == 201
+    assert resposta.json()["protocolo"] == "AT-2026-0001"
+
+
+def test_agendamento_nao_aceita_identidade_no_corpo(app, cliente):
+    usar_cliente(app)
+    resposta = cliente.post(
+        "/api/v1/cliente/agendamentos",
+        json={
+            "tipo": "prova",
+            "id_cliente": "nao-pode-vir-do-front",
+            "id_loja": ID_LOJA,
+            "data": "2026-10-08",
+            "horario": "14:00",
+            "nome": "Cliente",
+            "telefone": "(11) 99999-0000",
+        },
+    )
+    assert resposta.status_code == 422
+
+
 def test_abrir_chamado_do_cliente_responde_201(app, cliente):
     usar_cliente(app)
     usar_executor(app, devolve(CHAMADO))
@@ -350,4 +415,6 @@ def test_usuario_interno_nao_acessa_area_do_cliente(app, cliente):
     resposta = cliente.get("/api/v1/cliente/carrinho")
     assert resposta.status_code == 403
     resposta = cliente.get("/api/v1/cliente/catalogo/estoque")
+    assert resposta.status_code == 403
+    resposta = cliente.get("/api/v1/cliente/agendamentos/opcoes")
     assert resposta.status_code == 403

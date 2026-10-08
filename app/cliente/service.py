@@ -87,6 +87,16 @@ def opcoes_chamado(conexao, usuario: UsuarioAtual):
     return repositorio.opcoes_chamado(conexao)
 
 
+def opcoes_agendamento(conexao, usuario: UsuarioAtual):
+    _garantir_cliente(usuario)
+    return repositorio.opcoes_agendamento(conexao)
+
+
+def criar_agendamento(conexao, usuario: UsuarioAtual, dados: dict[str, object]):
+    id_cliente = _id_cliente(conexao, usuario)
+    return repositorio.criar_agendamento_cliente(conexao, id_cliente, dados)
+
+
 def listar_chamados(conexao, usuario: UsuarioAtual, *, limit: int, offset: int):
     id_cliente = _id_cliente(conexao, usuario)
     return repositorio.listar_chamados_cliente(conexao, id_cliente, limit=limit, offset=offset)

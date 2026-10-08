@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Header, Query, status
 
 from app.cliente import service
 from app.cliente.schemas import (
+    AgendamentoCriacao,
     CarrinhoCliente,
     ChamadoCliente,
     ChamadoCriacao,
@@ -21,6 +22,7 @@ from app.cliente.schemas import (
     LojaCliente,
     MensagemChamadoCliente,
     MensagemChamadoCriacao,
+    OpcoesAgendamentoCliente,
     OpcoesChamadoCliente,
     PerfilCliente,
     PedidoCliente,
@@ -142,6 +144,27 @@ def limpar_carrinho(usuario: UsuarioDep, executar: ExecutarDep):
 )
 def opcoes_chamado(usuario: UsuarioDep, executar: ExecutarDep):
     return executar(lambda conexao: service.opcoes_chamado(conexao, usuario))
+
+
+@router.get(
+    "/agendamentos/opcoes",
+    response_model=OpcoesAgendamentoCliente,
+    summary="Horarios disponiveis para agendamento do cliente",
+)
+def opcoes_agendamento(usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(lambda conexao: service.opcoes_agendamento(conexao, usuario))
+
+
+@router.post(
+    "/agendamentos",
+    response_model=DetalheChamadoCliente,
+    status_code=status.HTTP_201_CREATED,
+    summary="Agendar prova ou ajuste do cliente logado",
+)
+def criar_agendamento(dados: AgendamentoCriacao, usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(
+        lambda conexao: service.criar_agendamento(conexao, usuario, dados.model_dump())
+    )
 
 
 @router.get(
