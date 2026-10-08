@@ -134,6 +134,13 @@ def test_a_rede_e_a_gestao_do_admin_nao_abrem_para_os_demais(cliente, par):
             ("GET", "/api/v1/painel/gerencia/rede"),
             ("GET", "/api/v1/painel/gestao/usuarios"),
             ("PATCH", "/api/v1/painel/gestao/usuarios/{id}"),
+            ("GET", "/api/v1/painel/gestao/catalogo"),
+            ("POST", "/api/v1/painel/gestao/catalogo"),
+            ("PATCH", "/api/v1/painel/gestao/catalogo/{id}"),
+            ("DELETE", "/api/v1/painel/gestao/catalogo/{id}"),
+            ("GET", "/api/v1/painel/gestao/auditoria"),
+            ("GET", "/api/v1/painel/gestao/integracoes"),
+            ("POST", "/api/v1/painel/gestao/integracoes/registros/{id}/mapear"),
         ):
             resposta = chamar(cliente, metodo, caminho, cabecalho(par, papel))
             assert resposta.status_code == 403, (papel, caminho)

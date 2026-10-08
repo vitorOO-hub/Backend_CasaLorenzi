@@ -13,6 +13,7 @@ from sqlalchemy.engine import Connection
 from app.chamados.repositorio import id_usuario_ativo
 from app.core.erros_auth import SemPermissao
 from app.core.papeis import Papel, UsuarioAtual
+from app.gestao import auditoria
 from app.painel_estoque import repositorio_escrita, service
 from app.painel_estoque.erros import (
     AjusteJaDecidido,
@@ -198,6 +199,12 @@ def aprovar_ajuste(conexao: Connection, usuario: UsuarioAtual, id_ajuste: UUID) 
     repositorio_escrita.decidir_ajuste(
         conexao, id_ajuste, status="aprovado", id_decisor=id_decisor, motivo_recusa=None
     )
+    auditoria.registrar(
+        conexao,
+        usuario,
+        "Aprovou ajuste manual",
+        f"{auditoria.sku_da_variacao(conexao, variacao)} · {diferenca} un.",
+    )
     conexao.commit()
     return _ajuste(conexao, id_ajuste)
 
@@ -205,9 +212,16 @@ def aprovar_ajuste(conexao: Connection, usuario: UsuarioAtual, id_ajuste: UUID) 
 def recusar_ajuste(
     conexao: Connection, usuario: UsuarioAtual, id_ajuste: UUID, motivo: str
 ) -> dict[str, Any]:
-    id_decisor, _ = _ajuste_pendente(conexao, usuario, id_ajuste)
+    id_decisor, ajuste = _ajuste_pendente(conexao, usuario, id_ajuste)
     repositorio_escrita.decidir_ajuste(
         conexao, id_ajuste, status="rejeitado", id_decisor=id_decisor, motivo_recusa=motivo
+    )
+    auditoria.registrar(
+        conexao,
+        usuario,
+        "Recusou ajuste manual",
+        f"{auditoria.sku_da_variacao(conexao, ajuste['id_variacao'])} · "
+        f"{ajuste['quantidade']} un. · {motivo}",
     )
     conexao.commit()
     return _ajuste(conexao, id_ajuste)

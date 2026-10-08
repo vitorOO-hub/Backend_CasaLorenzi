@@ -7,7 +7,7 @@ from sqlalchemy.engine import Connection
 
 from app.core.erros_auth import SemPermissao
 from app.core.papeis import Papel, UsuarioAtual
-from app.gestao import repositorio
+from app.gestao import auditoria, repositorio
 from app.gestao.erros import (
     LojaDoUsuarioInvalida,
     NaoPodeMudarOProprioAcesso,
@@ -67,6 +67,12 @@ def mudar_usuario(
                 raise UltimoAdministrador()
 
         repositorio.atualizar(conexao, id_usuario, cargo=cargo, id_loja=id_loja, ativo=ativo)
+        auditoria.registrar(
+            conexao,
+            usuario,
+            "Alterou usuário",
+            f"{atual['nome']} · {cargo}{'' if ativo else ' · desativado'}",
+        )
         conexao.commit()
     except Exception:
         conexao.rollback()

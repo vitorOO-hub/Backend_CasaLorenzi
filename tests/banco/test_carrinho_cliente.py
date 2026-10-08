@@ -5,8 +5,15 @@ from decimal import Decimal
 import pytest
 
 from app.cliente import repositorio
+from tests.banco.test_chat_repositorio import SemCommit
 
 pytestmark = pytest.mark.banco
+
+
+@pytest.fixture
+def sa_conn(sa_conn):
+    """O repositorio faz commit; sem isto os dados do teste sobram e quebram os outros."""
+    return SemCommit(sa_conn)
 
 
 def id_do_cliente(conn, usuario):

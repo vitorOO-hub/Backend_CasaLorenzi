@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.core.papeis import UsuarioAtual
+from app.gestao import auditoria
 from app.painel_estoque import service, service_escrita
 from app.painel_estoque.erros import LojaObrigatoria, PecaNaoEncontrada
 
@@ -147,5 +148,8 @@ def definir(conexao: Connection, usuario: UsuarioAtual, dados: DefinirMinimos) -
     if len(atualizados) != len(dados.itens):
         conexao.rollback()
         raise PecaNaoEncontrada()
+    auditoria.registrar(
+        conexao, usuario, "Definiu estoque mínimo", f"{len(atualizados)} peça(s) da unidade"
+    )
     conexao.commit()
     return {"atualizados": len(atualizados)}
