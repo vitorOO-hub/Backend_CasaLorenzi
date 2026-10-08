@@ -120,7 +120,12 @@ def perfil_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, object]:
                 rp.valor_total_pedidos,
                 rc.total_chamados,
                 lp.id_loja AS id_loja_preferida,
-                lp.nome AS loja_preferida
+                lp.nome AS loja_preferida,
+                u.cep,
+                u.rua,
+                u.bairro,
+                u.numero_endereco,
+                u.complemento
             FROM usuario u
             CROSS JOIN resumo_pedidos rp
             CROSS JOIN resumo_chamados rc
@@ -1141,6 +1146,7 @@ def criar_checkout(
                 str(endereco.get("rua") or "").strip(),
                 str(endereco.get("numero") or "").strip(),
                 str(endereco.get("complemento") or "").strip(),
+                str(endereco.get("bairro") or "").strip(),
                 str(endereco.get("cep") or "").strip(),
                 str(endereco.get("uf") or "").strip().upper(),
             ]

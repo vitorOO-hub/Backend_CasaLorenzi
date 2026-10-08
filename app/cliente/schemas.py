@@ -63,8 +63,11 @@ class CarrinhoCliente(BaseModel):
 class EnderecoEntrega(EntradaRestrita):
     cep: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=20)]
     rua: TextoCurto
+    bairro: TextoCurto | None = None
     numero: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]
-    complemento: Annotated[str, StringConstraints(strip_whitespace=True, max_length=120)] | None = None
+    complemento: Annotated[str, StringConstraints(strip_whitespace=True, max_length=120)] | None = (
+        None
+    )
     uf: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=2)]
 
 
@@ -105,6 +108,12 @@ class PerfilCliente(BaseModel):
     total_chamados: int
     id_loja_preferida: UUID | None = None
     loja_preferida: str | None = None
+    # Endereco do cadastro (vem preenchido no checkout). Contas antigas podem nao ter.
+    cep: str | None = None
+    rua: str | None = None
+    bairro: str | None = None
+    numero_endereco: str | None = None
+    complemento: str | None = None
 
 
 class ItemPedidoCliente(BaseModel):
@@ -183,8 +192,12 @@ class AgendamentoCriacao(EntradaRestrita):
     horario: Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^\d{2}:\d{2}$")]
     nome: TextoCurto
     telefone: TextoCurto
-    observacao: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] | None = None
-    peca_sku: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)] | None = None
+    observacao: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] | None = (
+        None
+    )
+    peca_sku: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)] | None
+    ) = None
     peca_nome: TextoCurto | None = None
 
 

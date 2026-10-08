@@ -33,3 +33,13 @@ def test_subtotal_do_carrinho_e_isolamento_entre_clientes(sa_conn, fab_sa):
     assert repositorio.obter_carrinho(sa_conn, id_a) == carrinho
 
     assert repositorio.obter_carrinho(sa_conn, id_b) == {"itens": [], "subtotal": "0.00"}
+
+    # O checkout abre com o endereco do cadastro; a conta da fabrica ja tem um completo.
+    perfil = repositorio.perfil_cliente(sa_conn, id_a)
+    assert (perfil["rua"], perfil["bairro"], perfil["numero_endereco"], perfil["cep"]) == (
+        "Rua Teste",
+        "Centro",
+        "10",
+        "01001000",
+    )
+    assert perfil["complemento"] is None
