@@ -44,14 +44,21 @@ class FiltroSaldo:
     busca: str | None = None
     categoria: str | None = None
     situacao: str | None = None
+    # Dia em que o saldo e lido (fim do dia, horario de Sao Paulo); None = agora.
+    em: date | None = None
 
     def parametros(self) -> dict[str, Any]:
         return {
-            "id_loja": str(self.id_loja) if self.id_loja else None,
+            **parametros_da_data(self.id_loja, self.em),
             "busca": self.busca,
             "categoria": self.categoria,
             "situacao": self.situacao,
         }
+
+
+def parametros_da_data(id_loja: UUID | None, em: date | None) -> dict[str, Any]:
+    """Parametros que toda consulta montada sobre COM_ESTOQUE_NA_DATA precisa."""
+    return {"id_loja": str(id_loja) if id_loja else None, "em": em, "fuso": FUSO}
 
 
 @dataclass(frozen=True)
@@ -78,9 +85,32 @@ class FiltroMovimentacoes:
         }
 
 
+# Saldo de cada peca em cada loja no fim do dia :em (horario de Sao Paulo): o saldo de agora,
+# desfazendo o efeito das movimentacoes feitas depois daquele dia. Sem :em, e o saldo de agora.
+# Nunca negativo: se o historico estiver incompleto, a conta para em zero.
+COM_ESTOQUE_NA_DATA = """
+WITH estoque_na_data AS (
+    SELECT
+        e.id_loja,
+        e.id_variacao,
+        e.estoque_minimo,
+        GREATEST(e.quantidade - COALESCE(depois.efeito, 0), 0)::int AS quantidade
+    FROM estoque e
+    LEFT JOIN (
+        SELECT m.id_loja, m.id_variacao, sum(t.sinal * m.quantidade) AS efeito
+        FROM movimentacao_estoque m
+        JOIN tipo_movimentacao_estoque t
+            ON t.id_tipo_movimentacao_estoque = m.id_tipo_movimentacao_estoque
+        WHERE CAST(:em AS date) IS NOT NULL
+          AND m.criada_em >= ((CAST(:em AS date) + 1)::timestamp AT TIME ZONE CAST(:fuso AS text))
+        GROUP BY m.id_loja, m.id_variacao
+    ) depois ON depois.id_loja = e.id_loja AND depois.id_variacao = e.id_variacao
+)
+"""
+
 # Uma linha por peca (variacao) que a loja (ou a rede) mantem em estoque, com o saldo somado.
-SALDO_BASE = """
-WITH saldo AS (
+_SALDO = """,
+saldo AS (
     SELECT
         v.id_variacao,
         produto.id_produto,
@@ -97,7 +127,7 @@ WITH saldo AS (
             WHEN sum(e.quantidade) <= sum(e.estoque_minimo) THEN 'baixo'
             ELSE 'ok'
         END AS situacao
-    FROM estoque e
+    FROM estoque_na_data e
     JOIN variacao_produto v ON v.id_variacao = e.id_variacao AND v.ativa
     JOIN produto ON produto.id_produto = v.id_produto AND produto.ativo
     WHERE CAST(:id_loja AS uuid) IS NULL OR e.id_loja = CAST(:id_loja AS uuid)
@@ -105,6 +135,7 @@ WITH saldo AS (
              produto.categoria, v.preco_venda
 )
 """
+SALDO_BASE = COM_ESTOQUE_NA_DATA + _SALDO  # nosec B608
 
 # strpos em vez de LIKE: o texto digitado nunca vira curinga (%, _).
 SALDO_FILTROS = """
@@ -125,6 +156,15 @@ CATEGORIAS_SQL = SALDO_BASE + _CATEGORIAS  # nosec B608
 PECAS_SQL = SALDO_BASE + _PECAS  # nosec B608
 ITENS_SQL = SALDO_BASE + "SELECT * FROM saldo " + SALDO_FILTROS + _ITENS  # nosec B608
 CONTAGEM_SQL = SALDO_BASE + "SELECT count(*) FROM saldo " + SALDO_FILTROS  # nosec B608
+_SALDO_POR_LOJA = """
+SELECT e.id_variacao, e.id_loja, e.quantidade, e.estoque_minimo AS minimo
+FROM estoque_na_data e
+JOIN loja l ON l.id_loja = e.id_loja AND l.ativa
+WHERE e.id_variacao = ANY(CAST(:ids AS uuid[]))
+  AND (CAST(:id_loja AS uuid) IS NULL OR e.id_loja = CAST(:id_loja AS uuid))
+ORDER BY l.nome
+"""
+SALDO_POR_LOJA_SQL = COM_ESTOQUE_NA_DATA + _SALDO_POR_LOJA  # nosec B608
 
 
 def lojas_visiveis(conexao: Connection, id_loja: UUID | None) -> list[dict[str, Any]]:
@@ -154,22 +194,18 @@ def loja_por_id(conexao: Connection, id_loja: UUID) -> dict[str, Any] | None:
 
 
 def categorias(conexao: Connection, id_loja: UUID | None) -> list[str]:
-    return list(
-        conexao.execute(
-            text(CATEGORIAS_SQL), {"id_loja": str(id_loja) if id_loja else None}
-        ).scalars()
-    )
+    return list(conexao.execute(text(CATEGORIAS_SQL), parametros_da_data(id_loja, None)).scalars())
 
 
 def pecas(conexao: Connection, id_loja: UUID | None) -> list[dict[str, Any]]:
-    linhas = conexao.execute(
-        text(PECAS_SQL), {"id_loja": str(id_loja) if id_loja else None}
-    ).mappings()
+    linhas = conexao.execute(text(PECAS_SQL), parametros_da_data(id_loja, None)).mappings()
     return [dict(linha) for linha in linhas]
 
 
-def resumo_do_saldo(conexao: Connection, id_loja: UUID | None) -> dict[str, Any]:
-    """Totais da loja (ou da rede), sem os filtros da tela."""
+def resumo_do_saldo(
+    conexao: Connection, id_loja: UUID | None, em: date | None = None
+) -> dict[str, Any]:
+    """Totais da loja (ou da rede) no dia pedido, sem os filtros da tela."""
     linha = (
         conexao.execute(
             text(
@@ -185,7 +221,7 @@ def resumo_do_saldo(conexao: Connection, id_loja: UUID | None) -> dict[str, Any]
                 FROM saldo
                 """  # nosec B608
             ),
-            {"id_loja": str(id_loja) if id_loja else None},
+            parametros_da_data(id_loja, em),
         )
         .mappings()
         .one()
@@ -207,23 +243,14 @@ def itens_do_saldo(
 
 
 def saldo_por_loja(
-    conexao: Connection, ids_variacao: list[UUID], id_loja: UUID | None
+    conexao: Connection, ids_variacao: list[UUID], id_loja: UUID | None, em: date | None = None
 ) -> dict[UUID, list[dict[str, Any]]]:
-    """Saldo e minimo de cada peca em cada loja visivel (as colunas por unidade da tabela)."""
+    """Saldo e minimo de cada peca em cada loja visivel, no dia pedido (as colunas da tabela)."""
     if not ids_variacao:
         return {}
     linhas = conexao.execute(
-        text(
-            """
-            SELECT e.id_variacao, e.id_loja, e.quantidade, e.estoque_minimo AS minimo
-            FROM estoque e
-            JOIN loja l ON l.id_loja = e.id_loja AND l.ativa
-            WHERE e.id_variacao = ANY(CAST(:ids AS uuid[]))
-              AND (CAST(:id_loja AS uuid) IS NULL OR e.id_loja = CAST(:id_loja AS uuid))
-            ORDER BY l.nome
-            """
-        ),
-        {"ids": [str(i) for i in ids_variacao], "id_loja": str(id_loja) if id_loja else None},
+        text(SALDO_POR_LOJA_SQL),
+        {"ids": [str(i) for i in ids_variacao], **parametros_da_data(id_loja, em)},
     ).mappings()
     agrupado: dict[UUID, list[dict[str, Any]]] = {}
     for linha in linhas:

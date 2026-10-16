@@ -1,6 +1,6 @@
 """Rotas do saldo e das movimentacoes: papel, escopo de loja e validacao, sem banco."""
 
-from datetime import date
+from datetime import date, timedelta
 from uuid import uuid4
 
 import pytest
@@ -36,6 +36,7 @@ OPCOES = {
     "escopo": ESCOPO,
 }
 SALDO = {
+    "em": None,
     "resumo": {
         "unidades": 10,
         "pecas": 2,
@@ -195,6 +196,22 @@ def test_filtros_do_saldo_chegam_ao_servico(cliente, par, chamadas):
     filtro = args[1]
     assert (filtro.busca, filtro.categoria, filtro.situacao) == ("linho", "Camisas", "baixo")
     assert (kwargs["limit"], kwargs["offset"]) == (10, 20)
+
+
+def test_saldo_numa_data_chega_ao_servico(cliente, par, chamadas):
+    cabecalho = token(par, Papel.GERENTE_LOJA)
+    cliente.get(BASE + "/saldo", params={"em": "2026-09-26"}, headers=cabecalho)
+    cliente.get(BASE + "/saldo", headers=cabecalho)
+    assert [c[1][1].em for c in chamadas] == [date(2026, 9, 26), None]
+
+
+def test_saldo_numa_data_futura_e_recusado(cliente, par, chamadas):
+    amanha = date.today() + timedelta(days=2)
+    resposta = cliente.get(
+        BASE + "/saldo", params={"em": amanha.isoformat()}, headers=token(par, Papel.ADMIN)
+    )
+    assert resposta.status_code == 422
+    assert chamadas == []
 
 
 def test_filtros_das_movimentacoes_chegam_ao_servico(cliente, par, chamadas):
