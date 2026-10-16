@@ -1,6 +1,6 @@
 """Respostas do saldo e do historico de movimentacoes do painel de estoque."""
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -82,6 +82,8 @@ class ResumoSaldo(Saida):
 
 
 class Saldo(Saida):
+    # Dia em que o saldo foi lido (fim do dia, horario de Sao Paulo); None = agora.
+    em: date | None = None
     resumo: ResumoSaldo
     lojas: list[LojaOpcao]
     total: int
