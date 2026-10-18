@@ -434,7 +434,97 @@ def listar_pedidos_cliente(
         """,
         (id_cliente, limit, offset),
     )
-    return [obter_pedido_cliente(conexao, id_cliente, linha["id_pedido"]) for linha in linhas]
+    ids = [linha["id_pedido"] for linha in linhas]
+    if not ids:
+        return []
+
+    # Uma query por tabela (em vez de tres por pedido): o banco e remoto e cada ida e volta custa.
+    bases = buscar_todos(
+        conexao,
+        """
+        SELECT
+            p.id_pedido,
+            p.numero_pedido,
+            p.id_loja,
+            l.nome AS loja,
+            s.codigo AS status_codigo,
+            s.nome AS status,
+            p.valor_total,
+            p.criado_em
+        FROM pedido p
+        JOIN loja l ON l.id_loja = p.id_loja
+        JOIN status_pedido s ON s.id_status_pedido = p.id_status_pedido
+        WHERE p.id_pedido = ANY(%s)
+          AND p.id_cliente = %s
+        """,
+        (ids, id_cliente),
+    )
+    itens = buscar_todos(
+        conexao,
+        """
+        SELECT
+            i.id_pedido,
+            i.id_item_pedido,
+            i.id_variacao,
+            v.sku,
+            p.nome AS produto,
+            p.imagem_url,
+            p.imagem_alt,
+            p.tecido,
+            v.cor,
+            v.tamanho,
+            i.quantidade,
+            i.preco_unitario,
+            i.valor_total
+        FROM item_pedido i
+        JOIN variacao_produto v ON v.id_variacao = i.id_variacao
+        JOIN produto p ON p.id_produto = v.id_produto
+        WHERE i.id_pedido = ANY(%s)
+        ORDER BY p.nome, v.cor, v.tamanho
+        """,
+        (ids,),
+    )
+    pagamentos = buscar_todos(
+        conexao,
+        """
+        SELECT DISTINCT ON (g.id_pedido)
+            g.id_pedido,
+            g.id_pagamento,
+            m.codigo AS metodo_codigo,
+            m.nome AS metodo,
+            s.codigo AS status_codigo,
+            s.nome AS status,
+            g.valor,
+            g.processado_em
+        FROM pagamento g
+        JOIN metodo_pagamento m ON m.id_metodo_pagamento = g.id_metodo_pagamento
+        JOIN status_pagamento s ON s.id_status_pagamento = g.id_status_pagamento
+        WHERE g.id_pedido = ANY(%s)
+        ORDER BY g.id_pedido, g.tentativa
+        """,
+        (ids,),
+    )
+
+    itens_por_pedido: dict[object, list[dict[str, object]]] = {}
+    for item in itens:
+        id_pedido = item.pop("id_pedido")
+        itens_por_pedido.setdefault(id_pedido, []).append(serializar_linha(item))
+    pagamento_por_pedido = {}
+    for pagamento in pagamentos:
+        id_pedido = pagamento.pop("id_pedido")
+        pagamento_por_pedido[id_pedido] = serializar_linha(pagamento)
+
+    base_por_pedido = {base["id_pedido"]: base for base in bases}
+    pedidos = []
+    for id_pedido in ids:
+        base = base_por_pedido.get(id_pedido)
+        if base is None:
+            continue
+        pedido = serializar_linha(base)
+        pedido["itens"] = itens_por_pedido.get(id_pedido, [])
+        pedido["pagamento"] = pagamento_por_pedido.get(id_pedido)
+        pedidos.append(pedido)
+    return pedidos
 
 
 # ---------------------------------------------------------------- chamados do cliente

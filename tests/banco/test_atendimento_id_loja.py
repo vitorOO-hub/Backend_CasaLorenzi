@@ -14,15 +14,15 @@ def test_coluna_id_loja_existe_e_aceita_nulo(conn):
     assert nulo == ("YES",)
 
 
-def test_trigger_preenche_a_loja_a_partir_do_pedido(conn, fab):
-    loja = fab.loja()
+def test_pedido_nao_define_a_loja_do_chamado(conn, fab):
+    # Sem loja escolhida o chamado fica na fila geral, mesmo com pedido de uma loja vinculado.
     cliente = fab.usuario("cliente")
-    pedido = fab.pedido(loja=loja, cliente=cliente)
+    pedido = fab.pedido(loja=fab.loja(), cliente=cliente)
     atendimento = fab.atendimento(cliente=cliente, pedido=pedido)
     gravada = conn.execute(
         "SELECT id_loja FROM atendimento WHERE id_atendimento = %s", (atendimento,)
     ).fetchone()[0]
-    assert gravada == loja
+    assert gravada is None
 
 
 def test_loja_informada_e_mantida(conn, fab):
