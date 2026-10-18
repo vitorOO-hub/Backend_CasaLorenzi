@@ -27,7 +27,6 @@ class Settings(BaseSettings):
     limite_leitura_por_minuto: int = 120
     limite_escrita_por_minuto: int = 30
     limite_sensivel_por_minuto: int = 10
-    limite_anonimo_por_minuto: int = 300
 
     @field_validator("database_url")
     @classmethod

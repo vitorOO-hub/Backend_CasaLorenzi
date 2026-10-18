@@ -5,7 +5,7 @@ servidor; se o backend passar a rodar em varias instancias, o armazenamento prec
 Redis (CLAUDE.md, secao 12.5).
 """
 
-import hashlib
+import ipaddress
 import json
 import time
 from collections import deque
@@ -31,15 +31,21 @@ MENSAGEM_429 = "Muitas requisicoes em pouco tempo. Aguarde um instante e tente d
 
 
 class LimitadorDeRequisicoes:
-    """Janela deslizante de 60 s por pessoa (hash do token) e por tipo de operacao.
+    """Janela deslizante de 60 s por IP do cliente e por tipo de operacao.
 
     - leitura (GET/HEAD): `leitura` por minuto;
     - escrita (POST/PUT/PATCH/DELETE): `escrita` por minuto;
-    - escrita sensivel (checkout, abrir chamado, agendar): `sensivel` por minuto;
-    - sem token: `anonimo` por minuto no total (so o catalogo publico responde sem login).
+    - escrita sensivel (checkout, abrir chamado, agendar): `sensivel` por minuto.
 
-    O chaveamento por token (e nao por IP) evita que todas as pessoas atras do proxy do Render
-    pareçam um IP so. A pessoa renova o token a cada hora, e o contador recomeca junto.
+    A chave e so o IP: o token nao entra na conta (trocar ou omitir o token nao zera o contador).
+    Quem divide um IP (varias pessoas na mesma rede) divide tambem o limite.
+
+    De onde vem o IP: o Render entrega o trafego por tras da Cloudflare, que escreve o IP real em
+    `CF-Connecting-IP` e barra (403) quem tenta forjar esse cabecalho. O primeiro item do
+    X-Forwarded-For NAO serve: quem chama escolhe esse valor, e o `scope["client"]` do uvicorn
+    (com `--forwarded-allow-ips='*'`) usa justamente ele. Sem `CF-Connecting-IP` (ambiente local,
+    testes) cai no IP da conexao. Se o backend sair de tras da Cloudflare, ler esse cabecalho passa
+    a ser inseguro e precisa ser revisto.
     """
 
     def __init__(
@@ -49,13 +55,11 @@ class LimitadorDeRequisicoes:
         leitura: int = 120,
         escrita: int = 30,
         sensivel: int = 10,
-        anonimo: int = 300,
         ativo: bool = True,
         relogio: Callable[[], float] = time.monotonic,
     ) -> None:
         self.app = app
         self.limites = {"leitura": leitura, "escrita": escrita, "sensivel": sensivel}
-        self.anonimo = anonimo
         self.ativo = ativo
         self.relogio = relogio
         self._janelas: dict[str, deque[float]] = {}
@@ -71,13 +75,15 @@ class LimitadorDeRequisicoes:
         return "escrita"
 
     @staticmethod
-    def _quem(scope: Scope) -> str | None:
+    def _ip(scope: Scope) -> str:
         for nome, valor in scope.get("headers", []):
-            if nome == b"authorization":
-                token = valor.decode("latin-1").strip()
-                if token.lower().startswith("bearer ") and len(token) > 7:
-                    return "t:" + hashlib.sha256(token[7:].encode()).hexdigest()[:24]
-        return None
+            if nome == b"cf-connecting-ip":
+                try:
+                    return str(ipaddress.ip_address(valor.decode("latin-1").strip()))
+                except ValueError:
+                    break  # valor que nao e IP: ignora e usa o IP da conexao
+        cliente = scope.get("client")
+        return cliente[0] if cliente else "desconhecido"
 
     def _permitir(self, chave: str, limite: int) -> float | None:
         """None = pode passar; senao, segundos ate liberar."""
@@ -109,11 +115,7 @@ class LimitadorDeRequisicoes:
             await self.app(scope, receive, send)
             return
         tipo = self._tipo(metodo, caminho)
-        quem = self._quem(scope)
-        if quem is None:
-            espera = self._permitir("anonimo", self.anonimo)
-        else:
-            espera = self._permitir(f"{quem}:{tipo}", self.limites[tipo])
+        espera = self._permitir(f"{self._ip(scope)}:{tipo}", self.limites[tipo])
         if espera is None:
             await self.app(scope, receive, send)
             return

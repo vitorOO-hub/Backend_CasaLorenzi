@@ -1,8 +1,9 @@
 """Regras do saldo e do historico de movimentacoes do painel de estoque."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.engine import Connection
 
@@ -12,6 +13,7 @@ from app.core.papeis import Papel, UsuarioAtual
 from app.dashboard.erros import PeriodoInvalido
 from app.dashboard.service import resolver_loja
 from app.painel_estoque import repositorio
+from app.painel_estoque.erros import DataNoFuturo
 from app.painel_estoque.repositorio import FiltroMovimentacoes, FiltroSaldo
 
 PAPEIS_DO_ESTOQUE = (Papel.OPERADOR_ESTOQUE, Papel.GERENTE_LOJA, Papel.ADMIN)
@@ -59,10 +61,11 @@ def montar_saldo(
 ) -> dict[str, Any]:
     total, itens = repositorio.itens_do_saldo(conexao, filtro, limit=limit, offset=offset)
     por_loja = repositorio.saldo_por_loja(
-        conexao, [i["id_variacao"] for i in itens], filtro.id_loja
+        conexao, [i["id_variacao"] for i in itens], filtro.id_loja, filtro.em
     )
-    resumo = repositorio.resumo_do_saldo(conexao, filtro.id_loja)
+    resumo = repositorio.resumo_do_saldo(conexao, filtro.id_loja, filtro.em)
     return {
+        "em": filtro.em,
         "resumo": {
             "unidades": int(resumo["unidades"]),
             "pecas": int(resumo["pecas"]),
@@ -82,6 +85,12 @@ def montar_saldo(
             for item in itens
         ],
     }
+
+
+def validar_data_do_saldo(em: date | None) -> None:
+    """O saldo so pode ser lido em um dia que ja comecou (horario de Sao Paulo)."""
+    if em is not None and em > datetime.now(ZoneInfo(repositorio.FUSO)).date():
+        raise DataNoFuturo()
 
 
 def validar_periodo(de: date | None, ate: date | None) -> None:

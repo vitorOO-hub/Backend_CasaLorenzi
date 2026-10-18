@@ -8,7 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import Settings
-from app.core.diagnostico_proxy import DiagnosticoDeProxy
 from app.core.erros import registrar_tratadores
 from app.core.protecoes import CabecalhosDeSeguranca, LimitadorDeRequisicoes
 
@@ -34,7 +33,6 @@ def criar_app(settings: Settings | None = None) -> FastAPI:
         leitura=settings.limite_leitura_por_minuto,
         escrita=settings.limite_escrita_por_minuto,
         sensivel=settings.limite_sensivel_por_minuto,
-        anonimo=settings.limite_anonimo_por_minuto,
     )
 
     # CORS so para as origens do front (Vercel e ambiente local), vindas de CORS_ORIGINS.
@@ -46,7 +44,6 @@ def criar_app(settings: Settings | None = None) -> FastAPI:
         max_age=600,
     )
     app.add_middleware(CabecalhosDeSeguranca)
-    app.add_middleware(DiagnosticoDeProxy)  # TEMPORARIO: remover depois do diagnostico
     registrar_tratadores(app)
     app.include_router(api_router)
     return app

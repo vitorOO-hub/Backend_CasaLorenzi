@@ -60,3 +60,8 @@ class SemPermissaoNaTransferencia(ErroDeNegocio):
 class LojaInvalida(ErroDeNegocio):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     detalhe = "Loja de origem invalida: escolha outra loja ativa da rede"
+
+
+class DataNoFuturo(ErroDeNegocio):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    detalhe = "Escolha uma data de hoje ou do passado"

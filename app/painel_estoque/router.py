@@ -35,6 +35,7 @@ GestaoDep = Annotated[UsuarioAtual, Depends(requer_papel(*service_escrita.PAPEIS
 IdLoja = Annotated[UUID | None, Query(description="So o admin escolhe a loja")]
 Texto = Annotated[str | None, Query(max_length=80)]
 Situacao = Annotated[str | None, Query(pattern=r"^(ok|baixo|esgotado)$")]
+DiaDoSaldo = Annotated[date | None, Query(description="Saldo no fim deste dia (Sao Paulo)")]
 Tipo = Annotated[str | None, Query(pattern=r"^(entrada|saida|ajuste|transferencia)$")]
 Sku = Annotated[str | None, Query(max_length=60)]
 StatusDoAjuste = Annotated[str | None, Query(pattern=r"^(pendente|aprovado|rejeitado|decididos)$")]
@@ -54,10 +55,12 @@ def saldo(
     busca: Texto = None,
     categoria: Texto = None,
     situacao: Situacao = None,
+    em: DiaDoSaldo = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
-    filtro = FiltroSaldo(service.loja_do_escopo(usuario, id_loja), busca, categoria, situacao)
+    service.validar_data_do_saldo(em)
+    filtro = FiltroSaldo(service.loja_do_escopo(usuario, id_loja), busca, categoria, situacao, em)
     return executar(
         lambda conexao: service.montar_saldo(conexao, filtro, limit=limit, offset=offset)
     )

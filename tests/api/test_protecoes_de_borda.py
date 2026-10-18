@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ConfigDict, Field
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.core.config import Settings
 from app.core.erros import registrar_tratadores
@@ -45,7 +46,14 @@ def app_de_teste(**limites) -> TestClient:
     def quebra():
         raise RuntimeError("segredo-interno postgresql://usuario:senha@host/banco")
 
-    return TestClient(app, raise_server_exceptions=False)
+    # Como em producao (uvicorn --proxy-headers --forwarded-allow-ips='*'): o uvicorn reescreve o
+    # IP da conexao com o primeiro item do X-Forwarded-For, que o cliente escolhe.
+    return TestClient(ProxyHeadersMiddleware(app, trusted_hosts="*"), raise_server_exceptions=False)
+
+
+def do_ip(ip: str, **extras: str) -> dict:
+    """IP do cliente como a Cloudflare entrega ao app (CF-Connecting-IP)."""
+    return {"CF-Connecting-IP": ip, **extras}
 
 
 def com_token(token: str) -> dict:
@@ -56,8 +64,8 @@ def com_token(token: str) -> dict:
 
 
 def test_leitura_passa_do_limite_e_recebe_429_com_retry_after():
-    cliente = app_de_teste(leitura=3, escrita=30, sensivel=10, anonimo=300)
-    cab = com_token("a")
+    cliente = app_de_teste(leitura=3, escrita=30, sensivel=10)
+    cab = do_ip("10.0.0.1")
     assert [cliente.get("/ler", headers=cab).status_code for _ in range(3)] == [200, 200, 200]
     resposta = cliente.get("/ler", headers=cab)
     assert resposta.status_code == 429
@@ -65,30 +73,58 @@ def test_leitura_passa_do_limite_e_recebe_429_com_retry_after():
     assert "Aguarde" in resposta.json()["detail"]
 
 
-def test_cada_pessoa_tem_o_proprio_limite_e_leitura_nao_gasta_o_de_escrita():
-    cliente = app_de_teste(leitura=1, escrita=2, sensivel=1, anonimo=300)
-    assert cliente.get("/ler", headers=com_token("a")).status_code == 200
-    assert cliente.get("/ler", headers=com_token("a")).status_code == 429
-    assert cliente.get("/ler", headers=com_token("b")).status_code == 200  # outra pessoa
+def test_cada_ip_tem_o_proprio_limite_e_leitura_nao_gasta_o_de_escrita():
+    cliente = app_de_teste(leitura=1, escrita=2, sensivel=1)
+    assert cliente.get("/ler", headers=do_ip("10.0.0.1")).status_code == 200
+    assert cliente.get("/ler", headers=do_ip("10.0.0.1")).status_code == 429
+    assert cliente.get("/ler", headers=do_ip("10.0.0.2")).status_code == 200  # outro IP
     corpo = {"nome": "abc", "quantidade": 1}
-    assert cliente.post("/escrever", json=corpo, headers=com_token("a")).status_code == 200
+    assert cliente.post("/escrever", json=corpo, headers=do_ip("10.0.0.1")).status_code == 200
+
+
+def test_o_token_nao_entra_na_chave_trocar_ou_omitir_o_token_nao_zera_o_limite():
+    cliente = app_de_teste(leitura=2, escrita=100, sensivel=100)
+    assert cliente.get("/ler", headers=do_ip("10.0.0.1", **com_token("a"))).status_code == 200
+    assert cliente.get("/ler", headers=do_ip("10.0.0.1", **com_token("b"))).status_code == 200
+    assert cliente.get("/ler", headers=do_ip("10.0.0.1", **com_token("c"))).status_code == 429
+    assert cliente.get("/ler", headers=do_ip("10.0.0.1")).status_code == 429  # sem token
+    # O mesmo token vindo de outro IP tem contador proprio.
+    assert cliente.get("/ler", headers=do_ip("10.0.0.2", **com_token("a"))).status_code == 200
+
+
+def test_x_forwarded_for_forjado_nao_burla_o_limite():
+    cliente = app_de_teste(leitura=2, escrita=100, sensivel=100)
+    codigos = [
+        cliente.get(
+            "/ler", headers=do_ip("10.0.0.1", **{"X-Forwarded-For": f"9.9.9.{i}"})
+        ).status_code
+        for i in range(5)
+    ]
+    assert codigos == [200, 200, 429, 429, 429]
+
+
+def test_sem_cabecalho_da_cloudflare_ou_com_valor_invalido_usa_o_ip_da_conexao():
+    cliente = app_de_teste(leitura=1, escrita=100, sensivel=100)
+    assert cliente.get("/ler", headers={"CF-Connecting-IP": "isso-nao-e-ip"}).status_code == 200
+    assert cliente.get("/ler").status_code == 429  # mesmo balde: o da conexao
+    assert cliente.get("/ler", headers=do_ip("10.0.0.7")).status_code == 200  # IP valido: outro
 
 
 def test_escrita_sensivel_tem_limite_proprio_mais_baixo():
-    cliente = app_de_teste(leitura=100, escrita=100, sensivel=2, anonimo=300)
-    cab = com_token("a")
+    cliente = app_de_teste(leitura=100, escrita=100, sensivel=2)
+    cab = do_ip("10.0.0.1")
     assert cliente.post("/api/v1/cliente/pedidos", headers=cab).status_code == 200
     assert cliente.post("/api/v1/cliente/pedidos", headers=cab).status_code == 200
     assert cliente.post("/api/v1/cliente/pedidos", headers=cab).status_code == 429
 
 
-def test_sem_token_usa_o_limite_anonimo_e_saude_e_preflight_ficam_de_fora():
-    cliente = app_de_teste(leitura=100, escrita=100, sensivel=100, anonimo=2)
-    assert cliente.get("/ler").status_code == 200
-    assert cliente.get("/ler").status_code == 200
-    assert cliente.get("/ler").status_code == 429
-    assert all(cliente.get("/health").status_code == 200 for _ in range(10))
-    assert all(cliente.options("/ler").status_code != 429 for _ in range(10))
+def test_saude_e_preflight_ficam_de_fora_do_limite():
+    cliente = app_de_teste(leitura=1, escrita=1, sensivel=1)
+    cab = do_ip("10.0.0.1")
+    assert cliente.get("/ler", headers=cab).status_code == 200
+    assert cliente.get("/ler", headers=cab).status_code == 429
+    assert all(cliente.get("/health", headers=cab).status_code == 200 for _ in range(10))
+    assert all(cliente.options("/ler", headers=cab).status_code != 429 for _ in range(10))
 
 
 def test_limite_libera_depois_da_janela():
@@ -101,18 +137,17 @@ def test_limite_libera_depois_da_janela():
         return {}
 
     cliente = TestClient(app)
-    cab = com_token("a")
-    assert cliente.get("/ler", headers=cab).status_code == 200
-    assert cliente.get("/ler", headers=cab).status_code == 429
+    assert cliente.get("/ler").status_code == 200
+    assert cliente.get("/ler").status_code == 429
     agora[0] += 61
-    assert cliente.get("/ler", headers=cab).status_code == 200
+    assert cliente.get("/ler").status_code == 200
 
 
 # ------------------------------------------------------------------ cabecalhos e erros
 
 
 def test_cabecalhos_de_seguranca_em_toda_resposta_inclusive_429():
-    cliente = app_de_teste(leitura=1, anonimo=1)
+    cliente = app_de_teste(leitura=1)
     for _ in range(2):
         r = cliente.get("/ler")
     assert r.status_code == 429
@@ -166,7 +201,7 @@ def test_app_aplica_limite_cabecalhos_e_cors_juntos():
         database_url=DATABASE_URL_TESTE,
         cors_origins=["http://localhost:5173"],
         limites_ativos=True,
-        limite_anonimo_por_minuto=1,
+        limite_leitura_por_minuto=1,
     )
     cliente = TestClient(criar_app(settings))
     cab = {"Origin": "http://localhost:5173"}

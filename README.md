@@ -92,10 +92,9 @@ Modelo em [`.env.example`](.env.example). Segredos nunca entram no Git.
 | `SUPABASE_URL` | sim em produção | — | `https://<projeto>.supabase.co`. Sem ela, as rotas protegidas respondem 503 |
 | `CORS_ORIGINS` | sim em produção | `[]` | Origens do front, separadas por vírgula, **sem barra no fim** |
 | `DOCS_HABILITADAS` | não | `false` | Liga `/docs`, `/redoc` e `/openapi.json` (só em desenvolvimento) |
-| `LIMITE_LEITURA_POR_MINUTO` | não | `120` | Limite de leituras por pessoa |
-| `LIMITE_ESCRITA_POR_MINUTO` | não | `30` | Limite de escritas por pessoa |
-| `LIMITE_SENSIVEL_POR_MINUTO` | não | `10` | Checkout, abrir chamado e agendar |
-| `LIMITE_ANONIMO_POR_MINUTO` | não | `300` | Requisições sem token |
+| `LIMITE_LEITURA_POR_MINUTO` | não | `120` | Limite de leituras por IP |
+| `LIMITE_ESCRITA_POR_MINUTO` | não | `30` | Limite de escritas por IP |
+| `LIMITE_SENSIVEL_POR_MINUTO` | não | `10` | Checkout, abrir chamado e agendar, por IP |
 | `LIMITES_ATIVOS` | não | `true` | `false` só em teste |
 | `TEST_DATABASE_URL` | só nos testes de banco | — | Postgres **local** com nome terminado em `_teste` |
 
@@ -220,7 +219,7 @@ recusado.
 
 - **Login em tudo.** O teste `tests/api/test_todas_as_rotas_exigem_login.py` chama todas as rotas sem token e falha se alguma responder diferente de 401.
 - **Papel por área.** Cliente logado não entra em nenhuma rota do painel; atendente e operador só entram nas áreas deles.
-- **Limite de requisições** por pessoa (hash do token) e por minuto: leitura 120, escrita 30, escrita sensível 10, sem token 300. Excedeu: `429` com `Retry-After`. O contador é em memória, por instância; com várias instâncias, troque por Redis.
+- **Limite de requisições** por IP do cliente e por minuto: leitura 120, escrita 30, escrita sensível 10. O token não entra na conta. Excedeu: `429` com `Retry-After`. O IP real vem do `CF-Connecting-IP` (a Cloudflare, na frente da Render, escreve esse cabeçalho e barra quem tenta forjá-lo; o `X-Forwarded-For` não serve, o cliente escolhe o primeiro item); sem ele, usa o IP da conexão. Quem divide um IP divide o limite. O contador é em memória, por instância; com várias instâncias, troque por Redis.
 - **Cabeçalhos** em toda resposta: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Cache-Control: no-store`, HSTS e `Referrer-Policy`.
 - **Documentação da API fechada** em produção (`/docs`, `/redoc`, `/openapi.json` respondem 404).
 - **SQL sempre parametrizado**; o `bandit` analisa o código (seção 10). Nenhum dado de cartão é guardado.
