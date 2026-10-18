@@ -5,6 +5,7 @@ servidor; se o backend passar a rodar em varias instancias, o armazenamento prec
 Redis (CLAUDE.md, secao 12.5).
 """
 
+import ipaddress
 import json
 import time
 from collections import deque
@@ -37,9 +38,14 @@ class LimitadorDeRequisicoes:
     - escrita sensivel (checkout, abrir chamado, agendar): `sensivel` por minuto.
 
     A chave e so o IP: o token nao entra na conta (trocar ou omitir o token nao zera o contador).
-    O IP vem de `scope["client"]`, que o uvicorn reescreve a partir do X-Forwarded-For quando
-    sobe com `--proxy-headers`; sem isso, atras do proxy do Render todo mundo teria o mesmo IP.
     Quem divide um IP (varias pessoas na mesma rede) divide tambem o limite.
+
+    De onde vem o IP: o Render entrega o trafego por tras da Cloudflare, que escreve o IP real em
+    `CF-Connecting-IP` e barra (403) quem tenta forjar esse cabecalho. O primeiro item do
+    X-Forwarded-For NAO serve: quem chama escolhe esse valor, e o `scope["client"]` do uvicorn
+    (com `--forwarded-allow-ips='*'`) usa justamente ele. Sem `CF-Connecting-IP` (ambiente local,
+    testes) cai no IP da conexao. Se o backend sair de tras da Cloudflare, ler esse cabecalho passa
+    a ser inseguro e precisa ser revisto.
     """
 
     def __init__(
@@ -70,6 +76,12 @@ class LimitadorDeRequisicoes:
 
     @staticmethod
     def _ip(scope: Scope) -> str:
+        for nome, valor in scope.get("headers", []):
+            if nome == b"cf-connecting-ip":
+                try:
+                    return str(ipaddress.ip_address(valor.decode("latin-1").strip()))
+                except ValueError:
+                    break  # valor que nao e IP: ignora e usa o IP da conexao
         cliente = scope.get("client")
         return cliente[0] if cliente else "desconhecido"
 

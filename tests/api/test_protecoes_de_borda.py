@@ -46,12 +46,14 @@ def app_de_teste(**limites) -> TestClient:
     def quebra():
         raise RuntimeError("segredo-interno postgresql://usuario:senha@host/banco")
 
-    # Como em producao (uvicorn --proxy-headers): o IP do cliente vem do X-Forwarded-For.
+    # Como em producao (uvicorn --proxy-headers --forwarded-allow-ips='*'): o uvicorn reescreve o
+    # IP da conexao com o primeiro item do X-Forwarded-For, que o cliente escolhe.
     return TestClient(ProxyHeadersMiddleware(app, trusted_hosts="*"), raise_server_exceptions=False)
 
 
 def do_ip(ip: str, **extras: str) -> dict:
-    return {"X-Forwarded-For": ip, **extras}
+    """IP do cliente como a Cloudflare entrega ao app (CF-Connecting-IP)."""
+    return {"CF-Connecting-IP": ip, **extras}
 
 
 def com_token(token: str) -> dict:
@@ -88,6 +90,24 @@ def test_o_token_nao_entra_na_chave_trocar_ou_omitir_o_token_nao_zera_o_limite()
     assert cliente.get("/ler", headers=do_ip("10.0.0.1")).status_code == 429  # sem token
     # O mesmo token vindo de outro IP tem contador proprio.
     assert cliente.get("/ler", headers=do_ip("10.0.0.2", **com_token("a"))).status_code == 200
+
+
+def test_x_forwarded_for_forjado_nao_burla_o_limite():
+    cliente = app_de_teste(leitura=2, escrita=100, sensivel=100)
+    codigos = [
+        cliente.get(
+            "/ler", headers=do_ip("10.0.0.1", **{"X-Forwarded-For": f"9.9.9.{i}"})
+        ).status_code
+        for i in range(5)
+    ]
+    assert codigos == [200, 200, 429, 429, 429]
+
+
+def test_sem_cabecalho_da_cloudflare_ou_com_valor_invalido_usa_o_ip_da_conexao():
+    cliente = app_de_teste(leitura=1, escrita=100, sensivel=100)
+    assert cliente.get("/ler", headers={"CF-Connecting-IP": "isso-nao-e-ip"}).status_code == 200
+    assert cliente.get("/ler").status_code == 429  # mesmo balde: o da conexao
+    assert cliente.get("/ler", headers=do_ip("10.0.0.7")).status_code == 200  # IP valido: outro
 
 
 def test_escrita_sensivel_tem_limite_proprio_mais_baixo():
