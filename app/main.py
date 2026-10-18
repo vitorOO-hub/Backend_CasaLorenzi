@@ -33,7 +33,6 @@ def criar_app(settings: Settings | None = None) -> FastAPI:
         leitura=settings.limite_leitura_por_minuto,
         escrita=settings.limite_escrita_por_minuto,
         sensivel=settings.limite_sensivel_por_minuto,
-        anonimo=settings.limite_anonimo_por_minuto,
     )
 
     # CORS so para as origens do front (Vercel e ambiente local), vindas de CORS_ORIGINS.
