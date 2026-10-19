@@ -1,5 +1,6 @@
 line-length = 100
 target-version = "py312"
+extend-exclude = ["scripts/catalogo_vulto_carga"]
 
 [lint]
 select = ["E", "F", "I", "B", "UP"]
