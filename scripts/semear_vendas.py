@@ -753,7 +753,7 @@ def preparar(conexao: psycopg.Connection):
         if id_produto is None:
             id_produto = _um(
                 conexao,
-                "INSERT INTO produto (nome, marca, categoria, descricao, preco_base) "
+                "INSERT INTO produto (nome, marca, categoria, colecao, preco_base) "
                 "VALUES (%s, 'Casa Lorenzi', %s, %s, %s) RETURNING id_produto",
                 (peca.nome, peca.categoria, f"{peca.nome}, coleção atual.", peca.preco),
             )

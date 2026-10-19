@@ -105,7 +105,7 @@ BEGIN
             atualizado_em = now()
     RETURNING id_usuario INTO v_id_usuario_responsavel;
 
-    INSERT INTO produto (nome, marca, categoria, descricao, preco_base)
+    INSERT INTO produto (nome, marca, categoria, colecao, preco_base)
     VALUES (
         'Camisa Linho Essencial',
         'Casa Lorenzi',
@@ -115,7 +115,7 @@ BEGIN
     )
     ON CONFLICT ON CONSTRAINT uq_produto_nome_marca DO UPDATE
         SET categoria = EXCLUDED.categoria,
-            descricao = EXCLUDED.descricao,
+            colecao = EXCLUDED.colecao,
             preco_base = EXCLUDED.preco_base,
             atualizado_em = now()
     RETURNING id_produto INTO v_id_produto;
