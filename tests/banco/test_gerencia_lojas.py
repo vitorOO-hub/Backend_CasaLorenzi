@@ -26,8 +26,8 @@ def cena(fab_sa):
         return c.execute(sql, p).fetchone()[0]
 
     produto = um(
-        "INSERT INTO produto (nome, preco_base) "
-        "VALUES ('Camisa L', 1) RETURNING id_produto"
+        "INSERT INTO produto (nome, marca, preco_base) "
+        "VALUES ('Camisa L', 'C', 1) RETURNING id_produto"
     )
 
     def variacao(sku, ativa=True):

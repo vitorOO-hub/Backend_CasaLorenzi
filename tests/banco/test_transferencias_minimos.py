@@ -59,7 +59,7 @@ def cena(fab_sa):
         return c.execute(comando, parametros).fetchone()[0]
 
     produto = um(
-        "INSERT INTO produto (nome, preco_base) VALUES ('Camisa T', 1) "
+        "INSERT INTO produto (nome, marca, preco_base) VALUES ('Camisa T', 'Casa', 1) "
         "RETURNING id_produto"
     )
     variacao = um(
@@ -317,8 +317,8 @@ def test_dois_aceites_ao_mesmo_tempo_debitam_uma_vez_so(banco_migrado):
         auth_origem, id_origem = usuario("gerente_loja", lojas[0], 1)
         auth_destino, id_destino = usuario("gerente_loja", lojas[1], 2)
         produto = c.execute(
-            "INSERT INTO produto (nome, preco_base) "
-            "VALUES (%s, 1) RETURNING id_produto",
+            "INSERT INTO produto (nome, marca, preco_base) "
+            "VALUES (%s, 'T', 1) RETURNING id_produto",
             (f"P {cod}",),
         ).fetchone()[0]
         variacao = c.execute(

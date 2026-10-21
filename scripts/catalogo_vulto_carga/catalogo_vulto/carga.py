@@ -164,8 +164,8 @@ def gravar_csv(pasta, produtos, variacoes, extras, rel):
             wr.writerow(cab)
             wr.writerows(linhas)
 
-    w('produto.csv', ['id_produto', 'nome', 'unidade', 'categoria', 'colecao', 'preco_base', 'ativo', 'cores'],
-      [[p['id_produto'], p['nome'], (p['marca'] or '').lower(), p['categoria'], p['colecao'], f"{p['preco_base']:.2f}", _b(p['ativo']),
+    w('produto.csv', ['id_produto', 'nome', 'marca', 'categoria', 'colecao', 'preco_base', 'ativo', 'cores'],
+      [[p['id_produto'], p['nome'], p['marca'] or '', p['categoria'], p['colecao'], f"{p['preco_base']:.2f}", _b(p['ativo']),
         json.dumps(p['cores'], ensure_ascii=False)] for p in produtos])
     w('variacao_produto.csv', ['sku', 'cor', 'tamanho', 'preco_venda', 'custo', 'ean', 'ativa', 'id_produto'],
       [[v['sku'], v['cor'], v['tamanho'], f"{v['preco_venda']:.2f}", f"{v['custo']:.2f}" if v['custo'] is not None else '',
@@ -187,8 +187,7 @@ def aplicar(produtos, variacoes, database_url):
                 cur.execute('select id_produto from public.variacao_produto where sku = any(%s) limit 1', (skus,))
                 row = cur.fetchone()
                 if row is None and p['marca'] is not None:
-                    cur.execute('select id_produto from public.produto where nome = %s and id_unidade = '
-                                '(select id_unidade from public.unidade where nome = lower(%s))', (p['nome'], p['marca']))
+                    cur.execute('select id_produto from public.produto where nome = %s and marca = %s', (p['nome'], p['marca']))
                     row = cur.fetchone()
                 if row:
                     ids[p['modelo']] = row[0]
@@ -201,9 +200,9 @@ def aplicar(produtos, variacoes, database_url):
                     n['produto_atualizado'] += 1
                 else:
                     cur.execute(
-                        'insert into public.produto (id_produto, nome, categoria, colecao, preco_base, ativo, cores, id_unidade) '
-                        'values (%s, %s, %s, %s, %s, %s, %s, (select id_unidade from public.unidade where nome = lower(%s)))',
-                        (p['id_produto'], p['nome'], p['categoria'], p['colecao'], p['preco_base'], p['ativo'], Jsonb(p['cores']), p['marca']))
+                        'insert into public.produto (id_produto, nome, marca, categoria, colecao, preco_base, ativo, cores, id_unidade) '
+                        'values (%s, %s, %s, %s, %s, %s, %s, %s, (select id_unidade from public.unidade where nome = lower(%s)))',
+                        (p['id_produto'], p['nome'], p['marca'], p['categoria'], p['colecao'], p['preco_base'], p['ativo'], Jsonb(p['cores']), p['marca']))
                     ids[p['modelo']] = p['id_produto']
                     n['produto_novo'] += 1
             for v in variacoes:

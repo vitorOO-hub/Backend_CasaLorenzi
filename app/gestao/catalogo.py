@@ -17,7 +17,7 @@ from app.gestao import auditoria
 from app.gestao.erros import NomeDePecaJaExiste, PecaEmUso, PecaNaoEncontrada, SkuJaExiste
 from app.gestao.schemas import NovaPeca, PecaAlterada
 
-UNIDADE = "casa lorenzi"
+MARCA = "Casa Lorenzi"
 
 # Uma linha por peca ativa: o menor preco de venda, os SKUs e o estoque somado de todas as lojas.
 PECAS = """
@@ -108,28 +108,20 @@ def criar(conexao: Connection, usuario: UsuarioAtual, dados: NovaPeca) -> dict[s
         ).scalar():
             raise SkuJaExiste()
         if conexao.execute(
-            text(
-                "SELECT 1 FROM produto WHERE lower(nome) = lower(:nome) "
-                "AND id_unidade = (SELECT id_unidade FROM unidade WHERE nome = :unidade)"
-            ),
-            {"nome": dados.nome, "unidade": UNIDADE},
+            text("SELECT 1 FROM produto WHERE lower(nome) = lower(:nome) AND marca = :marca"),
+            {"nome": dados.nome, "marca": MARCA},
         ).scalar():
             raise NomeDePecaJaExiste()
         id_produto = conexao.execute(
             text(
                 """
-                INSERT INTO produto (nome, id_unidade, categoria, preco_base)
-                VALUES (
-                    :nome,
-                    (SELECT id_unidade FROM unidade WHERE nome = :unidade),
-                    :categoria,
-                    :preco
-                ) RETURNING id_produto
+                INSERT INTO produto (nome, marca, categoria, preco_base)
+                VALUES (:nome, :marca, :categoria, :preco) RETURNING id_produto
                 """
             ),
             {
                 "nome": dados.nome,
-                "unidade": UNIDADE,
+                "marca": MARCA,
                 "categoria": dados.categoria,
                 "preco": dados.preco,
             },
@@ -174,11 +166,10 @@ def alterar(
             dados.nome is not None
             and conexao.execute(
                 text(
-                    "SELECT 1 FROM produto WHERE lower(nome) = lower(:nome) "
-                    "AND id_unidade = (SELECT id_unidade FROM unidade WHERE nome = :unidade) "
+                    "SELECT 1 FROM produto WHERE lower(nome) = lower(:nome) AND marca = :marca "
                     "AND id_produto <> CAST(:id AS uuid)"
                 ),
-                {"nome": dados.nome, "unidade": UNIDADE, "id": str(id_produto)},
+                {"nome": dados.nome, "marca": MARCA, "id": str(id_produto)},
             ).scalar()
         ):
             raise NomeDePecaJaExiste()
