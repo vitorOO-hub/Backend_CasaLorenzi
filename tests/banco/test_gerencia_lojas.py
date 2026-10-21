@@ -20,6 +20,7 @@ def cena(fab_sa):
     gerente_a = fab.usuario("gerente_loja", loja=a)
     fab.usuario("operador_estoque", loja=a)
     inativo = fab.usuario("atendente", loja=a, ativo=False)
+    fab.usuario("cliente", loja=a)  # cliente do Vulto+ com loja de cadastro: nao e equipe
     gerente_b = fab.usuario("gerente_loja", loja=b)
 
     def um(sql, p=()):
