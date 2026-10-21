@@ -118,12 +118,12 @@ também resgates que a final removeu, então o script remove esse e registra o a
 ## Carga no banco
 
 Antes da primeira carga, rode a migração `20261021150000` (`alembic upgrade head`, na pasta do backend).
-Ela cria `usuario.origem_cadastro`, `usuario.aceita_mensagem` e `usuario.observacao`, deixa o e-mail
-opcional para cliente (continua obrigatório para a equipe), deixa cliente importado do Vulto+ entrar sem
-endereço, cria `movimento_pontos` e `resgate_pontos` e faz o cadastro pelo site assumir a conta importada
-quando CPF e e-mail batem.
+Ela não cria colunas em `usuario`: deixa o e-mail opcional para cliente (continua obrigatório para a
+equipe), deixa cliente sem login (o importado) entrar sem endereço, cria `movimento_pontos` e
+`resgate_pontos` e faz o cadastro pelo site exigir CPF e assumir a conta importada quando CPF e e-mail
+batem.
 
-### public.usuario (um por CPF)
+### public.usuario (um por CPF, só colunas que já existem)
 
 | Campo | Recebe |
 |---|---|
@@ -131,15 +131,15 @@ quando CPF e e-mail batem.
 | `nome` | Nome; sem nome: `cliente vulto+ (nome a confirmar)` |
 | `email` | E-mail; vazio quando não há ou quando já é de outra conta do sistema (fica no relatório) |
 | `telefone` | Tel |
-| `id_loja` | loja_cadastro procurada na tabela `loja` pelo nome: site = Vulto Ecommerce, app = Vulto App, pinheiros, eldorado, savassi e batel = a loja Vulto com esse nome. Sem loja: vazio |
+| `id_loja` | loja_cadastro procurada na tabela `loja` pelo nome: site = vulto e-commerce, app = vulto app, pinheiros, eldorado, savassi e batel = a loja Vulto com esse nome. Sem loja: vazio |
 | `criado_em` | Data Cadastro |
-| `aceita_mensagem` | aceita_msg = sim |
-| `observacao` | Obs |
-| `origem_cadastro` | `vulto+` |
 | `id_tipo_usuario` | cliente |
 
-CPF que já pertence a uma conta que não veio do Vulto+ fica de fora (com os pontos) e vai para o
-relatório, para decidir caso a caso. Na repetição, só é atualizado quem ainda não fez login.
+aceita_msg e Obs não têm coluna em `usuario`: saem em `saida_carga/campos_sem_tabela.csv`.
+
+CPF que pertence a alguém da equipe fica de fora (com os pontos) e vai para o relatório. CPF de um
+cliente que já tem login recebe os pontos e mantém o cadastro. Na repetição, só é atualizado o cadastro
+de quem ainda não fez login.
 
 ### public.movimento_pontos (extrato)
 

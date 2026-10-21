@@ -1,5 +1,5 @@
-"""Clientes importados do Vulto+ (sem endereco, e-mail opcional), cadastro que assume a conta
-importada e extrato de pontos, contra um Postgres real."""
+"""Clientes importados do Vulto+ (sem login, sem endereco, e-mail opcional), cadastro que assume a
+conta importada e extrato de pontos, contra um Postgres real."""
 
 import json
 
@@ -24,10 +24,9 @@ DADOS = {
 def importar(conn, *, documento=CPF, email="helena@exemplo.com.br", loja=None):
     """O que a carga do Vulto+ grava: cliente sem endereco e sem login."""
     return conn.execute(
-        "INSERT INTO usuario (id_tipo_usuario, documento, nome, email, id_loja, origem_cadastro, "
-        "aceita_mensagem, observacao) VALUES ((SELECT id_tipo_usuario FROM tipo_usuario "
-        "WHERE codigo = 'cliente'), %s, 'cliente vulto+ (nome a confirmar)', %s, %s, 'vulto+', "
-        "true, 'nome não informado: pedir ao cliente') RETURNING id_usuario",
+        "INSERT INTO usuario (id_tipo_usuario, documento, nome, email, id_loja) "
+        "VALUES ((SELECT id_tipo_usuario FROM tipo_usuario WHERE codigo = 'cliente'), %s, "
+        "'cliente vulto+ (nome a confirmar)', %s, %s) RETURNING id_usuario",
         (documento, email, loja),
     ).fetchone()[0]
 
@@ -55,18 +54,20 @@ def test_cliente_importado_entra_sem_endereco_e_sem_email(conn, fab):
     importar(conn, documento="11144477735", email=None)
     assert (
         conn.execute(
-            "SELECT count(*) FROM usuario WHERE origem_cadastro = 'vulto+' AND rua IS NULL"
+            "SELECT count(*) FROM usuario WHERE documento IN ('52998224725', '11144477735') "
+            "AND auth_user_id IS NULL AND rua IS NULL"
         ).fetchone()[0]
         == 2
     )
 
 
-def test_cliente_que_nao_e_importado_continua_precisando_de_endereco(conn):
+def test_cliente_com_login_continua_precisando_de_endereco(conn):
     falha(
         conn,
         psycopg.errors.CheckViolation,
-        "INSERT INTO usuario (id_tipo_usuario, nome, email) VALUES ((SELECT id_tipo_usuario "
-        "FROM tipo_usuario WHERE codigo = 'cliente'), 'Ana', 'ana@x.com')",
+        "INSERT INTO usuario (id_tipo_usuario, auth_user_id, nome, email) VALUES ("
+        "(SELECT id_tipo_usuario FROM tipo_usuario WHERE codigo = 'cliente'), gen_random_uuid(), "
+        "'Ana', 'ana@x.com')",
     )
 
 
@@ -79,15 +80,6 @@ def test_equipe_continua_precisando_de_email(conn):
     )
 
 
-def test_origem_desconhecida_e_recusada(conn):
-    falha(
-        conn,
-        psycopg.errors.CheckViolation,
-        "UPDATE usuario SET origem_cadastro = 'outra' WHERE id_usuario = %s",
-        (importar(conn),),
-    )
-
-
 def test_importado_que_edita_o_endereco_precisa_dele_completo(conn):
     id_usuario = importar(conn)
     falha(
@@ -96,9 +88,7 @@ def test_importado_que_edita_o_endereco_precisa_dele_completo(conn):
         "UPDATE usuario SET rua = 'Rua A' WHERE id_usuario = %s",
         (id_usuario,),
     )
-    conn.execute(
-        "UPDATE usuario SET observacao = 'ligar à tarde' WHERE id_usuario = %s", (id_usuario,)
-    )
+    conn.execute("UPDATE usuario SET telefone = '11999990001' WHERE id_usuario = %s", (id_usuario,))
 
 
 # ------------------------------------------------------------------ cadastro pelo site
@@ -108,12 +98,13 @@ def test_cadastro_com_mesmo_cpf_e_email_assume_a_conta_importada(conn):
     id_usuario = importar(conn)
     auth = cadastrar(conn, documento="529.982.247-25")
     linha = conn.execute(
-        "SELECT id_usuario, nome, telefone, cep, origem_cadastro, aceita_mensagem FROM usuario "
-        "WHERE auth_user_id = %s",
+        "SELECT id_usuario, nome, telefone, cep FROM usuario WHERE auth_user_id = %s",
         (auth,),
     ).fetchone()
-    assert linha == (id_usuario, "Helena Souza", "11999990001", "01001000", "vulto+", True)
-    assert conn.execute("SELECT count(*) FROM usuario").fetchone()[0] == 1
+    assert linha == (id_usuario, "Helena Souza", "11999990001", "01001000")
+    assert (
+        conn.execute("SELECT count(*) FROM usuario WHERE documento = %s", (CPF,)).fetchone()[0] == 1
+    )
 
 
 def test_cpf_importado_com_outro_email_barra_o_cadastro(conn):
@@ -121,7 +112,10 @@ def test_cpf_importado_com_outro_email_barra_o_cadastro(conn):
     with pytest.raises(psycopg.errors.UniqueViolation, match="CPF ja cadastrado"):
         with conn.transaction():
             cadastrar(conn, email="outra@exemplo.com", documento=CPF)
-    assert conn.execute("SELECT auth_user_id FROM usuario").fetchone()[0] is None
+    assert (
+        conn.execute("SELECT auth_user_id FROM usuario WHERE documento = %s", (CPF,)).fetchone()[0]
+        is None
+    )
 
 
 def test_conta_importada_ja_ligada_nao_e_assumida_de_novo(conn):
@@ -135,8 +129,8 @@ def test_conta_importada_ja_ligada_nao_e_assumida_de_novo(conn):
 def test_cadastro_novo_guarda_o_cpf(conn):
     auth = cadastrar(conn, documento="111.444.777-35")
     assert conn.execute(
-        "SELECT documento, origem_cadastro FROM usuario WHERE auth_user_id = %s", (auth,)
-    ).fetchone() == ("11144477735", None)
+        "SELECT documento FROM usuario WHERE auth_user_id = %s", (auth,)
+    ).fetchone() == ("11144477735",)
 
 
 @pytest.mark.parametrize("documento", ["123", None, "  "])

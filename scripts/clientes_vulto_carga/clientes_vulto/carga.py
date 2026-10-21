@@ -1,15 +1,17 @@
 """Carga dos clientes Vulto+ padronizados no banco do sistema novo.
 
-- Clientes -> `public.usuario` (tipo cliente, `origem_cadastro = 'vulto+'`), um por CPF (`documento`).
-  `id_loja` é a loja de cadastro, procurada pelo nome na tabela `loja` (site = vulto ecommerce,
-  app = vulto app). Sem nome: 'cliente vulto+ (nome a confirmar)'. Sem endereço: a migração
-  20261021150000 deixa cliente importado do Vulto+ entrar sem endereço.
+- Clientes -> `public.usuario` (tipo cliente), um por CPF, só nas colunas que já existem: nome,
+  email, telefone, documento (CPF), id_loja (loja de cadastro, procurada pelo nome na tabela `loja`:
+  site = vulto e-commerce, app = vulto app) e criado_em. Sem nome: 'cliente vulto+ (nome a
+  confirmar)'. Sem endereço: a migração 20261021150000 deixa cliente sem login entrar sem endereço.
+  aceita_msg e Obs não têm coluna em `usuario`: saem em `campos_sem_tabela.csv`.
 - Pontos -> `public.movimento_pontos`: o extrato com validade (cada crédito vence em 365 dias), já
   com o vencimento do que venceu até a data de referência. A soma do extrato é o saldo.
 - Resgates -> `public.resgate_pontos`.
 
-Pode ser repetida: atualiza os clientes importados que ainda não fizeram login e regrava o extrato
-e os resgates de origem 'vulto+'. Nunca altera conta que não veio do Vulto+.
+Pode ser repetida: atualiza o cadastro dos clientes que ainda não fizeram login e regrava o extrato
+e os resgates de origem 'vulto+'. Cliente que já tem login fica com o cadastro como está (recebe só os
+pontos). CPF que pertence a alguém da equipe fica de fora.
 """
 import csv
 import os
@@ -54,8 +56,9 @@ def montar(res):
             'telefone': c['Tel'],
             'criado_em': c['Data Cadastro'],
             'loja_cadastro': c['loja_cadastro'],
-            'aceita_mensagem': c['aceita_msg'] == 'sim',
-            'observacao': c['Obs'],
+            # Sem coluna em usuario: vão para campos_sem_tabela.csv.
+            'aceita_msg': c['aceita_msg'],
+            'obs': c['Obs'],
         })
         linhas = [x for x in res.extratos.get(c['cpf'], []) if x['pontos'] != 0]
         if sum(x['pontos'] for x in linhas) != (c['Pontos'] or 0):
@@ -81,8 +84,8 @@ def gravar_csv(pasta, clientes, extrato, resgates, rel):
             wr.writeheader()
             wr.writerows(linhas)
 
-    w('usuario.csv', clientes, ['documento', 'nome', 'email', 'telefone', 'criado_em', 'loja_cadastro',
-                                'aceita_mensagem', 'observacao'])
+    w('usuario.csv', clientes, ['documento', 'nome', 'email', 'telefone', 'criado_em', 'loja_cadastro'])
+    w('campos_sem_tabela.csv', clientes, ['documento', 'aceita_msg', 'obs'])
     w('movimento_pontos.csv', extrato, ['documento', 'tipo', 'pontos', 'ocorrido_em', 'vence_em', 'descricao'])
     w('resgate_pontos.csv', resgates, ['documento', 'resgatado_em', 'pontos', 'desconto', 'loja_cadastro',
                                        'atendente', 'observacao'])
@@ -95,27 +98,28 @@ def gravar_csv(pasta, clientes, extrato, resgates, rel):
 def conferir_no_banco(cur, clientes):
     """Lê o banco (sem gravar) e separa o que a carga faria com cada cliente.
 
-    Devolve (mapa de lojas, erros, relatório, conflitos): conflito é CPF que já pertence a uma conta
-    que não veio do Vulto+ (fica de fora); e-mail já usado por outra conta entra vazio."""
+    Devolve (mapa de lojas, erros, relatório, conflitos): conflito é CPF que já pertence a alguém da
+    equipe (fica de fora); e-mail já usado por outra conta entra vazio."""
     cur.execute('SELECT id_loja, nome FROM public.loja')
     mapa, erros = mapa_de_lojas(cur.fetchall())
-    cur.execute('SELECT documento, origem_cadastro, auth_user_id IS NOT NULL FROM public.usuario '
-                'WHERE documento = ANY(%s)', ([c['documento'] for c in clientes],))
-    existentes = {doc: (origem, com_login) for doc, origem, com_login in cur.fetchall()}
+    cur.execute('SELECT u.documento, t.codigo, u.auth_user_id IS NOT NULL FROM public.usuario u '
+                'JOIN public.tipo_usuario t USING (id_tipo_usuario) WHERE u.documento = ANY(%s)',
+                ([c['documento'] for c in clientes],))
+    existentes = {doc: (tipo, com_login) for doc, tipo, com_login in cur.fetchall()}
     cur.execute('SELECT lower(email), documento FROM public.usuario WHERE lower(email) = ANY(%s)',
                 ([c['email'] for c in clientes if c['email']],))
     dono_do_email = dict(cur.fetchall())
     rel, conflitos = [], set()
     for c in clientes:
         doc = c['documento']
-        if doc in existentes and existentes[doc][0] != ORIGEM:
+        if doc in existentes and existentes[doc][0] != 'cliente':
             conflitos.add(doc)
-            rel.append(('cpf já cadastrado fora do vulto+', doc, 'cliente e pontos ficam de fora; decidir caso a caso'))
+            rel.append(('cpf de alguém da equipe', doc, 'cliente e pontos ficam de fora; decidir caso a caso'))
             continue
         if c['email'] and dono_do_email.get(c['email'], doc) != doc:
             rel.append(('e-mail já usado por outra conta', doc, f'{c["email"]}: cliente entra sem e-mail'))
         if doc in existentes and existentes[doc][1]:
-            rel.append(('cliente já fez login', doc, 'cadastro mantido; extrato e resgates regravados'))
+            rel.append(('cliente já tem login', doc, 'cadastro mantido; recebe o extrato e os resgates'))
     return mapa, erros, rel, conflitos
 
 
@@ -138,24 +142,21 @@ def aplicar(clientes, extrato, resgates, database_url):
                 n['cliente_fora'] += 1
                 continue
             email = None if doc in sem_email else c['email']
-            valores = (c['nome'], email, c['telefone'], mapa.get(c['loja_cadastro']), c['aceita_mensagem'],
-                       c['observacao'])
+            valores = (c['nome'], email, c['telefone'], mapa.get(c['loja_cadastro']))
             cur.execute('SELECT id_usuario FROM public.usuario WHERE documento = %s', (doc,))
             linha = cur.fetchone()
             if linha:
                 # Só atualiza o cadastro de quem ainda não fez login: depois disso os dados são do cliente.
                 cur.execute(
                     'UPDATE public.usuario SET nome = %s, email = %s, telefone = %s, id_loja = %s, '
-                    'aceita_mensagem = %s, observacao = %s, atualizado_em = now() '
-                    'WHERE id_usuario = %s AND auth_user_id IS NULL', (*valores, linha[0]))
+                    'atualizado_em = now() WHERE id_usuario = %s AND auth_user_id IS NULL', (*valores, linha[0]))
                 ids[doc] = linha[0]
                 n['cliente_atualizado'] += 1
             else:
                 cur.execute(
-                    'INSERT INTO public.usuario (id_tipo_usuario, documento, nome, email, telefone, id_loja, '
-                    'aceita_mensagem, observacao, origem_cadastro, criado_em) '
-                    'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s::timestamptz, now())) RETURNING id_usuario',
-                    (tipo_cliente, doc, *valores, ORIGEM, c['criado_em']))
+                    'INSERT INTO public.usuario (id_tipo_usuario, documento, nome, email, telefone, id_loja, criado_em) '
+                    'VALUES (%s, %s, %s, %s, %s, %s, COALESCE(%s::timestamptz, now())) RETURNING id_usuario',
+                    (tipo_cliente, doc, *valores, c['criado_em']))
                 ids[doc] = cur.fetchone()[0]
                 n['cliente_novo'] += 1
         todos = list(ids.values())
