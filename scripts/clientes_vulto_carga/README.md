@@ -156,6 +156,6 @@ Cada linha da aba Resgates: `resgatado_em`, `pontos`, `desconto`, `id_loja` (mes
 
 ### Cadastro pelo site
 
-O cadastro tem um campo de CPF opcional. Com o mesmo CPF e o mesmo e-mail de um cliente importado que
+O cadastro exige CPF. Com o mesmo CPF e o mesmo e-mail de um cliente importado que
 ainda não fez login, a conta nova é essa linha (com os pontos). CPF de outra conta barra o cadastro.
 Cliente importado sem e-mail é ligado pelo atendimento.

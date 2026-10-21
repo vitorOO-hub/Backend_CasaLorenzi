@@ -10,13 +10,14 @@ Create Date: 2026-10-21 12:00:00
   existe e continua obrigatorio para a equipe (validado no trigger de `usuario`).
 - Cliente importado do Vulto+ entra sem endereco: o endereco passa a ser exigido quando ele editar
   o cadastro, como ja acontece com os clientes antigos. Cliente novo pelo site continua obrigado.
-- Cadastro pelo site com CPF (`documento` nos metadados): se existe cliente importado do Vulto+,
-  ainda sem login, com o mesmo CPF e o mesmo e-mail, o cadastro assume essa linha (e os pontos
-  dela). CPF de outra conta barra o cadastro. Importado sem e-mail e ligado pelo atendimento.
+- Cadastro pelo site passa a exigir CPF (`documento` nos metadados). Se existe cliente importado
+  do Vulto+, ainda sem login, com o mesmo CPF e o mesmo e-mail, o cadastro assume essa linha (e os
+  pontos dela). CPF de outra conta barra o cadastro. Importado sem e-mail e ligado pelo atendimento.
 - `movimento_pontos`: extrato de pontos (credito, resgate, estorno, ajuste, vencimento). Cada
   credito guarda `vence_em` (365 dias); o saldo e a soma dos pontos.
 - `resgate_pontos`: resgate com desconto, loja, atendente e observacao.
-- RLS ligado, forcado e sem policy nas duas tabelas: so a conexao do FastAPI (que ignora RLS) le e escreve.
+- RLS ligado, forcado e sem policy nas duas tabelas: so a conexao do FastAPI (que ignora RLS) le
+  e escreve.
 """
 
 import importlib.util
@@ -106,30 +107,28 @@ BEGIN
     IF length(v_cep) <> 8 THEN
         RAISE EXCEPTION 'CEP invalido' USING ERRCODE = '23514';
     END IF;
-    IF v_cpf <> '' AND length(v_cpf) <> 11 THEN
+    IF length(v_cpf) <> 11 THEN
         RAISE EXCEPTION 'CPF invalido' USING ERRCODE = '23514';
     END IF;
 
-    IF v_cpf <> '' THEN
-        -- Cliente importado do Vulto+ ainda sem login: o cadastro assume a linha (e os pontos)
-        -- so quando CPF e e-mail batem, para ninguem tomar a conta de outra pessoa pelo CPF.
-        SELECT id_usuario INTO v_importado FROM public.usuario
-        WHERE documento = v_cpf AND origem_cadastro = 'vulto+' AND auth_user_id IS NULL
-          AND email = v_email
-        FOR UPDATE;
-        IF FOUND THEN
-            UPDATE public.usuario SET
-                auth_user_id = NEW.id, nome = v_nome, telefone = v_telefone,
-                rua = btrim(m ->> 'rua'), bairro = btrim(m ->> 'bairro'),
-                numero_endereco = btrim(m ->> 'numero_endereco'),
-                complemento = NULLIF(btrim(COALESCE(m ->> 'complemento', '')), ''), cep = v_cep,
-                ativo = true, atualizado_em = now()
-            WHERE id_usuario = v_importado;
-            RETURN NEW;
-        END IF;
-        IF EXISTS (SELECT 1 FROM public.usuario WHERE documento = v_cpf) THEN
-            RAISE EXCEPTION 'CPF ja cadastrado: fale com o atendimento' USING ERRCODE = '23505';
-        END IF;
+    -- Cliente importado do Vulto+ ainda sem login: o cadastro assume a linha (e os pontos)
+    -- so quando CPF e e-mail batem, para ninguem tomar a conta de outra pessoa pelo CPF.
+    SELECT id_usuario INTO v_importado FROM public.usuario
+    WHERE documento = v_cpf AND origem_cadastro = 'vulto+' AND auth_user_id IS NULL
+      AND email = v_email
+    FOR UPDATE;
+    IF FOUND THEN
+        UPDATE public.usuario SET
+            auth_user_id = NEW.id, nome = v_nome, telefone = v_telefone,
+            rua = btrim(m ->> 'rua'), bairro = btrim(m ->> 'bairro'),
+            numero_endereco = btrim(m ->> 'numero_endereco'),
+            complemento = NULLIF(btrim(COALESCE(m ->> 'complemento', '')), ''), cep = v_cep,
+            ativo = true, atualizado_em = now()
+        WHERE id_usuario = v_importado;
+        RETURN NEW;
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.usuario WHERE documento = v_cpf) THEN
+        RAISE EXCEPTION 'CPF ja cadastrado: fale com o atendimento' USING ERRCODE = '23505';
     END IF;
 
     -- O cargo e fixo: nada dos metadados (que o usuario edita) escolhe tipo, loja ou ativo.
@@ -138,7 +137,7 @@ BEGIN
         rua, bairro, numero_endereco, complemento, cep)
     VALUES (
         (SELECT id_tipo_usuario FROM public.tipo_usuario WHERE codigo = 'cliente'),
-        NEW.id, v_nome, v_email, v_telefone, NULLIF(v_cpf, ''),
+        NEW.id, v_nome, v_email, v_telefone, v_cpf,
         btrim(m ->> 'rua'), btrim(m ->> 'bairro'), btrim(m ->> 'numero_endereco'),
         NULLIF(btrim(COALESCE(m ->> 'complemento', '')), ''), v_cep);
     RETURN NEW;

@@ -139,10 +139,11 @@ def test_cadastro_novo_guarda_o_cpf(conn):
     ).fetchone() == ("11144477735", None)
 
 
-def test_cpf_com_tamanho_errado_barra_o_cadastro(conn):
+@pytest.mark.parametrize("documento", ["123", None, "  "])
+def test_cpf_e_obrigatorio_no_cadastro(conn, documento):
     with pytest.raises(psycopg.errors.CheckViolation, match="CPF invalido"):
         with conn.transaction():
-            cadastrar(conn, documento="123")
+            cadastrar(conn, documento=documento)
 
 
 # ------------------------------------------------------------------ extrato e resgates
