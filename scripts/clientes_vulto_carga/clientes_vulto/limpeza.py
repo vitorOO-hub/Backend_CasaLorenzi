@@ -8,6 +8,7 @@ import openpyxl
 from . import banco as banco_mod
 from . import pontos as pontos_mod
 from . import regras as r
+from . import resgates as resgates_mod
 
 ABA_ANTIGOS = 'clientes antigos (NAO APAGAR)'
 COLUNAS_CLIENTES = ['Nome', 'cpf', 'E-mail', 'Tel', 'Data Cadastro', 'categoria', 'Pontos', 'Obs', 'aceita_msg', 'loja_cadastro']
@@ -267,9 +268,10 @@ def limpar(caminho_planilha, caminho_banco, referencia, data_processamento=None)
 
     res.abas['Clientes'] = (COLUNAS_CLIENTES, saida)
     res.abas[ABA_ANTIGOS] = aba_antigos(antigos, contas, proc)
-    # Resgates: ainda sem tratamento (as regras dependem de decisão do time); vai como está.
-    cab_resgates, linhas_resgates = ler_aba(wb, 'Resgates')
-    res.abas['Resgates'] = (cab_resgates, [{k: v for k, v in x.items() if k != '_linha'} for x in linhas_resgates])
+    loja_por_id = {i: _loja_do_banco(nome) for i, nome in db.lojas.items()}
+    cab_resgates, linhas_resgates, avisos_resgates = resgates_mod.aba_resgates(resgates, saida, db, loja_por_id)
+    res.abas['Resgates'] = (cab_resgates, linhas_resgates)
+    res.avisos += avisos_resgates
     res.abas['LEIA ISSO'] = aba_leia_isso(wb)
     res.abas['resumo categorias'] = aba_resumo(saida)
     return res

@@ -130,15 +130,15 @@ def email(v):
     return f'{usuario}@{DOMINIOS_CORRIGIDOS.get(dominio, dominio)}'
 
 
-def data_cadastro(v):
+def data_cadastro(v, dia_de_mes_ano=DIA_DE_MES_ANO):
     """Data de cadastro como instante ISO no fuso de São Paulo (AAAA-MM-DDT00:00:00-03:00)."""
-    d = dia(v)
+    d = dia(v, dia_de_mes_ano)
     if d is None:
         return None
     return datetime(d.year, d.month, d.day, tzinfo=SP).isoformat()
 
 
-def dia(v):
+def dia(v, dia_de_mes_ano=DIA_DE_MES_ANO):
     """Lê as formas de data da planilha: data do Excel, número de série, AAAA-MM-DD, DD/MM/AAAA e mmm/aa."""
     if v is None:
         return None
@@ -161,7 +161,7 @@ def dia(v):
     m = re.fullmatch(r'([a-zç]{3})/(\d{2,4})', s)
     if m and m.group(1) in MESES:
         ano = int(m.group(2))
-        return date(ano + 2000 if ano < 100 else ano, MESES[m.group(1)], DIA_DE_MES_ANO)
+        return date(ano + 2000 if ano < 100 else ano, MESES[m.group(1)], dia_de_mes_ano)
     return None
 
 
@@ -240,3 +240,27 @@ def dia_br(v):
     """'09/04/23' ou data do Excel -> '09/04/2023'."""
     d = dia(v)
     return d.strftime('%d/%m/%Y') if d else None
+
+
+def reais(v):
+    """'R$ 1.234,50' ou 'R$ 50,0' -> 1234.5 ou 50 (inteiro quando não há centavos)."""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        valor = float(v)
+    else:
+        s = str(v).lower().replace('r$', '').strip()
+        if not s:
+            return None
+        valor = float(s.replace('.', '').replace(',', '.'))
+    return int(valor) if valor == int(valor) else valor
+
+
+def reais_br(v):
+    """50 -> 'r$ 50,00'; 1234.5 -> 'r$ 1.234,50'."""
+    return 'r$ ' + f'{v:,.2f}'.replace(',', '_').replace('.', ',').replace('_', '.')
+
+
+def lista_ou(nomes):
+    """['a', 'b', 'c'] -> 'a, b ou c'."""
+    return nomes[0] if len(nomes) == 1 else ', '.join(nomes[:-1]) + ' ou ' + nomes[-1]

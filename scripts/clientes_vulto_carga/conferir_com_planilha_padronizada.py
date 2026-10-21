@@ -63,10 +63,26 @@ for col in cab:
     ok = sum(igual(col if col != 'obs' else 'Obs', o[col], esp.get(o['CPF/CNPJ'], {}).get(col)) for o in obtido)
     print(f'\nclientes antigos / {col}: {ok}/{total} iguais')
 
+# Resgates: a final é a inicial menos os resgates removidos, na mesma ordem.
+cab, obtido = res.abas['Resgates']
+_, esperado = ler_aba(wb_final, 'Resgates')
+chave = lambda x: (x['data'][:10], str(x['cliente']).zfill(11), x['pontos usados'])  # noqa: E731
+so_obtido = [chave(o) for o in obtido if chave(o) not in {chave(e) for e in esperado}]
+so_final = [chave(e) for e in esperado if chave(e) not in {chave(o) for o in obtido}]
+print(f'\nResgates: esperado {len(esperado)} | obtido {len(obtido)} | só no obtido {so_obtido} | só na final {so_final}')
+obtido = [o for o in obtido if chave(o) not in so_obtido]
+esperado = [e for e in esperado if chave(e) not in so_final]
+for col in cab:
+    difs = [(o[col], e[col]) for o, e in zip(obtido, esperado) if not igual(col if col != 'observacao' else 'Obs', o[col], e[col])]
+    print(f'Resgates / {col}: {len(obtido) - len(difs)}/{len(obtido)} iguais')
+    for o, e in difs[:6]:
+        print(f'    obtido {str(o)[:150]!r}\n    final  {str(e)[:150]!r}')
+
 _, obtido = res.abas['LEIA ISSO']
 ws = wb_final['LEIA ISSO']
 esperado = [v[0] for v in ws.iter_rows(min_row=2, values_only=True) if v and v[0]]
-print(f"\nLEIA ISSO: {sum(o[next(iter(o))] == e for o, e in zip(obtido, esperado))}/{len(esperado)} linhas iguais")
+obtido = [o[next(iter(o))] for o in obtido if o[next(iter(o))]]
+print(f"\nLEIA ISSO: {sum(o == e for o, e in zip(obtido, esperado))}/{len(esperado)} linhas iguais")
 
 _, obtido = res.abas['resumo categorias']
 _, esperado = ler_aba(wb_final, 'resumo categorias')

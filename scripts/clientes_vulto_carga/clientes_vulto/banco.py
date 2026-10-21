@@ -59,6 +59,21 @@ class Movimento:
 
 
 @dataclass
+class Funcionario:
+    nome: str
+    loja_id: int | None
+    perfil: str       # vendedor, gerente, operador, admin
+
+
+@dataclass
+class Venda:
+    loja_id: int | None
+    cliente_ref: str
+    vendedor: str     # apelido livre digitado no PDV ("rafa.pin", "bia")
+    quando: datetime
+
+
+@dataclass
 class Banco:
     movimentos: dict = field(default_factory=dict)   # cpf -> [Movimento]
     compras: dict = field(default_factory=dict)      # id -> Compra
@@ -66,6 +81,8 @@ class Banco:
     lojas: dict = field(default_factory=dict)        # id -> nome
     # Compras lançadas com telefone ou e-mail no lugar do CPF: o banco não deu pontos a elas.
     sem_cpf: list = field(default_factory=list)      # [Compra]
+    funcionarios: list = field(default_factory=list)  # [Funcionario] ativos
+    vendas: list = field(default_factory=list)       # [Venda]
 
 
 def valor_em_reais(valor, origem):
@@ -96,6 +113,11 @@ def ler(caminho):
                 quando=momento(criado),
                 status_venda=status.get(cid, ''),
             )
+        # Só as colunas necessárias: a tabela também guarda a senha, que não é lida.
+        for nome, loja_id, perfil in con.execute('SELECT nome, loja_id, perfil FROM funcionarios WHERE ativo = 1'):
+            banco.funcionarios.append(Funcionario((nome or '').strip().lower(), loja_id, (perfil or '').strip().lower()))
+        for loja_id, ref, vendedor, criado in con.execute('SELECT loja_id, cliente_ref, vendedor, criado_em FROM vendas'):
+            banco.vendas.append(Venda(loja_id, (ref or '').strip(), (vendedor or '').strip().lower(), momento(criado)))
         creditadas = set()
         for cpf_bruto, tipo, qtd, criado, compra_id, obs in con.execute(
             'SELECT cpf, tipo, qtd, criado_em, compra_id, obs FROM pontos_mov ORDER BY id'

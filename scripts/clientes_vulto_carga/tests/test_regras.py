@@ -64,3 +64,22 @@ def test_pontos_vencem_em_365_dias_e_resgate_usa_os_mais_antigos():
     assert pontos.saldo([(velho, 1000), (novo, 500), (novo + timedelta(days=1), -300)], ref) == 500
     assert pontos.saldo([(velho, 1000)], ref) == 0
     assert pontos.saldo([(novo, 100), (novo, -400)], ref) == 0           # nunca negativo
+
+
+def test_resgates():
+    from datetime import date
+
+    from clientes_vulto.banco import Funcionario
+    from clientes_vulto.regras import reais, reais_br
+    from clientes_vulto.resgates import candidatos, desconto_acima_da_regra
+
+    equipe = [Funcionario('beatriz nunes', 1, 'vendedor'), Funcionario('bianca reis', 3, 'vendedor'),
+              Funcionario('rafael dias', 1, 'vendedor'), Funcionario('rafaela melo', 1, 'vendedor')]
+    nomes = lambda apelido: sorted(f.nome for f in candidatos(apelido, equipe))  # noqa: E731
+    assert nomes('Bia') == ['beatriz nunes', 'bianca reis']
+    assert nomes('rafa.pin') == ['rafael dias', 'rafaela melo']
+    assert nomes('Rafaela M.') == ['rafaela melo'] and nomes('rafael') == ['rafael dias']
+    assert reais('R$ 50,0') == 50 and reais('R$ 1.234,50') == 1234.5 and reais_br(1234.5) == 'r$ 1.234,50'
+    assert desconto_acima_da_regra(date(2024, 5, 1), 1000, 100) is None
+    assert desconto_acima_da_regra(date(2025, 3, 1), 1000, 50) is None
+    assert desconto_acima_da_regra(date(2025, 3, 1), 1000, 100).endswith('seria r$ 50,00; diferença r$ 50,00')
