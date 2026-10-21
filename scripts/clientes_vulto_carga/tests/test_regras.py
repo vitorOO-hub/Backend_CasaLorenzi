@@ -60,10 +60,16 @@ def test_categoria_pelos_pontos_do_ano():
 def test_pontos_vencem_em_365_dias_e_resgate_usa_os_mais_antigos():
     ref = datetime(2026, 10, 19, 23, 59, tzinfo=SP)
     velho, novo = ref - timedelta(days=400), ref - timedelta(days=30)
+    ev = lambda quando, qtd: (quando, qtd, 'credito' if qtd > 0 else 'resgate', '')  # noqa: E731
     # resgate consome o crédito antigo primeiro; o que sobra dele vence
-    assert pontos.saldo([(velho, 1000), (novo, 500), (novo + timedelta(days=1), -300)], ref) == 500
-    assert pontos.saldo([(velho, 1000)], ref) == 0
-    assert pontos.saldo([(novo, 100), (novo, -400)], ref) == 0           # nunca negativo
+    assert pontos.saldo([ev(velho, 1000), ev(novo, 500), ev(novo + timedelta(days=1), -300)], ref) == 500
+    assert pontos.saldo([ev(velho, 1000)], ref) == 0
+    assert pontos.saldo([ev(novo, 100), ev(novo, -400)], ref) == 0           # nunca negativo
+    # o extrato fecha a conta: vencimento do que sobrou do crédito antigo e perdão do resgate a mais
+    linhas = pontos.extrato([ev(velho, 1000), ev(novo, 500), ev(novo + timedelta(days=1), -300)], ref)
+    assert [(x['tipo'], x['pontos']) for x in linhas][-1] == ('vencimento', -700)
+    assert linhas[0]['vence_em'] == velho + timedelta(days=365)
+    assert ('ajuste', 300) in [(x['tipo'], x['pontos']) for x in pontos.extrato([ev(novo, 100), ev(novo, -400)], ref)]
 
 
 def test_resgates():

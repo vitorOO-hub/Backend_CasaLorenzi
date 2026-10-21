@@ -20,7 +20,7 @@ class Saida(BaseModel):
 class ItemCliente(Saida):
     id_cliente: UUID
     nome: str
-    email: str
+    email: str | None
     telefone: str | None
     cidade: str | None
     cliente_desde: datetime
@@ -46,7 +46,7 @@ class ResumoCliente(Saida):
 class DadosCliente(Saida):
     id_cliente: UUID
     nome: str
-    email: str
+    email: str | None
     telefone: str | None
     cidade: str | None
     cliente_desde: datetime

@@ -18,6 +18,7 @@ COLUNAS_CLIENTES = ['Nome', 'cpf', 'E-mail', 'Tel', 'Data Cadastro', 'categoria'
 class Resultado:
     abas: dict = field(default_factory=dict)      # nome da aba -> (cabeçalho, linhas)
     avisos: list = field(default_factory=list)    # (aba, linha, problema)
+    extratos: dict = field(default_factory=dict)  # cpf -> linhas do extrato de pontos (pontos.extrato)
 
 
 def ler_aba(wb, nome):
@@ -247,7 +248,7 @@ def limpar(caminho_planilha, caminho_banco, referencia, data_processamento=None)
                 continue
             vistas.add(chave)
             creditadas.append(x)
-        eventos += [(x.quando, x.pontos) for x in creditadas]
+        eventos += [(x.quando, x.pontos, 'credito', f'compra {x.id} lançada com telefone/e-mail') for x in creditadas]
         notas = list(conta['_obs'])
         if conta['_faltou_ddd']:
             notas.append('telefone sem ddd: pedir ao cliente')
@@ -259,7 +260,9 @@ def limpar(caminho_planilha, caminho_banco, referencia, data_processamento=None)
         elif sem_pontos:
             notas.append(f'{len(sem_pontos)} compra(s) lançada(s) com telefone/e-mail sem pontos devidos '
                          '(cancelada, aguardando ou duplicada)')
-        todos = eventos + ([(pontos_mod.CONGELAMENTO, conta['_pontos_planilha'])] if conta['_pontos_planilha'] else [])
+        todos = eventos + ([(pontos_mod.CONGELAMENTO, conta['_pontos_planilha'], 'credito',
+                             'saldo da planilha, congelado em 01/01/2025')] if conta['_pontos_planilha'] else [])
+        res.extratos[c] = pontos_mod.extrato(todos, referencia)
         linha = {k: v for k, v in conta.items() if not k.startswith('_')}
         linha['categoria'] = r.categoria(pontos_mod.creditos_no_ano(eventos, referencia))
         linha['Pontos'] = pontos_mod.saldo(todos, referencia)

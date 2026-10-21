@@ -1,6 +1,7 @@
 """Cadastro de cliente pelo site e endereco obrigatorio, contra um Postgres real."""
 
 import json
+from itertools import count
 
 import psycopg
 import pytest
@@ -21,9 +22,13 @@ DADOS = {
 }
 
 
+_CPFS = count(10000000000)
+
+
 def cadastrar(conn, email="helena@exemplo.com.br", **meta):
-    """O que o Supabase faz no signUp: grava em auth.users com os metadados informados."""
-    dados = {**DADOS, **meta}
+    """O que o Supabase faz no signUp: grava em auth.users com os metadados informados.
+    Cada cadastro leva um CPF diferente (o CPF e obrigatorio e unico)."""
+    dados = {**DADOS, "documento": str(next(_CPFS)), **meta}
     return conn.execute(
         "INSERT INTO auth.users (email, raw_user_meta_data) VALUES (%s, %s::jsonb) RETURNING id",
         (email, json.dumps({k: v for k, v in dados.items() if v is not None})),
@@ -72,7 +77,9 @@ def test_complemento_e_opcional(conn):
     assert linha(conn, auth)[7] is None
 
 
-@pytest.mark.parametrize("campo", ["nome", "telefone", "rua", "bairro", "numero_endereco", "cep"])
+@pytest.mark.parametrize(
+    "campo", ["nome", "telefone", "rua", "bairro", "numero_endereco", "cep", "documento"]
+)
 def test_campo_obrigatorio_ausente_barra_o_cadastro(conn, campo):
     falha(conn, **{campo: None})
     assert conn.execute("SELECT count(*) FROM usuario").fetchone()[0] == 0

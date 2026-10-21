@@ -2,7 +2,8 @@
 
 Padroniza a planilha de clientes do programa de fidelidade Vulto+ (`clientes_fidelidade_FINAL_v3.xlsx`)
 cruzando com o banco do sistema antigo (`vulto.db`), do mesmo jeito que a planilha
-`clientes_fidelidade_final_padronizado.xlsx` foi feita à mão.
+`clientes_fidelidade_final_padronizado.xlsx` foi feita à mão, e carrega o resultado no banco do
+sistema novo (`usuario`, `movimento_pontos` e `resgate_pontos`). Precisa de Python 3.10 ou mais novo.
 
 ## Como usar
 
@@ -17,9 +18,20 @@ python -m clientes_vulto limpar clientes_fidelidade_FINAL_v3.xlsx --banco vulto.
 python conferir_com_planilha_padronizada.py clientes_fidelidade_FINAL_v3.xlsx vulto.db \
     clientes_fidelidade_final_padronizado.xlsx 2026-10-19
 
+# gera as linhas da carga (CSV + relatório). NÃO grava no banco. Com DATABASE_URL definida,
+# também confere o banco só lendo (lojas, CPF e e-mail já cadastrados) e põe no relatório.
+python -m clientes_vulto carregar clientes_fidelidade_FINAL_v3.xlsx --banco vulto.db --saida-dir saida_carga
+
+# grava no banco (uma transação: ou grava tudo ou nada). Pode ser repetido.
+export DATABASE_URL="postgresql://usuario:senha@host:5432/banco"
+python -m clientes_vulto carregar clientes_fidelidade_FINAL_v3.xlsx --banco vulto.db --saida-dir saida_carga --aplicar
+
 # testes das regras
 python -m pytest -q tests
 ```
+
+Sempre confira `saida_carga/relatorio_carga.csv` antes de usar `--aplicar`. Na carga, `--referencia`
+é o dia em que os pontos vencidos saem do saldo (padrão: hoje).
 
 `--referencia` é o dia em que os pontos são contados e vencidos (padrão: hoje). Para reproduzir a
 planilha final, use `2026-10-19`, o dia em que ela foi feita.
@@ -102,3 +114,48 @@ também resgates que a final removeu, então o script remove esse e registra o a
 | `loja` | Mesmos nomes da aba Clientes |
 | `atendente` | Apelido → funcionário da loja do resgate (bia, rafa, cami, fer.batel, "patrícia w."...; a lista está em `resgates.APELIDOS`). "gerente" vira o gerente da loja. Apelido de dois funcionários da loja (rafa: rafael ou rafaela) desempata por quem registrou vendas na loja no dia. Sem certeza (outra loja, ou antes de 2025, quando não há vendas no banco), o apelido fica e a observação explica |
 | `observacao` | Como o cliente e o atendente foram deduzidos e o desconto acima da regra (R$ 10 a cada 100 pontos até fev/2025; R$ 5 a cada 100 desde mar/2025). O desconto não é alterado, só anotado |
+
+## Carga no banco
+
+Antes da primeira carga, rode a migração `20261021150000` (`alembic upgrade head`, na pasta do backend).
+Ela cria `usuario.origem_cadastro`, `usuario.aceita_mensagem` e `usuario.observacao`, deixa o e-mail
+opcional para cliente (continua obrigatório para a equipe), deixa cliente importado do Vulto+ entrar sem
+endereço, cria `movimento_pontos` e `resgate_pontos` e faz o cadastro pelo site assumir a conta importada
+quando CPF e e-mail batem.
+
+### public.usuario (um por CPF)
+
+| Campo | Recebe |
+|---|---|
+| `documento` | cpf |
+| `nome` | Nome; sem nome: `cliente vulto+ (nome a confirmar)` |
+| `email` | E-mail; vazio quando não há ou quando já é de outra conta do sistema (fica no relatório) |
+| `telefone` | Tel |
+| `id_loja` | loja_cadastro procurada na tabela `loja` pelo nome: site = Vulto Ecommerce, app = Vulto App, pinheiros, eldorado, savassi e batel = a loja Vulto com esse nome. Sem loja: vazio |
+| `criado_em` | Data Cadastro |
+| `aceita_mensagem` | aceita_msg = sim |
+| `observacao` | Obs |
+| `origem_cadastro` | `vulto+` |
+| `id_tipo_usuario` | cliente |
+
+CPF que já pertence a uma conta que não veio do Vulto+ fica de fora (com os pontos) e vai para o
+relatório, para decidir caso a caso. Na repetição, só é atualizado quem ainda não fez login.
+
+### public.movimento_pontos (extrato)
+
+Uma linha por evento: o saldo da planilha congelado em 01/01/2025 (`credito`), cada compra do banco
+antigo com os pontos recalculados (`credito`), resgates (`resgate`), estornos e ajustes do banco antigo,
+e o que fecha a conta na data de referência: `vencimento` de cada crédito não usado com 365 dias ou mais
+e `ajuste` que perdoa resgate maior que o saldo. Cada crédito tem `vence_em` (365 dias). A soma do
+extrato é o saldo da aba Clientes; a carga confere isso cliente a cliente antes de gravar.
+
+### public.resgate_pontos
+
+Cada linha da aba Resgates: `resgatado_em`, `pontos`, `desconto`, `id_loja` (mesma regra das lojas),
+`atendente` e `observacao`.
+
+### Cadastro pelo site
+
+O cadastro exige CPF. Com o mesmo CPF e o mesmo e-mail de um cliente importado que
+ainda não fez login, a conta nova é essa linha (com os pontos). CPF de outra conta barra o cadastro.
+Cliente importado sem e-mail é ligado pelo atendimento.
