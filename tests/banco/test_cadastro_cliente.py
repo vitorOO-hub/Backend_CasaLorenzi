@@ -2,6 +2,7 @@
 
 import json
 from itertools import count
+from uuid import uuid4
 
 import psycopg
 import pytest
@@ -170,9 +171,11 @@ def test_cliente_novo_sem_endereco_completo_e_recusado(conn):
         with pytest.raises(psycopg.errors.CheckViolation):
             with conn.transaction():
                 inserir_usuario(conn, "cliente", **parcial)
+    # Com login (cadastro pelo site), o endereco e obrigatorio; sem login (cliente importado do
+    # Vulto+, migration 20261021150000) pode entrar sem endereco nenhum.
     with pytest.raises(psycopg.errors.CheckViolation):
         with conn.transaction():
-            inserir_usuario(conn, "cliente")
+            inserir_usuario(conn, "cliente", auth_user_id=uuid4())
     inserir_usuario(conn, "cliente", **ENDERECO)
 
 

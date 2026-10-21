@@ -4,14 +4,15 @@ Revision ID: 20261021150000
 Revises: 20261021140000
 Create Date: 2026-10-21 15:00:00
 
-- `usuario` ganha `origem_cadastro` ('vulto+' nos clientes importados do programa de fidelidade
-  Vulto+), `aceita_mensagem` (LGPD: falso por padrao) e `observacao` (notas do atendimento).
+- `usuario` nao ganha colunas: o cliente do Vulto+ usa nome, email, telefone, documento (CPF),
+  id_loja (loja de cadastro) e criado_em.
 - E-mail fica opcional para cliente (parte dos clientes do Vulto+ nao tem); continua unico quando
   existe e continua obrigatorio para a equipe (validado no trigger de `usuario`).
-- Cliente importado do Vulto+ entra sem endereco: o endereco passa a ser exigido quando ele editar
-  o cadastro, como ja acontece com os clientes antigos. Cliente novo pelo site continua obrigado.
+- Cliente sem login (importado do Vulto+, ainda sem conta no site) entra sem endereco: o endereco
+  passa a ser exigido quando ele o editar, como ja acontece com os clientes antigos. Cliente que se
+  cadastra pelo site (sempre com login) continua obrigado.
 - Cadastro pelo site passa a exigir CPF (`documento` nos metadados). Se existe cliente importado
-  do Vulto+, ainda sem login, com o mesmo CPF e o mesmo e-mail, o cadastro assume essa linha (e os
+  sem login com o mesmo CPF e o mesmo e-mail, o cadastro assume essa linha (e os
   pontos dela). CPF de outra conta barra o cadastro. Importado sem e-mail e ligado pelo atendimento.
 - `movimento_pontos`: extrato de pontos (credito, resgate, estorno, ajuste, vencimento). Cada
   credito guarda `vence_em` (365 dias); o saldo e a soma dos pontos.
@@ -63,8 +64,11 @@ BEGIN
                             AND OLD.numero_endereco IS NOT NULL AND OLD.cep IS NOT NULL;
     END IF;
 
-    -- Cliente importado do Vulto+ entra sem endereco; o endereco e exigido quando ele o editar.
-    IF (TG_OP = 'INSERT' AND NEW.origem_cadastro IS DISTINCT FROM 'vulto+')
+    -- Cliente sem login (importado do Vulto+) pode entrar sem endereco nenhum; o endereco e
+    -- exigido, completo, quando houver login ou quando alguem preencher parte dele.
+    IF (TG_OP = 'INSERT' AND (NEW.auth_user_id IS NOT NULL OR NEW.rua IS NOT NULL
+                              OR NEW.bairro IS NOT NULL OR NEW.numero_endereco IS NOT NULL
+                              OR NEW.complemento IS NOT NULL OR NEW.cep IS NOT NULL))
        OR v_mudou OR v_completo_antes THEN
         IF length(btrim(coalesce(NEW.rua, ''))) = 0
            OR length(btrim(coalesce(NEW.bairro, ''))) = 0
@@ -113,10 +117,11 @@ BEGIN
 
     -- Cliente importado do Vulto+ ainda sem login: o cadastro assume a linha (e os pontos)
     -- so quando CPF e e-mail batem, para ninguem tomar a conta de outra pessoa pelo CPF.
-    SELECT id_usuario INTO v_importado FROM public.usuario
-    WHERE documento = v_cpf AND origem_cadastro = 'vulto+' AND auth_user_id IS NULL
-      AND email = v_email
-    FOR UPDATE;
+    SELECT u.id_usuario INTO v_importado FROM public.usuario u
+    JOIN public.tipo_usuario t ON t.id_tipo_usuario = u.id_tipo_usuario
+    WHERE u.documento = v_cpf AND t.codigo = 'cliente' AND u.auth_user_id IS NULL
+      AND u.email = v_email
+    FOR UPDATE OF u;
     IF FOUND THEN
         UPDATE public.usuario SET
             auth_user_id = NEW.id, nome = v_nome, telefone = v_telefone,
@@ -150,14 +155,6 @@ REVOGAR_CADASTRO = (
 )
 
 SUBIDA = (
-    "ALTER TABLE public.usuario ADD COLUMN IF NOT EXISTS origem_cadastro TEXT",
-    "ALTER TABLE public.usuario "
-    "ADD COLUMN IF NOT EXISTS aceita_mensagem BOOLEAN NOT NULL DEFAULT false",
-    "ALTER TABLE public.usuario ADD COLUMN IF NOT EXISTS observacao TEXT",
-    """
-    ALTER TABLE public.usuario ADD CONSTRAINT chk_usuario_origem_cadastro
-        CHECK (origem_cadastro IS NULL OR origem_cadastro IN ('vulto+'))
-    """,
     "ALTER TABLE public.usuario ALTER COLUMN email DROP NOT NULL",
     FUNCAO_VALIDAR,
     FUNCAO_CADASTRO,
@@ -241,9 +238,5 @@ def downgrade() -> None:
         REVOGAR_CADASTRO,
         anterior.FUNCAO_VALIDAR,
         "ALTER TABLE public.usuario ALTER COLUMN email SET NOT NULL",
-        "ALTER TABLE public.usuario DROP CONSTRAINT IF EXISTS chk_usuario_origem_cadastro",
-        "ALTER TABLE public.usuario DROP COLUMN IF EXISTS observacao",
-        "ALTER TABLE public.usuario DROP COLUMN IF EXISTS aceita_mensagem",
-        "ALTER TABLE public.usuario DROP COLUMN IF EXISTS origem_cadastro",
     ):
         op.execute(comando)
