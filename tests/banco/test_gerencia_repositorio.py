@@ -33,8 +33,8 @@ class Cena:
 
     def produto(self, nome, categoria="Camisas", ativo=True):
         return self._um(
-            "INSERT INTO produto (nome, marca, categoria, preco_base, ativo) "
-            "VALUES (%s, 'Casa Lorenzi', %s, 100, %s) RETURNING id_produto",
+            "INSERT INTO produto (nome, categoria, preco_base, ativo) "
+            "VALUES (%s, %s, 100, %s) RETURNING id_produto",
             (nome, categoria, ativo),
         )
 
