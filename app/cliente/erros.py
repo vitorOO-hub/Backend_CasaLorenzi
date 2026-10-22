@@ -50,3 +50,15 @@ class ChamadoClienteFinalizado(ErroDeNegocio):
 class ReferenciaChamadoInvalida(ErroDeNegocio):
     status_code = status.HTTP_409_CONFLICT
     detalhe = "Configuracao de atendimento incompleta no banco"
+
+
+class PontosInsuficientes(ErroDeNegocio):
+    status_code = status.HTTP_409_CONFLICT
+
+    def __init__(self, saldo: int) -> None:
+        self.detalhe = f"Saldo insuficiente: voce tem {saldo} pontos Lorenzi+"
+
+
+class ResgateAcimaDoValor(ErroDeNegocio):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    detalhe = "O desconto dos pontos nao pode passar do valor das pecas"

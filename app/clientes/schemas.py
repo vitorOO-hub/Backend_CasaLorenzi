@@ -11,6 +11,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from app.chamados.schemas import Opcao
+from app.cliente.schemas import RegrasLorenziMais, VencimentoProximo
 
 
 class Saida(BaseModel):
@@ -28,6 +29,11 @@ class ItemCliente(Saida):
     chamados_em_aberto: int
     compras: int | None
     total_gasto: Decimal | None
+    # Vulto+: loja de cadastro, saldo e categoria (nulos para quem nao esta no programa).
+    id_loja_cadastro: UUID | None = None
+    loja_cadastro: str | None = None
+    saldo_pontos: int | None = None
+    categoria_vulto_mais: str | None = None
 
 
 class ListaClientes(Saida):
@@ -78,3 +84,47 @@ class FichaCliente(Saida):
     chamados: list[ChamadoDoCliente]
     # So gerente e admin; para o atendente vem nulo (e nem chega a ser consultado).
     compras: list[CompraDoCliente] | None
+
+
+class MovimentoPontosFicha(Saida):
+    ocorrido_em: datetime
+    tipo: str
+    pontos: int
+    descricao: str
+
+
+class ResgateFicha(Saida):
+    resgatado_em: datetime
+    pontos: int
+    # Valor em reais: so gerente e admin (como as compras); para o atendente vem nulo.
+    desconto: Decimal | None
+    loja_nome: str | None
+    atendente: str | None
+    observacao: str | None
+
+
+class VultoMaisDaFicha(Saida):
+    """Programa de pontos Vulto+ do cliente, visto pela equipe."""
+
+    saldo: int
+    categoria: str
+    creditos_no_ano: int
+    proxima_categoria: str | None
+    faltam_para_proxima: int | None
+    loja_cadastro: str | None
+    extrato: list[MovimentoPontosFicha]
+    pontos_a_vencer: int = 0
+    proximos_vencimentos: list[VencimentoProximo] = []
+    regras: RegrasLorenziMais | None = None
+    resgates: list[ResgateFicha]
+
+
+class LojaDeCadastro(Saida):
+    id_loja: UUID
+    nome: str
+
+
+class OpcoesClientes(Saida):
+    lojas_cadastro: list[LojaDeCadastro]
+    categorias: list[Opcao]
+    marcas: list[Opcao] = []

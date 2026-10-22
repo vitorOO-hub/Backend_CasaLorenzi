@@ -62,7 +62,12 @@ def obter_perfil(usuario: UsuarioDep, executar: ExecutarDep):
     "/vulto-mais", response_model=VultoMaisCliente, summary="Pontos Vulto+ do cliente logado"
 )
 def obter_vulto_mais(usuario: UsuarioDep, executar: ExecutarDep):
-    return executar(lambda conexao: service.obter_vulto_mais(conexao, usuario))
+    def operacao(conexao):
+        resposta = service.obter_vulto_mais(conexao, usuario)
+        conexao.commit()  # grava os vencimentos lancados na leitura
+        return resposta
+
+    return executar(operacao)
 
 
 @router.get("/pedidos", response_model=list[PedidoCliente], summary="Pedidos do cliente logado")
