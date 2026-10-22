@@ -28,6 +28,11 @@ class ItemCliente(Saida):
     chamados_em_aberto: int
     compras: int | None
     total_gasto: Decimal | None
+    # Vulto+: loja de cadastro, saldo e categoria (nulos para quem nao esta no programa).
+    id_loja_cadastro: UUID | None = None
+    loja_cadastro: str | None = None
+    saldo_pontos: int | None = None
+    categoria_vulto_mais: str | None = None
 
 
 class ListaClientes(Saida):
@@ -108,3 +113,13 @@ class VultoMaisDaFicha(Saida):
     loja_cadastro: str | None
     extrato: list[MovimentoPontosFicha]
     resgates: list[ResgateFicha]
+
+
+class LojaDeCadastro(Saida):
+    id_loja: UUID
+    nome: str
+
+
+class OpcoesClientes(Saida):
+    lojas_cadastro: list[LojaDeCadastro]
+    categorias: list[Opcao]
