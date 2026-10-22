@@ -32,6 +32,8 @@ class Filtro:
     canal: str | None = None
     # Varias lojas ao mesmo tempo (comparacao do admin). Vazio = nao restringe por esta lista.
     ids_loja: tuple[UUID, ...] = ()
+    # Marca da peca vendida (produto.marca): "casa lorenzi" ou "vulto".
+    marca: str | None = None
 
     def parametros(self) -> dict[str, Any]:
         return {
@@ -40,6 +42,7 @@ class Filtro:
             # A categoria e gravada no padrao (minusculas): o filtro le no mesmo padrao.
             "categoria": texto_padrao(self.categoria),
             "canal": self.canal,
+            "marca": texto_padrao(self.marca),
             "status_de_venda": list(STATUS_DE_VENDA),
             "fuso": FUSO,
         }
@@ -58,13 +61,15 @@ WITH venda AS (
         CASE
             WHEN i.preco_unitario IS NULL
              AND CAST(:categoria AS text) IS NULL
+             AND CAST(:marca AS text) IS NULL
              AND row_number() OVER (PARTITION BY p.id_pedido ORDER BY i.id_item_pedido) = 1
             THEN p.valor_total - p.valor_frete
             ELSE 0
         END AS valor_sem_rateio,
         produto.id_produto,
         produto.nome AS produto,
-        produto.categoria
+        produto.categoria,
+        COALESCE(produto.marca, 'sem marca') AS marca
     FROM pedido p
     JOIN status_pedido s ON s.id_status_pedido = p.id_status_pedido
     JOIN item_pedido i ON i.id_pedido = p.id_pedido
@@ -78,6 +83,7 @@ WITH venda AS (
            OR p.id_loja = ANY(CAST(:ids_loja AS uuid[])))
       AND (CAST(:canal AS text) IS NULL OR p.canal_venda = CAST(:canal AS text))
       AND (CAST(:categoria AS text) IS NULL OR produto.categoria = CAST(:categoria AS text))
+      AND (CAST(:marca AS text) IS NULL OR produto.marca = CAST(:marca AS text))
 )
 """
 
@@ -192,6 +198,62 @@ def pecas_mais_vendidas(
         {**_parametros(filtro, inicio, fim), "limite": limite},
     ).mappings()
     return [dict(linha) for linha in linhas]
+
+
+def vendas_por_marca(
+    conexao: Connection, filtro: Filtro, inicio: date, fim: date
+) -> list[dict[str, Any]]:
+    """Faturamento, pedidos e pecas por marca da peca vendida. Pedido com pecas das duas marcas
+    conta para as duas (cada peca vai para a sua)."""
+    linhas = conexao.execute(
+        text(
+            VENDAS
+            + """
+            SELECT marca,
+                   COALESCE(sum(valor + valor_sem_rateio), 0) AS faturamento,
+                   count(DISTINCT id_pedido) AS pedidos,
+                   COALESCE(sum(quantidade), 0) AS pecas
+            FROM venda
+            GROUP BY marca
+            ORDER BY faturamento DESC, marca
+            """  # nosec B608
+        ),
+        _parametros(filtro, inicio, fim),
+    ).mappings()
+    return [dict(linha) for linha in linhas]
+
+
+def evolucao_mensal_por_marca(
+    conexao: Connection, filtro: Filtro, inicio: date, fim: date
+) -> list[dict[str, Any]]:
+    """Faturamento de cada marca mes a mes, no periodo pedido (o front escolhe o periodo)."""
+    linhas = conexao.execute(
+        text(
+            VENDAS
+            + """
+            SELECT date_trunc('month', dia)::date AS mes, marca,
+                   COALESCE(sum(valor + valor_sem_rateio), 0) AS faturamento
+            FROM venda
+            GROUP BY 1, 2
+            ORDER BY 1, 2
+            """  # nosec B608
+        ),
+        _parametros(filtro, inicio, fim),
+    ).mappings()
+    return [dict(linha) for linha in linhas]
+
+
+def marcas_de_produto(conexao: Connection) -> list[str]:
+    linhas = conexao.execute(
+        text(
+            """
+            SELECT DISTINCT marca FROM produto
+            WHERE marca IS NOT NULL AND length(trim(marca)) > 0
+            ORDER BY marca
+            """
+        )
+    ).scalars()
+    return list(linhas)
 
 
 def categorias_de_produto(conexao: Connection) -> list[str]:
