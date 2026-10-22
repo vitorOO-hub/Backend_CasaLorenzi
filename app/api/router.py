@@ -8,6 +8,7 @@ esquecer isso.
 from fastapi import APIRouter
 
 from app.api import health
+from app.ativacao.router import router as ativacao_router
 from app.chamados.router import router as chamados_router
 from app.chat.router import router as chat_router
 from app.cliente.router import router as cliente_router
@@ -16,6 +17,7 @@ from app.dashboard.router import router as dashboard_router
 from app.gerencia.router import router as gerencia_router
 from app.gestao.router import router as gestao_router
 from app.painel_estoque.router import router as painel_estoque_router
+from app.vendas.router import router as vendas_router
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -26,5 +28,8 @@ api_router.include_router(chat_router, prefix="/api/v1")
 api_router.include_router(gerencia_router, prefix="/api/v1")
 api_router.include_router(gestao_router, prefix="/api/v1")
 api_router.include_router(painel_estoque_router, prefix="/api/v1")
+api_router.include_router(vendas_router, prefix="/api/v1")
 api_router.include_router(cliente_router, prefix="/api/v1")
+# Unica area publica de escrita: o cliente importado ainda nao tem login (ver app/ativacao).
+api_router.include_router(ativacao_router, prefix="/api/v1")
 api_router.include_router(clientes_router, prefix="/api/v1")

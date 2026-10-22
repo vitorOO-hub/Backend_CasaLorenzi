@@ -31,6 +31,7 @@ from app.painel_estoque.schemas import (
 router = APIRouter(prefix="/painel/estoque", tags=["painel-estoque"])
 
 UsuarioDep = Annotated[UsuarioAtual, Depends(requer_papel(*service.PAPEIS_DO_ESTOQUE))]
+LeituraDep = Annotated[UsuarioAtual, Depends(requer_papel(*service.PAPEIS_DE_LEITURA))]
 GestaoDep = Annotated[UsuarioAtual, Depends(requer_papel(*service_escrita.PAPEIS_DA_GESTAO))]
 IdLoja = Annotated[UUID | None, Query(description="So o admin escolhe a loja")]
 Texto = Annotated[str | None, Query(max_length=80)]
@@ -42,14 +43,14 @@ StatusDoAjuste = Annotated[str | None, Query(pattern=r"^(pendente|aprovado|rejei
 
 
 @router.get("/opcoes", response_model=Opcoes, summary="Filtros das telas de estoque")
-def opcoes(usuario: UsuarioDep, executar: ExecutarDep, id_loja: IdLoja = None):
+def opcoes(usuario: LeituraDep, executar: ExecutarDep, id_loja: IdLoja = None):
     loja = service.loja_do_escopo(usuario, id_loja)
     return executar(lambda conexao: service.montar_opcoes(conexao, usuario, loja))
 
 
 @router.get("/saldo", response_model=Saldo, summary="Saldo de estoque por peca")
 def saldo(
-    usuario: UsuarioDep,
+    usuario: LeituraDep,
     executar: ExecutarDep,
     id_loja: IdLoja = None,
     busca: Texto = None,

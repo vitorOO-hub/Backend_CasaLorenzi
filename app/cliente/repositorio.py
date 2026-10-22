@@ -168,6 +168,11 @@ def _obter_id_por_codigo(conexao, tabela: str, coluna_id: str, codigo: str) -> o
     return linha[coluna_id]
 
 
+def _loja_de_venda(conexao, id_loja: UUID) -> UUID:
+    """Loja que recebe a venda (funcao do banco, migration 20261022160000)."""
+    return buscar_um(conexao, "SELECT public.loja_de_venda(%s) AS id_loja", (id_loja,))["id_loja"]
+
+
 def _garantir_loja_ativa(conexao, id_loja: UUID) -> None:
     linha = buscar_um(
         conexao,
@@ -1216,7 +1221,8 @@ def criar_checkout(
         return obter_pedido_cliente(conexao, id_cliente, existente)
 
     try:
-        id_loja = dados["id_loja"]
+        # Site e app da Vulto viraram o e-commerce da Casa Lorenzi: a venda (e o estoque) e dele.
+        id_loja = _loja_de_venda(conexao, dados["id_loja"])
         _garantir_loja_ativa(conexao, id_loja)
         id_status_pedido = _obter_id_por_codigo(
             conexao, "status_pedido", "id_status_pedido", "pago"

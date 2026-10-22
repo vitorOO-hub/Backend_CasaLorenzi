@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-Cargo = Literal["atendente", "operador_estoque", "gerente_loja", "admin"]
+Cargo = Literal["atendente", "operador_estoque", "vendedor", "gerente_loja", "admin"]
 
 
 class Saida(BaseModel):
