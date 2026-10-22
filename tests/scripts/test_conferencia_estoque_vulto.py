@@ -43,23 +43,25 @@ def test_normaliza_tamanho_numerico_no_sku_canonico_da_contagem():
     assert relatorio["comparacoes"][0]["sku_ou_modelo"] == "VLT-CAL-001-OLI-P"
 
 
-def test_preserva_42_e_44_como_skus_distintos_no_importador_e_na_conferencia():
-    sku_42 = "VLT-CAL-001-OLI-42"
-    sku_44 = "VLT-CAL-001-OLI-44"
-    assert normalizar_sku_reduzido("CAL001V42") == sku_42
-    assert normalizar_sku_reduzido("CAL001V44") == sku_44
+def test_consolida_42_e_44_no_mesmo_sku_g_na_conferencia():
+    sku_g = "VLT-CAL-001-OLI-G"
+    assert normalizar_sku_reduzido("CAL001V42") == sku_g
+    assert normalizar_sku_reduzido("CAL001V44") == sku_g
 
     relatorio = planejar_conferencia(
         estoque=[
-            {"loja_id": 1, "sku_padronizado": sku_42, "qtd": 3},
-            {"loja_id": 1, "sku_padronizado": sku_44, "qtd": 5},
+            {"loja_id": 1, "sku_padronizado": "VLT-CAL-001-OLI-42", "qtd": 3},
+            {"loja_id": 1, "sku_padronizado": "VLT-CAL-001-OLI-44", "qtd": 5},
         ],
         contagens_por_aba={
-            "Pinheiros": [{"SKU": sku_42, "QTD": 3}, {"SKU": sku_44, "QTD": 5}]
+            "Pinheiros": [{"SKU": "VLT-CAL-001-OLI-42", "QTD": 3}, {"SKU": "VLT-CAL-001-OLI-44", "QTD": 5}]
         },
     )
 
-    assert [linha["sku_ou_modelo"] for linha in relatorio["comparacoes"]] == [sku_42, sku_44]
+    assert len(relatorio["comparacoes"]) == 1
+    assert relatorio["comparacoes"][0]["sku_ou_modelo"] == sku_g
+    assert relatorio["comparacoes"][0]["saldo_estoque_vulto"] == 8
+    assert relatorio["comparacoes"][0]["quantidade_contada"] == 8
     assert all(linha["situacao"] == "confere" for linha in relatorio["comparacoes"])
 
 

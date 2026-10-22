@@ -15,3 +15,12 @@ def test_resolve_alias_curto_apenas_para_variacao_existente():
 
     assert resolver_id_variacao("ACE011BU", variacoes) == "var-1"
     assert resolver_id_variacao("ACE011BP", variacoes) is None
+
+
+def test_tamanhos_42_e_44_resolvem_para_a_mesma_variacao_g():
+    variacoes = {"VLT-CAL-001-OLI-G": "var-g"}
+
+    assert normalizar_sku_reduzido("CAL001V42") == "VLT-CAL-001-OLI-G"
+    assert normalizar_sku_reduzido("CAL001V44") == "VLT-CAL-001-OLI-G"
+    assert resolver_id_variacao("CAL001V42", variacoes) == "var-g"
+    assert resolver_id_variacao("CAL001V44", variacoes) == "var-g"
