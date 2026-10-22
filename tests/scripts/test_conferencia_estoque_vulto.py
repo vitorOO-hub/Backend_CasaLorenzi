@@ -1,4 +1,5 @@
 from scripts.vulto_integracao.conferencia_estoque import planejar_conferencia
+from scripts.vulto_integracao.skus import normalizar_sku_reduzido
 
 
 def test_agrupa_sku_curto_e_compara_sem_alterar_estoque():
@@ -40,6 +41,26 @@ def test_normaliza_tamanho_numerico_no_sku_canonico_da_contagem():
 
     assert relatorio["comparacoes"][0]["situacao"] == "confere"
     assert relatorio["comparacoes"][0]["sku_ou_modelo"] == "VLT-CAL-001-OLI-P"
+
+
+def test_preserva_42_e_44_como_skus_distintos_no_importador_e_na_conferencia():
+    sku_42 = "VLT-CAL-001-OLI-42"
+    sku_44 = "VLT-CAL-001-OLI-44"
+    assert normalizar_sku_reduzido("CAL001V42") == sku_42
+    assert normalizar_sku_reduzido("CAL001V44") == sku_44
+
+    relatorio = planejar_conferencia(
+        estoque=[
+            {"loja_id": 1, "sku_padronizado": sku_42, "qtd": 3},
+            {"loja_id": 1, "sku_padronizado": sku_44, "qtd": 5},
+        ],
+        contagens_por_aba={
+            "Pinheiros": [{"SKU": sku_42, "QTD": 3}, {"SKU": sku_44, "QTD": 5}]
+        },
+    )
+
+    assert [linha["sku_ou_modelo"] for linha in relatorio["comparacoes"]] == [sku_42, sku_44]
+    assert all(linha["situacao"] == "confere" for linha in relatorio["comparacoes"])
 
 
 def test_savassi_compara_por_modelo_e_preserva_ausencia_como_desconhecida():
