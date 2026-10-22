@@ -1,8 +1,8 @@
 """e-commerce unificado: venda nova do site ou app da vulto vai para o e-commerce casa lorenzi
 
-Revision ID: 20261022120000
+Revision ID: 20261022160000
 Revises: 20261021150000
-Create Date: 2026-10-22 12:00:00
+Create Date: 2026-10-22 16:00:00
 
 - Com a fusao das marcas o site e um so. Pedido NOVO que cairia em `vulto e-commerce`
   (LOJA-VULTO-E-COMMERCE) ou `vulto app` (LOJA-VULTO-APP) passa a ser do `E-commerce Casa Lorenzi`
@@ -18,7 +18,7 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "20261022120000"
+revision: str = "20261022160000"
 down_revision: str | Sequence[str] | None = "20261021150000"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
