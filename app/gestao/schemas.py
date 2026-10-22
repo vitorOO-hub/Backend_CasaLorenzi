@@ -1,4 +1,5 @@
-"""Respostas e entradas da gestao do admin (time interno). Nunca expoe cliente nem ids do Auth."""
+"""Respostas e entradas da gestao do admin (time interno). Nunca expoe ids do Auth; cliente so
+aparece na fila de vendas pendentes (nome do cliente sugerido para a venda, sem documento)."""
 
 from datetime import datetime
 from decimal import Decimal
@@ -186,11 +187,94 @@ class VendaImportacaoPendente(Saida):
     motivos: list[str]
     quantidade_itens: int
     criada_em: datetime
+    estado: Literal["pendente", "importada", "descartada"] = "pendente"
+    resolvida_em: datetime | None = None
+
+
+class GrupoDeMotivo(Saida):
+    grupo: str
+    vendas: int
 
 
 class VendasImportacaoPendentes(Saida):
     total: int
     itens: list[VendaImportacaoPendente]
+    por_grupo: list[GrupoDeMotivo] = []
+
+
+class VariacaoSugerida(Saida):
+    id_variacao: UUID
+    sku: str
+    nome: str
+
+
+class ItemDaVendaPendente(Saida):
+    sku_origem: str
+    descricao: str | None
+    quantidade: int
+    preco_unitario: Decimal | None
+    variacao_sugerida: VariacaoSugerida | None
+
+
+class ClienteSugerido(Saida):
+    id_cliente: UUID
+    nome: str
+
+
+class VendaPendenteDetalhe(Saida):
+    """O que serve para resolver a venda. Sem CPF, telefone nem e-mail (so o fim do CPF)."""
+
+    id_venda_pendente: UUID
+    venda_id_origem: str
+    estado: Literal["pendente", "importada", "descartada"]
+    motivos: list[str]
+    status_origem: str | None
+    resolvida_em: datetime | None
+    observacao_resolucao: str | None
+    loja: str | None
+    canal: str | None
+    status_destino: str | None
+    vendida_em: datetime | None
+    vendedor: str | None
+    total: Decimal | None
+    frete: Decimal
+    desconto: Decimal
+    total_calculado: Decimal | None
+    situacao_valores: str
+    cpf_final: str | None
+    sugestao_cliente: ClienteSugerido | None
+    itens: list[ItemDaVendaPendente]
+
+
+Justificativa = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=3, max_length=300)
+]
+
+
+class DescarteDeVenda(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observacao: Justificativa
+
+
+class ItemImportado(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_variacao: UUID
+    quantidade: int = Field(gt=0, le=999)
+    preco_unitario: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+
+
+class ImportacaoDeVenda(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_cliente: UUID
+    valor_total: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    valor_frete: Decimal = Field(default=Decimal("0"), ge=0, max_digits=12, decimal_places=2)
+    itens: list[ItemImportado] = Field(min_length=1, max_length=100)
+    observacao: Annotated[str, StringConstraints(strip_whitespace=True, max_length=300)] | None = (
+        None
+    )
 
 
 class MapeamentoDeRegistro(BaseModel):
