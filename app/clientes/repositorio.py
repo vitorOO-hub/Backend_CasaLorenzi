@@ -51,6 +51,10 @@ WITH ped AS (
         END AS total_gasto,
         cli.id_loja AS id_loja_cadastro,
         lc.nome AS loja_cadastro,
+        -- Marca do cadastro: loja Vulto (inclui app e site da Vulto); o resto, sem loja ou loja
+        -- Casa Lorenzi (inclui quem se cadastrou pelo site), e Casa Lorenzi.
+        CASE WHEN lc.codigo LIKE 'LOJA-VULTO%' THEN 'vulto' ELSE 'casa_lorenzi' END
+            AS marca_cadastro,
         pts.saldo AS saldo_pontos,
         -- Mesma regra do cartao Vulto+ (app/cliente/repositorio.py): creditos do ano corrente.
         CASE
@@ -66,7 +70,7 @@ WITH ped AS (
         SELECT sum(m.pontos)::int AS saldo,
                COALESCE(sum(m.pontos) FILTER (
                    WHERE ((m.pontos > 0 AND m.tipo <> 'estorno')
-                          OR (m.tipo = 'estorno' AND m.id_pedido IS NOT NULL))
+                          OR (m.tipo = 'estorno' AND m.id_pedido IS NOT NULL AND m.pontos < 0))
                      AND m.ocorrido_em >= date_trunc('year', now() AT TIME ZONE 'America/Sao_Paulo')
                ), 0)::int AS creditos_no_ano
         FROM movimento_pontos m
@@ -109,6 +113,9 @@ FILTRO_DE_CATEGORIA = """
          OR (CAST(:categoria AS text) = 'sem_pontos' AND categoria_vulto_mais IS NULL)
          OR categoria_vulto_mais = CAST(:categoria AS text))
 """
+FILTRO_DE_MARCA = """
+    AND (CAST(:marca AS text) IS NULL OR marca_cadastro = CAST(:marca AS text))
+"""
 FILTRO_DE_LOJA_DE_CADASTRO = """
     AND (CAST(:id_loja_cadastro AS uuid) IS NULL
          OR id_loja_cadastro = CAST(:id_loja_cadastro AS uuid))
@@ -139,10 +146,11 @@ def listar(
     offset: int,
     categoria: str | None = None,
     id_loja_cadastro: UUID | None = None,
+    marca: str | None = None,
 ) -> tuple[int, list[dict[str, Any]]]:
     onde = (
         f"WHERE {VISIVEL} AND {BUSCA} {SECOES[secao]} "
-        f"{FILTRO_DE_CATEGORIA} {FILTRO_DE_LOJA_DE_CADASTRO}"
+        f"{FILTRO_DE_CATEGORIA} {FILTRO_DE_LOJA_DE_CADASTRO} {FILTRO_DE_MARCA}"
     )
     parametros = _parametros(
         escopo,
@@ -150,6 +158,7 @@ def listar(
         busca=escapar_busca(busca),
         categoria=categoria,
         id_loja_cadastro=str(id_loja_cadastro) if id_loja_cadastro else None,
+        marca=marca,
     )
     contagem = f"{CTES} SELECT count(*) FROM base {onde}"  # nosec B608
     total = conexao.execute(text(contagem), parametros).scalar_one()
