@@ -17,13 +17,15 @@ from app.painel_estoque.erros import DataNoFuturo
 from app.painel_estoque.repositorio import FiltroMovimentacoes, FiltroSaldo
 
 PAPEIS_DO_ESTOQUE = (Papel.OPERADOR_ESTOQUE, Papel.GERENTE_LOJA, Papel.ADMIN)
+# O vendedor so consulta o saldo da propria loja; movimentar, ajustar e transferir nao e dele.
+PAPEIS_DE_LEITURA = (*PAPEIS_DO_ESTOQUE, Papel.VENDEDOR)
 MOTIVOS_ENTRADA = ["Recebimento de fornecedor", "Devolução de cliente"]
 MOTIVOS_SAIDA = ["Venda em loja", "Avaria", "Peça para ajuste no ateliê"]
 
 
 def loja_do_escopo(usuario: UsuarioAtual, id_loja_pedida: UUID | None) -> UUID | None:
     """Operador e gerente so enxergam a propria loja (a do token); o admin escolhe ou ve a rede."""
-    if usuario.papel not in PAPEIS_DO_ESTOQUE:
+    if usuario.papel not in PAPEIS_DE_LEITURA:
         raise SemPermissao()
     return resolver_loja(usuario, id_loja_pedida)
 

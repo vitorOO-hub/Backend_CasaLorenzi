@@ -198,7 +198,7 @@ def test_token_de_gerente_sem_loja_e_recusado(cliente, par):
     "params",
     [
         {"inicio": "2026-09-30", "fim": "2026-09-01"},
-        {"inicio": "2025-01-01", "fim": "2026-09-30"},
+        {"inicio": "2024-01-01", "fim": "2026-09-30"},
     ],
     ids=["fim antes do inicio", "periodo longo demais"],
 )

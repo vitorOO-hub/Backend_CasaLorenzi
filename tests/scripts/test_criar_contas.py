@@ -38,6 +38,7 @@ def test_equipe_de_loja_recebe_loja_e_admin_e_cliente_nao():
         "cliente": False,
         "atendente": True,
         "operador_estoque": True,
+        "vendedor": True,
         "gerente_loja": True,
         "admin": False,
     }
@@ -50,6 +51,7 @@ def test_email_base_gera_enderecos_com_etiqueta_na_mesma_caixa():
         "pessoa+cliente@gmail.com",
         "pessoa+atendente@gmail.com",
         "pessoa+operadorestoque@gmail.com",
+        "pessoa+vendedor@gmail.com",
         "pessoa+gerente@gmail.com",
         "pessoa+admin@gmail.com",
     ]

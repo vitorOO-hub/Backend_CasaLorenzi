@@ -77,6 +77,7 @@ def test_excluir_a_conta_no_auth_desativa_o_usuario_e_solta_o_vinculo(conn):
         "bairro": "Centro",
         "numero_endereco": "1",
         "cep": "01001000",
+        "documento": "52998224725",
     }
     auth = conn.execute(
         "INSERT INTO auth.users (email, raw_user_meta_data) VALUES (%s, %s::jsonb) RETURNING id",

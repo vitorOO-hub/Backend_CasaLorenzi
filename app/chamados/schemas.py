@@ -76,7 +76,7 @@ class ListaChamados(Saida):
 class ClienteChamado(Saida):
     id_cliente: UUID
     nome: str
-    email: str
+    email: str | None
     telefone: str | None
     cidade: str | None
     cliente_desde: datetime

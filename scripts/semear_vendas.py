@@ -747,14 +747,15 @@ def preparar(conexao: psycopg.Connection):
     for peca in (LINHO, *CATALOGO):
         id_produto = _um(
             conexao,
-            "SELECT id_produto FROM produto WHERE nome = %s AND marca = 'Casa Lorenzi'",
+            "SELECT id_produto FROM produto WHERE lower(nome) = lower(%s) "
+            "AND lower(marca) = 'casa lorenzi'",
             (peca.nome,),
         )
         if id_produto is None:
             id_produto = _um(
                 conexao,
                 "INSERT INTO produto (nome, marca, categoria, colecao, preco_base) "
-                "VALUES (%s, 'Casa Lorenzi', %s, %s, %s) RETURNING id_produto",
+                "VALUES (%s, 'casa lorenzi', %s, %s, %s) RETURNING id_produto",
                 (peca.nome, peca.categoria, f"{peca.nome}, coleção atual.", peca.preco),
             )
         for cor, tamanho, sku in grade(peca):

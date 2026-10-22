@@ -290,7 +290,8 @@ SELECT
     (SELECT u.nome FROM usuario u JOIN tipo_usuario t USING (id_tipo_usuario)
      WHERE u.id_loja = l.id_loja AND u.ativo AND t.codigo = 'gerente_loja'
      ORDER BY u.criado_em, u.id_usuario LIMIT 1) AS gerente,
-    (SELECT count(*) FROM usuario u WHERE u.id_loja = l.id_loja AND u.ativo) AS equipe,
+    (SELECT count(*) FROM usuario u JOIN tipo_usuario t USING (id_tipo_usuario)
+     WHERE u.id_loja = l.id_loja AND u.ativo AND t.codigo <> 'cliente') AS equipe,
     COALESCE((SELECT sum(e.quantidade) FROM estoque e WHERE e.id_loja = l.id_loja), 0)
         AS unidades_em_estoque,
     (SELECT count(*) FROM estoque e

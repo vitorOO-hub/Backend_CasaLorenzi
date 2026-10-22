@@ -18,6 +18,7 @@ from app.cliente.erros import (
     ReferenciaCheckoutInvalida,
     VariacaoIndisponivel,
 )
+from app.core.padroes import telefone_padrao, texto_padrao
 from app.core.repositorio import buscar_todos, buscar_um, executar_sql, serializar_linha
 
 CENTAVOS = Decimal("0.01")
@@ -166,6 +167,11 @@ def _obter_id_por_codigo(conexao, tabela: str, coluna_id: str, codigo: str) -> o
     if not linha:
         raise ReferenciaCheckoutInvalida
     return linha[coluna_id]
+
+
+def _loja_de_venda(conexao, id_loja: UUID) -> UUID:
+    """Loja que recebe a venda (funcao do banco, migration 20261022160000)."""
+    return buscar_um(conexao, "SELECT public.loja_de_venda(%s) AS id_loja", (id_loja,))["id_loja"]
 
 
 def _garantir_loja_ativa(conexao, id_loja: UUID) -> None:
@@ -1070,10 +1076,10 @@ def criar_agendamento_cliente(
                 "tipo": tipo,
                 "data": dados["data"],
                 "horario": horario,
-                "nome": dados["nome"],
-                "telefone": dados["telefone"],
+                "nome": texto_padrao(dados["nome"]),
+                "telefone": telefone_padrao(dados["telefone"]),
                 "peca_sku": dados.get("peca_sku"),
-                "peca_nome": dados.get("peca_nome"),
+                "peca_nome": texto_padrao(dados.get("peca_nome")),
                 "observacao": dados.get("observacao"),
             },
         )
@@ -1216,7 +1222,8 @@ def criar_checkout(
         return obter_pedido_cliente(conexao, id_cliente, existente)
 
     try:
-        id_loja = dados["id_loja"]
+        # Site e app da Vulto viraram o e-commerce da Casa Lorenzi: a venda (e o estoque) e dele.
+        id_loja = _loja_de_venda(conexao, dados["id_loja"])
         _garantir_loja_ativa(conexao, id_loja)
         id_status_pedido = _obter_id_por_codigo(
             conexao, "status_pedido", "id_status_pedido", "pago"

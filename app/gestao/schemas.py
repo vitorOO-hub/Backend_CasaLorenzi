@@ -5,9 +5,18 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
-Cargo = Literal["atendente", "operador_estoque", "gerente_loja", "admin"]
+from app.core.padroes import texto_padrao
+
+Cargo = Literal["atendente", "operador_estoque", "vendedor", "gerente_loja", "admin"]
 
 
 class Saida(BaseModel):
@@ -63,14 +72,25 @@ class MudancaDeUsuario(BaseModel):
 TextoCurto = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
 
 
+def _padrao(valor: str) -> str:
+    return texto_padrao(valor) or valor
+
+
+# Nome e categoria da peca seguem o padrao do banco (minusculas, um espaco entre palavras).
+NomeDaPeca = Annotated[TextoCurto, AfterValidator(_padrao)]
+Categoria = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=120),
+    AfterValidator(_padrao),
+]
+
+
 class NovaPeca(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     sku: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
-    nome: TextoCurto
-    categoria: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
-    ]
+    nome: NomeDaPeca
+    categoria: Categoria
     preco: Annotated[Decimal, Field(ge=0, le=Decimal("9999999.99"), decimal_places=2)]
 
 
@@ -79,11 +99,8 @@ class PecaAlterada(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    nome: TextoCurto | None = None
-    categoria: (
-        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
-        | None
-    ) = None
+    nome: NomeDaPeca | None = None
+    categoria: Categoria | None = None
     preco: Annotated[Decimal, Field(ge=0, le=Decimal("9999999.99"), decimal_places=2)] | None = None
 
     @model_validator(mode="after")
@@ -160,6 +177,20 @@ class Integracoes(Saida):
     lotes: list[LoteImportado]
     registros: list[RegistroImportado]
     skus: list[SkuParaMapear]
+
+
+class VendaImportacaoPendente(Saida):
+    id_venda_pendente: UUID
+    venda_id_origem: str
+    status_origem: str | None
+    motivos: list[str]
+    quantidade_itens: int
+    criada_em: datetime
+
+
+class VendasImportacaoPendentes(Saida):
+    total: int
+    itens: list[VendaImportacaoPendente]
 
 
 class MapeamentoDeRegistro(BaseModel):

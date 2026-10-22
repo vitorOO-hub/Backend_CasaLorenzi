@@ -1,6 +1,8 @@
 """Cadastro de cliente pelo site e endereco obrigatorio, contra um Postgres real."""
 
 import json
+from itertools import count
+from uuid import uuid4
 
 import psycopg
 import pytest
@@ -21,9 +23,13 @@ DADOS = {
 }
 
 
+_CPFS = count(10000000000)
+
+
 def cadastrar(conn, email="helena@exemplo.com.br", **meta):
-    """O que o Supabase faz no signUp: grava em auth.users com os metadados informados."""
-    dados = {**DADOS, **meta}
+    """O que o Supabase faz no signUp: grava em auth.users com os metadados informados.
+    Cada cadastro leva um CPF diferente (o CPF e obrigatorio e unico)."""
+    dados = {**DADOS, "documento": str(next(_CPFS)), **meta}
     return conn.execute(
         "INSERT INTO auth.users (email, raw_user_meta_data) VALUES (%s, %s::jsonb) RETURNING id",
         (email, json.dumps({k: v for k, v in dados.items() if v is not None})),
@@ -49,16 +55,17 @@ def linha(conn, auth):
 
 
 def test_signup_cria_o_cliente_com_endereco_normalizado(conn):
+    # Nome e endereco no padrao do banco (minusculas, um espaco); telefone so digitos.
     auth = cadastrar(conn)
     assert linha(conn, auth) == (
         "cliente",
-        "Helena Souza",
+        "helena souza",
         "helena@exemplo.com.br",
         "11999990001",
-        "Rua das Flores",
-        "Centro",
+        "rua das flores",
+        "centro",
         "120",
-        "Ap 4",
+        "ap 4",
         "01001000",
         True,
         None,
@@ -72,7 +79,9 @@ def test_complemento_e_opcional(conn):
     assert linha(conn, auth)[7] is None
 
 
-@pytest.mark.parametrize("campo", ["nome", "telefone", "rua", "bairro", "numero_endereco", "cep"])
+@pytest.mark.parametrize(
+    "campo", ["nome", "telefone", "rua", "bairro", "numero_endereco", "cep", "documento"]
+)
 def test_campo_obrigatorio_ausente_barra_o_cadastro(conn, campo):
     falha(conn, **{campo: None})
     assert conn.execute("SELECT count(*) FROM usuario").fetchone()[0] == 0
@@ -163,9 +172,11 @@ def test_cliente_novo_sem_endereco_completo_e_recusado(conn):
         with pytest.raises(psycopg.errors.CheckViolation):
             with conn.transaction():
                 inserir_usuario(conn, "cliente", **parcial)
+    # Com login (cadastro pelo site), o endereco e obrigatorio; sem login (cliente importado do
+    # Vulto+, migration 20261021150000) pode entrar sem endereco nenhum.
     with pytest.raises(psycopg.errors.CheckViolation):
         with conn.transaction():
-            inserir_usuario(conn, "cliente")
+            inserir_usuario(conn, "cliente", auth_user_id=uuid4())
     inserir_usuario(conn, "cliente", **ENDERECO)
 
 
@@ -235,9 +246,9 @@ def test_cada_cliente_so_le_a_propria_linha_com_o_proprio_endereco(conn):
     bia = cadastrar(conn, email="bia@x.com", nome="Bia Lima", rua="Rua da Bia")
     consulta = "SELECT nome, rua, cep FROM usuario"
     with como(conn, sub=ana):
-        assert tenta(conn, consulta) == [("Ana Souza", "Rua da Ana", "01001000")]
+        assert tenta(conn, consulta) == [("ana souza", "rua da ana", "01001000")]
     with como(conn, sub=bia):
-        assert tenta(conn, consulta) == [("Bia Lima", "Rua da Bia", "01001000")]
+        assert tenta(conn, consulta) == [("bia lima", "rua da bia", "01001000")]
     with como(conn, role="anon"):
         assert isinstance(tenta(conn, consulta), psycopg.errors.InsufficientPrivilege)
 

@@ -19,7 +19,7 @@ export DATABASE_URL="postgresql://usuario:senha@host:5432/banco"
 python -m catalogo_vulto carregar planilha_original.xlsx --saida-dir saida_carga --aplicar
 ```
 
-Opções de `carregar`: `--marca "Vulto"` (padrão; preenche `produto.marca`), `--incluir-antiga` (inclui a aba
+Opções de `carregar`: `--marca "vulto"` (padrão; preenche `produto.marca`, em minúsculas como o resto do banco), `--incluir-antiga` (inclui a aba
 PLANILHA ANTIGA NAO USAR; por padrão fica de fora).
 
 Sempre confira `saida_carga/relatorio_carga.csv` antes de usar `--aplicar`.
@@ -50,6 +50,7 @@ Sempre confira `saida_carga/relatorio_carga.csv` antes de usar `--aplicar`.
 | `preco_base` | menor `preco_venda` entre as variações ativas do modelo |
 | `ativo` | `true` se o modelo tem pelo menos uma variação ativa |
 | `cores` | lista JSON das cores das variações, ex.: `["bege","preto"]` |
+| `id_unidade` | unidade com o nome da marca em minúsculas (`vulto`); só preenche se estiver vazio |
 | `marca` | `Vulto` (a planilha não tem marca; troque com `--marca`) |
 | `imagem_url`, `imagem_alt`, `imagem_vestida_url`, `tipo`, `tecido`, `tecelagem`, `costurado_em`, `nota` | vazios (não existem na planilha) |
 | `id_produto`, `criado_em`, `atualizado_em` | id gerado a partir do modelo (o mesmo modelo sempre gera o mesmo id); datas pelo padrão do banco |

@@ -147,7 +147,7 @@ def test_repassa_periodo_canal_e_categoria(cliente, par, chamadas):
     "parametros",
     [
         {"inicio": "2026-10-07", "fim": "2026-10-01"},  # fim antes do inicio
-        {"inicio": "2025-01-01", "fim": "2026-10-01"},  # mais de 400 dias
+        {"inicio": "2024-01-01", "fim": "2026-10-01"},  # mais de 800 dias
         {"inicio": "ontem", "fim": "2026-10-01"},
     ],
 )
@@ -217,11 +217,11 @@ class TestRegrasDoService:
             date(2026, 10, 6),
         )
 
-    def test_limite_de_400_dias_e_inclusivo(self):
+    def test_limite_de_800_dias_e_inclusivo(self):
         inicio = date(2026, 1, 1)
-        service.validar_periodo(inicio, inicio + timedelta(days=399))  # 400 dias: aceito
+        service.validar_periodo(inicio, inicio + timedelta(days=799))  # 800 dias: aceito
         with pytest.raises(PeriodoLongoDemais):
-            service.validar_periodo(inicio, inicio + timedelta(days=400))
+            service.validar_periodo(inicio, inicio + timedelta(days=800))
 
     def test_fim_antes_do_inicio_e_recusado(self):
         with pytest.raises(PeriodoInvalido):

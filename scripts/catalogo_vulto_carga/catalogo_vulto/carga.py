@@ -193,14 +193,16 @@ def aplicar(produtos, variacoes, database_url):
                     ids[p['modelo']] = row[0]
                     cur.execute(
                         "update public.produto set categoria = %s, colecao = %s, preco_base = %s, ativo = %s, atualizado_em = now(), "
-                        "cores = case when cores = '[]'::jsonb then %s else cores end where id_produto = %s",
-                        (p['categoria'], p['colecao'], p['preco_base'], p['ativo'], Jsonb(p['cores']), row[0]))
+                        "cores = case when cores = '[]'::jsonb then %s else cores end, "
+                        "id_unidade = coalesce(id_unidade, (select id_unidade from public.unidade where nome = lower(%s))) "
+                        "where id_produto = %s",
+                        (p['categoria'], p['colecao'], p['preco_base'], p['ativo'], Jsonb(p['cores']), p['marca'], row[0]))
                     n['produto_atualizado'] += 1
                 else:
                     cur.execute(
-                        'insert into public.produto (id_produto, nome, marca, categoria, colecao, preco_base, ativo, cores) '
-                        'values (%s, %s, %s, %s, %s, %s, %s, %s)',
-                        (p['id_produto'], p['nome'], p['marca'], p['categoria'], p['colecao'], p['preco_base'], p['ativo'], Jsonb(p['cores'])))
+                        'insert into public.produto (id_produto, nome, marca, categoria, colecao, preco_base, ativo, cores, id_unidade) '
+                        'values (%s, %s, %s, %s, %s, %s, %s, %s, (select id_unidade from public.unidade where nome = lower(%s)))',
+                        (p['id_produto'], p['nome'], p['marca'], p['categoria'], p['colecao'], p['preco_base'], p['ativo'], Jsonb(p['cores']), p['marca']))
                     ids[p['modelo']] = p['id_produto']
                     n['produto_novo'] += 1
             for v in variacoes:

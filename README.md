@@ -91,6 +91,7 @@ Modelo em [`.env.example`](.env.example). Segredos nunca entram no Git.
 | `DATABASE_URL` | sim | — | String de conexão do Postgres. No Render use a do *pooler* do Supabase |
 | `SUPABASE_URL` | sim em produção | — | `https://<projeto>.supabase.co`. Sem ela, as rotas protegidas respondem 503 |
 | `CORS_ORIGINS` | sim em produção | `[]` | Origens do front, separadas por vírgula, **sem barra no fim** |
+| `SUPABASE_SERVICE_ROLE_KEY` | só para ativar conta | — | Chave `service_role` do Supabase, usada só no Admin API (ativação de conta do cliente importado). Segredo do servidor: nunca no front nem no Git. Sem ela, `POST /api/v1/ativacao-conta` responde 503 |
 | `DOCS_HABILITADAS` | não | `false` | Liga `/docs`, `/redoc` e `/openapi.json` (só em desenvolvimento) |
 | `LIMITE_LEITURA_POR_MINUTO` | não | `120` | Limite de leituras por IP |
 | `LIMITE_ESCRITA_POR_MINUTO` | não | `30` | Limite de escritas por IP |
@@ -259,7 +260,7 @@ falham no meio sem deixar estado parcial.
 - **Build:** `pip install -r requirements.txt`
 - **Start:** `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'`. As migrations rodam antes de subir; se uma falhar, a versão anterior continua no ar.
 - **Health check:** `/health`
-- **Variáveis** (Environment): `DATABASE_URL`, `SUPABASE_URL` e `CORS_ORIGINS`. O `CORS_ORIGINS` precisa conter a URL exata do front na Vercel, sem barra no fim.
+- **Variáveis** (Environment): `DATABASE_URL`, `SUPABASE_URL`, `CORS_ORIGINS` e `SUPABASE_SERVICE_ROLE_KEY` (esta só para a ativação de conta). O `CORS_ORIGINS` precisa conter a URL exata do front na Vercel, sem barra no fim.
 - Deploy automático a cada push na `main`.
 
 > O plano gratuito do Render hiberna a instância; a primeira requisição depois de um tempo parado leva uns 50 s.

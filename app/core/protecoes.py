@@ -25,6 +25,9 @@ ESCRITAS_SENSIVEIS = frozenset(
         "/api/v1/cliente/pedidos",
         "/api/v1/cliente/chamados",
         "/api/v1/cliente/agendamentos",
+        # Rotas publicas que acham o cadastro so pelo CPF: o limite barra a tentativa em massa.
+        "/api/v1/ativacao-conta",
+        "/api/v1/ativacao-conta/consultar",
     }
 )
 MENSAGEM_429 = "Muitas requisicoes em pouco tempo. Aguarde um instante e tente de novo."
