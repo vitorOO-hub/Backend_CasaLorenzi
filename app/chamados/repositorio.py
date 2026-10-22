@@ -81,6 +81,8 @@ SITUACOES = {
     "em_andamento": "AND st.codigo = ANY (CAST(:em_andamento AS text[]))",
     "resolvido": "AND st.codigo = ANY (CAST(:resolvidos AS text[]))",
     "todos": "",
+    # So os importados do historico da Vulto, em qualquer situacao (consulta, fora da operacao).
+    "historico_vulto": "",
 }
 RESPONSAVEIS = {
     "eu": "AND a.id_usuario_responsavel = CAST(:id_usuario AS uuid)",
@@ -210,9 +212,10 @@ def listar(
     limit: int,
     offset: int,
 ) -> tuple[int, list[dict[str, Any]]]:
+    historico = "AND a.historico_vulto" if situacao == "historico_vulto" else FORA_DO_HISTORICO
     filtros = f"""
         WHERE {NO_ESCOPO}
-        {FORA_DO_HISTORICO}
+        {historico}
         {SITUACOES[situacao]}
         {RESPONSAVEIS[responsavel]}
         AND (CAST(:prioridades AS text[]) IS NULL OR pr.codigo = ANY (CAST(:prioridades AS text[])))

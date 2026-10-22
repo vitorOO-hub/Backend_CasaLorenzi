@@ -51,7 +51,9 @@ def resumo(usuario: UsuarioDep, executar: ExecutarDep, id_loja: IdLoja = None):
 def listar(
     usuario: UsuarioDep,
     executar: ExecutarDep,
-    situacao: Literal["abertos", "aberto", "em_andamento", "resolvido", "todos"] = "abertos",
+    situacao: Literal[
+        "abertos", "aberto", "em_andamento", "resolvido", "todos", "historico_vulto"
+    ] = "abertos",
     responsavel: Literal["todos", "eu", "fila"] = "todos",
     prioridade: Literal["baixa", "media", "alta", "urgente"] | None = None,
     canal: Codigo = None,

@@ -96,3 +96,19 @@ def test_chat_ao_vivo_nao_lista_o_historico(sa_conn, cena):
         sa_conn, escopo, secao="todas", apenas_nao_lidas=False, limit=50, offset=0
     )
     assert str(atual) in ids(conversas) and str(historico) not in ids(conversas)
+
+
+def test_filtro_historico_vulto_lista_so_os_importados(sa_conn, cena):
+    _, _, _, historico, atual, escopo = cena
+    total, itens = chamados.listar(
+        sa_conn,
+        escopo,
+        situacao="historico_vulto",
+        responsavel="todos",
+        prioridade=None,
+        canal=None,
+        categoria=None,
+        limit=50,
+        offset=0,
+    )
+    assert ids(itens) == {str(historico)} and total == 1
