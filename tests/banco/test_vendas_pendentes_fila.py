@@ -188,3 +188,13 @@ def test_so_admin(sa_conn, fab_sa, cena):
     ):
         with pytest.raises(SemPermissao):
             chamada()
+
+
+def test_busca_de_pecas_por_sku(sa_conn, fab_sa, cena):
+    sku = cena.c.execute(
+        "SELECT sku FROM variacao_produto WHERE id_variacao = %s", (cena.variacao,)
+    ).fetchone()[0]
+    achadas = fila.buscar_variacoes(sa_conn, admin(fab_sa), sku)
+    assert [a["id_variacao"] for a in achadas] == [cena.variacao]
+    # % e _ digitados valem como letras, nao como curinga.
+    assert fila.buscar_variacoes(sa_conn, admin(fab_sa), "%%") == []

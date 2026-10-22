@@ -28,6 +28,7 @@ from app.gestao.schemas import (
     PecaExcluida,
     RegistroImportado,
     UsuarioDaEquipe,
+    VariacaoSugerida,
     VendaPendenteDetalhe,
     VendasImportacaoPendentes,
 )
@@ -127,6 +128,19 @@ def vendas_aguardando_resolucao(
         return {**lista, "por_grupo": vendas_pendentes.resumo_por_grupo(conexao, usuario, estado)}
 
     return executar(operacao)
+
+
+@router.get(
+    "/vendas-pendentes/variacoes",
+    response_model=list[VariacaoSugerida],
+    summary="Buscar pecas para resolver uma venda pendente",
+)
+def variacoes_para_vendas_pendentes(
+    usuario: AdminDep,
+    executar: ExecutarDep,
+    busca: Annotated[str, Query(min_length=2, max_length=80)],
+):
+    return executar(lambda conexao: vendas_pendentes.buscar_variacoes(conexao, usuario, busca))
 
 
 @router.get(

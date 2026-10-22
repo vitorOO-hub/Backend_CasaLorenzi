@@ -15,6 +15,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from app.clientes.repositorio import escapar_busca
 from app.core.erros_auth import SemPermissao
 from app.core.papeis import Papel, UsuarioAtual
 from app.gestao import auditoria
@@ -460,3 +461,22 @@ def importar(
         f"venda {origem['venda_id_origem']} → pedido {numero}",
     )
     return detalhe(conexao, usuario, id_venda)
+
+
+def buscar_variacoes(conexao: Connection, usuario: UsuarioAtual, busca: str) -> list[dict]:
+    """Pecas para trocar o SKU que a venda de origem nao encontrou (por SKU ou nome)."""
+    _so_admin(usuario)
+    termo = escapar_busca(busca)
+    linhas = conexao.execute(
+        text(
+            """
+            SELECT v.id_variacao, v.sku, p.nome || ' · ' || v.cor || ', ' || v.tamanho AS nome
+            FROM variacao_produto v JOIN produto p ON p.id_produto = v.id_produto
+            WHERE v.sku ILIKE :t ESCAPE '\\' OR p.nome ILIKE :t ESCAPE '\\'
+            ORDER BY v.ativa DESC, p.nome, v.cor, v.tamanho
+            LIMIT 20
+            """
+        ),
+        {"t": termo},
+    ).mappings()
+    return [dict(linha) for linha in linhas]
