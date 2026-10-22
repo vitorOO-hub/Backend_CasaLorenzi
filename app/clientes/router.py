@@ -10,7 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 
 from app.clientes import service
-from app.clientes.schemas import FichaCliente, ListaClientes, VultoMaisDaFicha
+from app.clientes.schemas import FichaCliente, ListaClientes, OpcoesClientes, VultoMaisDaFicha
 from app.core.db import ExecutarDep
 from app.core.papeis import UsuarioAtual
 from app.core.security import requer_papel
@@ -30,16 +30,32 @@ def listar(
     ] = None,
     secao: Literal["todos", "com_aberto", "meus"] = "todos",
     id_loja: IdLoja = None,
+    categoria: Literal["ouro", "prata", "bronze", "sem_pontos"] | None = None,
+    id_loja_cadastro: Annotated[UUID | None, Query(description="Loja de cadastro")] = None,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):
     def operacao(conexao):
         escopo = service.montar_escopo(conexao, usuario, id_loja)
         return service.listar(
-            conexao, usuario, escopo, busca=busca, secao=secao, limit=limit, offset=offset
+            conexao,
+            usuario,
+            escopo,
+            busca=busca,
+            secao=secao,
+            limit=limit,
+            offset=offset,
+            categoria=categoria,
+            id_loja_cadastro=id_loja_cadastro,
         )
 
     return executar(operacao)
+
+
+# Antes de "/{id_cliente}": senao "opcoes" seria lido como um id.
+@router.get("/opcoes", response_model=OpcoesClientes, summary="Opcoes dos filtros da lista")
+def opcoes(usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(service.opcoes)
 
 
 @router.get("/{id_cliente}", response_model=FichaCliente, summary="Ficha do cliente")
