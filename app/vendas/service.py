@@ -1,7 +1,11 @@
-"""Regras das vendas em loja: o vendedor ve as vendas e os clientes, e lanca venda para um CPF.
+"""Regras das vendas em loja: o vendedor ve as vendas e os clientes da loja dele e lanca venda.
 
-Quem vende e a loja vem sempre do token. A venda baixa o estoque da loja do vendedor na mesma
-transacao (trava a linha do estoque, confere o saldo e grava a movimentacao de venda).
+Quem vende e a loja vem sempre do token. A venda baixa o estoque na mesma transacao: trava a linha
+do estoque, confere o saldo e grava pedido, itens, pagamento e a movimentacao de venda. Qualquer
+falha no meio desfaz tudo.
+
+A loja da venda segue `loja_de_venda` (migration 20261022160000), a mesma regra do trigger de
+`pedido`: assim o pedido e a baixa de estoque nunca caem em lojas diferentes.
 """
 
 from datetime import UTC, datetime
@@ -10,6 +14,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 
 from app.chamados.repositorio import id_usuario_ativo
 from app.core.erros_auth import SemPermissao
@@ -22,10 +27,12 @@ from app.vendas.erros import (
     PecaIndisponivel,
     ReferenciaDeVendaInvalida,
     VendaNaoEncontrada,
+    VendaNaoRegistrada,
 )
 
 PAPEIS_DE_VENDA = (Papel.VENDEDOR,)
 CENTAVOS = Decimal("0.01")
+OBSERVACAO_PADRAO = "Venda lancada em loja pelo vendedor."
 
 
 def _cliente_publico(linha: dict[str, Any]) -> dict[str, Any]:
@@ -38,23 +45,36 @@ def _venda_publica(linha: dict[str, Any]) -> dict[str, Any]:
     return publica
 
 
-def _loja_do_vendedor(usuario: UsuarioAtual) -> UUID:
+def _lojas(conexao: Connection, usuario: UsuarioAtual) -> tuple[UUID, UUID]:
+    """(loja do vendedor, loja que recebe as vendas dele). Em loja fisica as duas sao a mesma."""
     if usuario.id_loja is None:
         raise SemPermissao()
-    return usuario.id_loja
+    return usuario.id_loja, repositorio.loja_de_venda(conexao, usuario.id_loja)
+
+
+def _detalhe(conexao: Connection, id_loja: UUID, id_pedido: UUID) -> dict[str, Any]:
+    venda = repositorio.venda_por_id(conexao, id_loja, id_pedido)
+    if venda is None:
+        raise VendaNaoEncontrada()
+    return _venda_publica(venda)
 
 
 # ------------------------------------------------------------------ leituras
 
 
 def listar_clientes(
-    conexao: Connection, busca: str | None, *, limit: int, offset: int
+    conexao: Connection, usuario: UsuarioAtual, busca: str | None, *, limit: int, offset: int
 ) -> dict[str, Any]:
-    total, itens = repositorio.listar_clientes(conexao, busca, limit=limit, offset=offset)
+    """Os clientes da loja do vendedor (cadastrados nela ou com compra nela)."""
+    id_loja, id_loja_venda = _lojas(conexao, usuario)
+    total, itens = repositorio.listar_clientes(
+        conexao, id_loja, id_loja_venda, busca, limit=limit, offset=offset
+    )
     return {"total": total, "itens": [_cliente_publico(i) for i in itens]}
 
 
 def buscar_cliente(conexao: Connection, cpf: str) -> dict[str, Any]:
+    """Achar pelo CPF vale para qualquer cliente cadastrado: quem compra pode ser de outra loja."""
     cliente = repositorio.cliente_por_cpf(conexao, cpf)
     if cliente is None:
         raise ClienteNaoEncontrado()
@@ -62,28 +82,33 @@ def buscar_cliente(conexao: Connection, cpf: str) -> dict[str, Any]:
 
 
 def listar_vendas(
-    conexao: Connection, busca: str | None, *, limit: int, offset: int
+    conexao: Connection, usuario: UsuarioAtual, busca: str | None, *, limit: int, offset: int
 ) -> dict[str, Any]:
-    total, itens = repositorio.listar_vendas(conexao, busca, limit=limit, offset=offset)
+    """So as vendas da loja do vendedor."""
+    _, id_loja = _lojas(conexao, usuario)
+    total, itens = repositorio.listar_vendas(conexao, id_loja, busca, limit=limit, offset=offset)
     return {"total": total, "itens": [_venda_publica(i) for i in itens]}
 
 
-def obter_venda(conexao: Connection, id_pedido: UUID) -> dict[str, Any]:
-    venda = repositorio.venda_por_id(conexao, id_pedido)
-    if venda is None:
-        raise VendaNaoEncontrada()
-    return _venda_publica(venda)
+def obter_venda(conexao: Connection, usuario: UsuarioAtual, id_pedido: UUID) -> dict[str, Any]:
+    """Venda de outra loja responde como se nao existisse (404)."""
+    _, id_loja = _lojas(conexao, usuario)
+    return _detalhe(conexao, id_loja, id_pedido)
 
 
 def opcoes(conexao: Connection, usuario: UsuarioAtual) -> dict[str, Any]:
-    loja = repositorio.nome_da_loja(conexao, usuario.id_loja) if usuario.id_loja else None
+    loja = None
+    if usuario.id_loja is not None:
+        _, id_loja = _lojas(conexao, usuario)
+        loja = repositorio.nome_da_loja(conexao, id_loja)
     return {"metodos": repositorio.metodos(conexao), "loja": loja}
 
 
 def pecas(
     conexao: Connection, usuario: UsuarioAtual, busca: str | None, *, limit: int
 ) -> list[dict[str, Any]]:
-    return repositorio.pecas_da_loja(conexao, _loja_do_vendedor(usuario), busca, limit=limit)
+    _, id_loja = _lojas(conexao, usuario)
+    return repositorio.pecas_da_loja(conexao, id_loja, busca, limit=limit)
 
 
 # --------------------------------------------------------------------- venda
@@ -97,6 +122,11 @@ def _juntar_itens(itens: list[dict[str, Any]]) -> list[tuple[UUID, int]]:
     return sorted(somadas.items(), key=lambda par: str(par[0]))
 
 
+def _observacao(texto: str | None) -> str:
+    texto = (texto or "").strip()
+    return f"{OBSERVACAO_PADRAO} Obs: {texto}" if texto else OBSERVACAO_PADRAO
+
+
 def lancar_venda(
     conexao: Connection,
     usuario: UsuarioAtual,
@@ -104,15 +134,19 @@ def lancar_venda(
     *,
     chave_idempotencia: str | None = None,
 ) -> dict[str, Any]:
-    id_loja = _loja_do_vendedor(usuario)
     id_vendedor = id_usuario_ativo(conexao, usuario.id_auth)
     if id_vendedor is None:
         raise SemPermissao()
     chave = f"venda-loja-{chave_idempotencia}" if chave_idempotencia else None
-    if chave and (repetida := repositorio.venda_da_chave(conexao, id_vendedor, chave)):
-        return obter_venda(conexao, repetida)
 
     try:
+        _, id_loja = _lojas(conexao, usuario)
+        if chave:
+            repositorio.travar_chave(conexao, chave)
+            repetida = repositorio.venda_da_chave(conexao, id_vendedor, chave)
+            if repetida:
+                conexao.rollback()
+                return _detalhe(conexao, id_loja, repetida)
         if repositorio.nome_da_loja(conexao, id_loja) is None:
             raise LojaDaVendaInvalida()
         cliente = repositorio.cliente_por_cpf(conexao, dados["cpf"])
@@ -148,7 +182,7 @@ def lancar_venda(
                 id_vendedor,
                 id_status,
                 total,
-                "Venda lancada em loja pelo vendedor.",
+                _observacao(dados.get("observacao")),
             ),
         )
         for id_variacao, quantidade, anterior, preco in linhas:
@@ -173,7 +207,10 @@ def lancar_venda(
             chave=chave or f"venda-loja-{numero}",
         )
         conexao.commit()
+    except IntegrityError as erro:
+        conexao.rollback()
+        raise VendaNaoRegistrada() from erro
     except Exception:
         conexao.rollback()
         raise
-    return obter_venda(conexao, id_pedido)
+    return _detalhe(conexao, id_loja, id_pedido)

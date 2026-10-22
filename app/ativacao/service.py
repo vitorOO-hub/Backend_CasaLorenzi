@@ -8,6 +8,7 @@ Isso e menos seguro do que confirmar por e-mail, e foi aceito para ninguem perde
 from uuid import UUID
 
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 
 from app.ativacao import repositorio
 from app.ativacao.auth_admin import AuthAdmin
@@ -54,6 +55,11 @@ def ativar(
         ligado = repositorio.ligar_login(conexao, id_usuario, id_auth, email_final)
         if ligado:
             conexao.commit()
+    except IntegrityError as erro:
+        # Ex.: o mesmo e-mail gravado por outra ativacao ao mesmo tempo. Nada fica pela metade.
+        conexao.rollback()
+        auth_admin.apagar_usuario(id_auth)
+        raise AtivacaoNegada from erro
     except Exception:
         conexao.rollback()
         auth_admin.apagar_usuario(id_auth)

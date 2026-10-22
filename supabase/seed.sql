@@ -108,7 +108,7 @@ BEGIN
     INSERT INTO produto (nome, marca, categoria, colecao, preco_base)
     VALUES (
         'Camisa Linho Essencial',
-        'Casa Lorenzi',
+        'casa lorenzi',
         'Camisas',
         'Camisa de linho com modelagem regular.',
         149.90

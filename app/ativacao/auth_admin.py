@@ -4,6 +4,7 @@ A service role key vem do ambiente do servidor e nunca vai para log, resposta ou
 """
 
 import logging
+from collections.abc import Iterator
 from typing import Annotated, Protocol
 from uuid import UUID
 
@@ -25,12 +26,16 @@ class AuthAdmin(Protocol):
 
 
 class AuthAdminSupabase:
-    def __init__(
-        self, url: str, chave: str, *, cliente: httpx.Client | None = None
-    ) -> None:
+    def __init__(self, url: str, chave: str, *, cliente: httpx.Client | None = None) -> None:
         self._base = f"{url}/auth/v1/admin/users"
         self._cabecalhos = {"apikey": chave, "Authorization": f"Bearer {chave}"}
+        self._proprio = cliente is None
         self._cliente = cliente or httpx.Client(timeout=TIMEOUT_SEGUNDOS)
+
+    def fechar(self) -> None:
+        """Fecha as conexoes do cliente HTTP criado aqui (o recebido de fora e de quem o criou)."""
+        if self._proprio:
+            self._cliente.close()
 
     def criar_usuario(self, email: str, senha: str) -> UUID:
         try:
@@ -70,11 +75,16 @@ def _codigo_do_erro(resposta: httpx.Response) -> str | None:
     return corpo.get("error_code") if isinstance(corpo, dict) else None
 
 
-def get_auth_admin(settings: Annotated[Settings, Depends(get_settings)]) -> AuthAdmin:
+def get_auth_admin(settings: Annotated[Settings, Depends(get_settings)]) -> Iterator[AuthAdmin]:
+    """Um cliente do Admin API por requisicao, fechado no fim dela (mesmo se a rota der erro)."""
     chave = settings.supabase_service_role_key
     if not settings.supabase_url or chave is None:
         raise AtivacaoIndisponivel
-    return AuthAdminSupabase(settings.supabase_url, chave.get_secret_value())
+    admin = AuthAdminSupabase(settings.supabase_url, chave.get_secret_value())
+    try:
+        yield admin
+    finally:
+        admin.fechar()
 
 
 AuthAdminDep = Annotated[AuthAdmin, Depends(get_auth_admin)]

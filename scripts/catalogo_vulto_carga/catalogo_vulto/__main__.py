@@ -20,7 +20,7 @@ def main(argv=None):
     b.add_argument('planilha')
     b.add_argument('--saida-dir', default='saida_carga')
     b.add_argument('--incluir-antiga', action='store_true', help='inclui a aba PLANILHA ANTIGA NAO USAR (padrão: fora)')
-    b.add_argument('--marca', default='Vulto', help='valor para produto.marca (a planilha não tem marca; padrão: Vulto)')
+    b.add_argument('--marca', default='vulto', help='valor para produto.marca (a planilha não tem marca; padrão: vulto)')
     b.add_argument('--aplicar', action='store_true', help='grava no Postgres (DATABASE_URL). Sem isso, só gera arquivos.')
     args = ap.parse_args(argv)
 

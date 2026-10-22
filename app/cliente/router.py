@@ -24,8 +24,8 @@ from app.cliente.schemas import (
     MensagemChamadoCriacao,
     OpcoesAgendamentoCliente,
     OpcoesChamadoCliente,
-    PerfilCliente,
     PedidoCliente,
+    PerfilCliente,
 )
 from app.core.db import ExecutarDep
 from app.core.papeis import UsuarioAtual

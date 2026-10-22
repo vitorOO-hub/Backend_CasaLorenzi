@@ -101,7 +101,7 @@ def test_cadastro_com_mesmo_cpf_e_email_assume_a_conta_importada(conn):
         "SELECT id_usuario, nome, telefone, cep FROM usuario WHERE auth_user_id = %s",
         (auth,),
     ).fetchone()
-    assert linha == (id_usuario, "Helena Souza", "11999990001", "01001000")
+    assert linha == (id_usuario, "helena souza", "11999990001", "01001000")
     assert (
         conn.execute("SELECT count(*) FROM usuario WHERE documento = %s", (CPF,)).fetchone()[0] == 1
     )

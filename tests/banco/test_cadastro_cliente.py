@@ -55,16 +55,17 @@ def linha(conn, auth):
 
 
 def test_signup_cria_o_cliente_com_endereco_normalizado(conn):
+    # Nome e endereco no padrao do banco (minusculas, um espaco); telefone so digitos.
     auth = cadastrar(conn)
     assert linha(conn, auth) == (
         "cliente",
-        "Helena Souza",
+        "helena souza",
         "helena@exemplo.com.br",
         "11999990001",
-        "Rua das Flores",
-        "Centro",
+        "rua das flores",
+        "centro",
         "120",
-        "Ap 4",
+        "ap 4",
         "01001000",
         True,
         None,
@@ -245,9 +246,9 @@ def test_cada_cliente_so_le_a_propria_linha_com_o_proprio_endereco(conn):
     bia = cadastrar(conn, email="bia@x.com", nome="Bia Lima", rua="Rua da Bia")
     consulta = "SELECT nome, rua, cep FROM usuario"
     with como(conn, sub=ana):
-        assert tenta(conn, consulta) == [("Ana Souza", "Rua da Ana", "01001000")]
+        assert tenta(conn, consulta) == [("ana souza", "rua da ana", "01001000")]
     with como(conn, sub=bia):
-        assert tenta(conn, consulta) == [("Bia Lima", "Rua da Bia", "01001000")]
+        assert tenta(conn, consulta) == [("bia lima", "rua da bia", "01001000")]
     with como(conn, role="anon"):
         assert isinstance(tenta(conn, consulta), psycopg.errors.InsufficientPrivilege)
 

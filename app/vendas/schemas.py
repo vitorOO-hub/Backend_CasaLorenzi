@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 Metodo = Literal["cartao_credito", "cartao_debito", "pix", "dinheiro"]
 Busca = Annotated[str, Field(max_length=80)]
@@ -44,6 +44,10 @@ class ItemDaVenda(Entrada):
 class NovaVenda(BuscaDeCliente):
     itens: list[ItemDaVenda] = Field(min_length=1, max_length=50)
     metodo_pagamento: Metodo
+    # Regra da operacao: troca na loja entra como venda nova com a observacao "troca".
+    observacao: Annotated[str, StringConstraints(strip_whitespace=True, max_length=300)] | None = (
+        None
+    )
 
 
 class ClienteDaVenda(Saida):
