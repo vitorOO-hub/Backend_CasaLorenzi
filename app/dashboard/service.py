@@ -13,7 +13,7 @@ from app.dashboard.erros import PeriodoInvalido, PeriodoLongoDemais
 from app.dashboard.repositorio import Filtro
 
 PAPEIS_DO_DASHBOARD = (Papel.ATENDENTE, Papel.GERENTE_LOJA, Papel.ADMIN)
-MAXIMO_DE_DIAS = 400
+MAXIMO_DE_DIAS = 800
 
 
 def resolver_loja(usuario: UsuarioAtual, id_loja_pedida: UUID | None) -> UUID | None:

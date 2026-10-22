@@ -179,6 +179,20 @@ class Integracoes(Saida):
     skus: list[SkuParaMapear]
 
 
+class VendaImportacaoPendente(Saida):
+    id_venda_pendente: UUID
+    venda_id_origem: str
+    status_origem: str | None
+    motivos: list[str]
+    quantidade_itens: int
+    criada_em: datetime
+
+
+class VendasImportacaoPendentes(Saida):
+    total: int
+    itens: list[VendaImportacaoPendente]
+
+
 class MapeamentoDeRegistro(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

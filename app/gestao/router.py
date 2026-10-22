@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query, status
 from app.core.db import ExecutarDep
 from app.core.papeis import Papel, UsuarioAtual
 from app.core.security import requer_papel
-from app.gestao import auditoria, catalogo, integracoes, service
+from app.gestao import auditoria, catalogo, integracoes, service, vendas_pendentes
 from app.gestao.schemas import (
     Auditoria,
     Catalogo,
@@ -26,6 +26,7 @@ from app.gestao.schemas import (
     PecaExcluida,
     RegistroImportado,
     UsuarioDaEquipe,
+    VendasImportacaoPendentes,
 )
 
 router = APIRouter(prefix="/painel/gestao", tags=["painel-gestao"])
@@ -101,6 +102,24 @@ def registros_de_auditoria(
 @router.get("/integracoes", response_model=Integracoes, summary="Lotes do ERP e registros a mapear")
 def lotes_e_registros(usuario: AdminDep, executar: ExecutarDep):
     return executar(lambda conexao: integracoes.montar(conexao, usuario))
+
+
+@router.get(
+    "/vendas-pendentes",
+    response_model=VendasImportacaoPendentes,
+    summary="Vendas do Vulto aguardando resolucao",
+)
+def vendas_aguardando_resolucao(
+    usuario: AdminDep,
+    executar: ExecutarDep,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    return executar(
+        lambda conexao: vendas_pendentes.listar(
+            conexao, usuario, limit=limit, offset=offset
+        )
+    )
 
 
 @router.post(
