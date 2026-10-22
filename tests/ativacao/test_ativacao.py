@@ -61,9 +61,7 @@ def banco(monkeypatch):
     monkeypatch.setattr(
         repositorio, "cliente_pendente", lambda _c, _cpf, travar=False: estado["linha"]
     )
-    monkeypatch.setattr(
-        repositorio, "email_em_uso_por_outro", lambda *_a: estado["email_usado"]
-    )
+    monkeypatch.setattr(repositorio, "email_em_uso_por_outro", lambda *_a: estado["email_usado"])
 
     def ligar(_c, id_usuario, id_auth, email):
         ligados.append((id_usuario, id_auth, email))
@@ -228,7 +226,7 @@ def http(banco):
             supabase_service_role_key="chave-de-teste",
         )
     )
-    app.dependency_overrides[get_executar] = lambda: (lambda operacao: operacao(conexao))
+    app.dependency_overrides[get_executar] = lambda: lambda operacao: operacao(conexao)
     app.dependency_overrides[get_auth_admin] = lambda: auth
     cliente = TestClient(app, raise_server_exceptions=False)
     cliente.auth_falso, cliente.conexao = auth, conexao
@@ -292,10 +290,47 @@ def test_limite_de_ip_barra_a_tentativa_em_massa(banco):
         )
     )
     conexao = ConexaoFalsa()
-    app.dependency_overrides[get_executar] = lambda: (lambda operacao: operacao(conexao))
+    app.dependency_overrides[get_executar] = lambda: lambda operacao: operacao(conexao)
     cliente = TestClient(app)
     codigos = [
         cliente.post("/api/v1/ativacao-conta/consultar", json={"cpf": CPF}).status_code
         for _ in range(5)
     ]
     assert codigos == [200, 200, 200, 429, 429]
+
+
+def test_recusa_do_banco_ao_ligar_vira_negada_e_apaga_a_conta(banco, monkeypatch, erro_integridade):
+    def quebra(*_a):
+        raise erro_integridade("23505")
+
+    monkeypatch.setattr(repositorio, "ligar_login", quebra)
+    conexao, auth = ConexaoFalsa(), AuthFalso()
+    with pytest.raises(AtivacaoNegada):
+        service.ativar(conexao, auth, cpf=CPF, senha="senha1234", email=None)
+    assert auth.apagados == [ID_AUTH]
+    assert conexao.eventos == ["rollback"]
+
+
+def test_dependencia_fecha_o_cliente_http_no_fim_da_requisicao(monkeypatch):
+    from app.ativacao import auth_admin
+
+    fechados = []
+    monkeypatch.setattr(auth_admin.AuthAdminSupabase, "fechar", lambda self: fechados.append(1))
+    settings = Settings(
+        _env_file=None,
+        database_url=DATABASE_URL_TESTE,
+        supabase_url="https://p.supabase.co",
+        supabase_service_role_key="chave",
+    )
+    gerador = auth_admin.get_auth_admin(settings)
+    assert isinstance(next(gerador), auth_admin.AuthAdminSupabase)
+    with pytest.raises(StopIteration):
+        next(gerador)
+    assert fechados == [1]
+
+
+def test_cliente_recebido_de_fora_nao_e_fechado_pelo_admin():
+    cliente = httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200)))
+    AuthAdminSupabase("https://p.supabase.co", "k", cliente=cliente).fechar()
+    assert not cliente.is_closed
+    cliente.close()

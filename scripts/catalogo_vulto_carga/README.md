@@ -19,7 +19,7 @@ export DATABASE_URL="postgresql://usuario:senha@host:5432/banco"
 python -m catalogo_vulto carregar planilha_original.xlsx --saida-dir saida_carga --aplicar
 ```
 
-Opções de `carregar`: `--marca "Vulto"` (padrão; preenche `produto.marca`), `--incluir-antiga` (inclui a aba
+Opções de `carregar`: `--marca "vulto"` (padrão; preenche `produto.marca`, em minúsculas como o resto do banco), `--incluir-antiga` (inclui a aba
 PLANILHA ANTIGA NAO USAR; por padrão fica de fora).
 
 Sempre confira `saida_carga/relatorio_carga.csv` antes de usar `--aplicar`.

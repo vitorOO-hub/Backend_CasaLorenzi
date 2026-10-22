@@ -1,5 +1,5 @@
 # Blueprint do Render: cria o servico da API a partir deste repositorio (branch main).
-# Render -> New -> Blueprint -> escolha este repositorio e a branch main -> preencha as 3 variaveis
+# Render -> New -> Blueprint -> escolha este repositorio e a branch main -> preencha as 4 variaveis
 # marcadas como "sync: false" (nao ficam no Git) -> Apply.
 services:
   - type: web
@@ -24,4 +24,8 @@ services:
         sync: false
       # URL do front na Vercel (sem barra no fim), separadas por virgula se houver mais de uma.
       - key: CORS_ORIGINS
+        sync: false
+      # service_role do Supabase: so para o Admin API (ativar a conta do cliente importado). Segredo.
+      # Sem ela a ativacao de conta responde 503 "indisponivel"; o resto da API funciona.
+      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false

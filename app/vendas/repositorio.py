@@ -35,16 +35,25 @@ def escapar_busca(termo: str | None) -> str | None:
 # ------------------------------------------------------------------ clientes
 
 
-def _filtro_clientes(busca: str | None) -> tuple[str, tuple[Any, ...]]:
+# Cliente da loja: cadastrado nela ou com compra nela.
+_DA_LOJA = (
+    "(u.id_loja = %s OR EXISTS (SELECT 1 FROM pedido pl "
+    "WHERE pl.id_cliente = u.id_usuario AND pl.id_loja = %s))"
+)
+
+
+def _filtro_clientes(
+    busca: str | None, id_loja: UUID, id_loja_venda: UUID
+) -> tuple[str, tuple[Any, ...]]:
     padrao = escapar_busca(busca)
     if padrao is None:
-        return "TRUE", ()
+        return _DA_LOJA, (id_loja, id_loja_venda)
     digitos = so_digitos(busca or "")
     return (
-        f"(u.nome ILIKE %s {_ESC} OR COALESCE(u.email, '') ILIKE %s {_ESC} "
+        f"{_DA_LOJA} AND (u.nome ILIKE %s {_ESC} OR COALESCE(u.email, '') ILIKE %s {_ESC} "
         f"OR COALESCE(u.telefone, '') ILIKE %s {_ESC} "
         "OR (CAST(%s AS text) <> '' AND u.documento = %s))",
-        (padrao, padrao, padrao, digitos, digitos),
+        (id_loja, id_loja_venda, padrao, padrao, padrao, digitos, digitos),
     )
 
 
@@ -56,9 +65,16 @@ _CLIENTES = """
 
 
 def listar_clientes(
-    conexao: Connection, busca: str | None, *, limit: int, offset: int
+    conexao: Connection,
+    id_loja: UUID,
+    id_loja_venda: UUID,
+    busca: str | None,
+    *,
+    limit: int,
+    offset: int,
 ) -> tuple[int, list[dict[str, Any]]]:
-    filtro, parametros = _filtro_clientes(busca)
+    """Cadastrado na loja do vendedor ou com compra na loja que recebe as vendas dele."""
+    filtro, parametros = _filtro_clientes(busca, id_loja, id_loja_venda)
     base = _CLIENTES.format(filtro=filtro)
     total = buscar_um(conexao, f"SELECT count(*) AS n {base}", parametros)  # nosec B608
     linhas = buscar_todos(
@@ -107,22 +123,23 @@ _COLUNAS_VENDA = """
 """
 
 
-def _filtro_vendas(busca: str | None) -> tuple[str, tuple[Any, ...]]:
+def _filtro_vendas(busca: str | None, id_loja: UUID) -> tuple[str, tuple[Any, ...]]:
+    """Sempre so as vendas da loja informada (a do token do vendedor)."""
     padrao = escapar_busca(busca)
     if padrao is None:
-        return "TRUE", ()
+        return "p.id_loja = %s", (id_loja,)
     digitos = so_digitos(busca or "")
     return (
-        f"(p.numero_pedido ILIKE %s {_ESC} OR c.nome ILIKE %s {_ESC} "
+        f"p.id_loja = %s AND (p.numero_pedido ILIKE %s {_ESC} OR c.nome ILIKE %s {_ESC} "
         "OR (CAST(%s AS text) <> '' AND c.documento = %s))",
-        (padrao, padrao, digitos, digitos),
+        (id_loja, padrao, padrao, digitos, digitos),
     )
 
 
 def listar_vendas(
-    conexao: Connection, busca: str | None, *, limit: int, offset: int
+    conexao: Connection, id_loja: UUID, busca: str | None, *, limit: int, offset: int
 ) -> tuple[int, list[dict[str, Any]]]:
-    filtro, parametros = _filtro_vendas(busca)
+    filtro, parametros = _filtro_vendas(busca, id_loja)
     base = _VENDAS.format(filtro=filtro)
     total = buscar_um(conexao, f"SELECT count(*) AS n {base}", parametros)  # nosec B608
     linhas = buscar_todos(
@@ -138,11 +155,13 @@ def listar_vendas(
     return int(total["n"]) if total else 0, linhas
 
 
-def venda_por_id(conexao: Connection, id_pedido: UUID) -> dict[str, Any] | None:
+def venda_por_id(conexao: Connection, id_loja: UUID, id_pedido: UUID) -> dict[str, Any] | None:
+    """A venda so aparece se for da loja informada: de outra loja e como se nao existisse."""
     venda = buscar_um(
         conexao,
-        f"SELECT {_COLUNAS_VENDA} {_VENDAS.format(filtro='p.id_pedido = %s')}",  # nosec B608
-        (id_pedido,),
+        f"SELECT {_COLUNAS_VENDA} "  # nosec B608
+        f"{_VENDAS.format(filtro='p.id_pedido = %s AND p.id_loja = %s')}",
+        (id_pedido, id_loja),
     )
     if venda is None:
         return None
@@ -181,6 +200,18 @@ def metodos(conexao: Connection) -> list[dict[str, Any]]:
         "SELECT codigo, nome FROM metodo_pagamento WHERE ativo AND codigo = ANY(%s) ORDER BY ordem",
         (list(METODOS_NA_LOJA),),
     )
+
+
+def loja_de_venda(conexao: Connection, id_loja: UUID) -> UUID:
+    """A loja que recebe a venda (funcao do banco, migration 20261022160000): a loja fisica e ela
+    mesma; site e app da Vulto viraram o e-commerce da Casa Lorenzi."""
+    linha = buscar_um(conexao, "SELECT public.loja_de_venda(%s) AS id_loja", (id_loja,))
+    return linha["id_loja"] if linha and linha["id_loja"] else id_loja
+
+
+def travar_chave(conexao: Connection, chave: str) -> None:
+    """Duas requisicoes com a mesma chave (duplo clique) entram uma de cada vez."""
+    executar_sql(conexao, "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (chave,))
 
 
 def nome_da_loja(conexao: Connection, id_loja: UUID) -> str | None:

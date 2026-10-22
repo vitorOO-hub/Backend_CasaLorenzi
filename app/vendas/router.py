@@ -1,6 +1,6 @@
 """Rotas das vendas em loja (`/api/v1/painel/vendas`): so o vendedor.
 
-O vendedor ve todas as vendas e todos os clientes cadastrados, e lanca vendas para um CPF. A loja
+O vendedor ve as vendas e os clientes da propria loja, e lanca vendas para um CPF. A loja
 da venda e a pessoa que vende vem do token, nunca do corpo.
 """
 
@@ -31,7 +31,7 @@ Busca = Annotated[str | None, Query(max_length=80, description="Nome, numero, e-
 ChaveIdempotencia = Annotated[str | None, Header(alias="Idempotency-Key", max_length=160)]
 
 
-@router.get("", response_model=ListaDeVendas, summary="Todas as vendas registradas")
+@router.get("", response_model=ListaDeVendas, summary="Vendas da loja do vendedor")
 def listar(
     usuario: UsuarioDep,
     executar: ExecutarDep,
@@ -39,7 +39,7 @@ def listar(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):
-    return executar(lambda c: service.listar_vendas(c, busca, limit=limit, offset=offset))
+    return executar(lambda c: service.listar_vendas(c, usuario, busca, limit=limit, offset=offset))
 
 
 @router.post("", response_model=DetalheDaVenda, summary="Lancar venda em loja para um CPF")
@@ -70,7 +70,7 @@ def pecas(
     return executar(lambda c: service.pecas(c, usuario, busca, limit=limit))
 
 
-@router.get("/clientes", response_model=ListaDeClientes, summary="Todos os clientes cadastrados")
+@router.get("/clientes", response_model=ListaDeClientes, summary="Clientes da loja do vendedor")
 def clientes(
     usuario: UsuarioDep,
     executar: ExecutarDep,
@@ -78,7 +78,9 @@ def clientes(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):
-    return executar(lambda c: service.listar_clientes(c, busca, limit=limit, offset=offset))
+    return executar(
+        lambda c: service.listar_clientes(c, usuario, busca, limit=limit, offset=offset)
+    )
 
 
 @router.post("/clientes/buscar", response_model=ClienteDaVenda, summary="Achar o cliente pelo CPF")
@@ -88,4 +90,4 @@ def buscar_cliente(dados: BuscaDeCliente, usuario: UsuarioDep, executar: Executa
 
 @router.get("/{id_pedido}", response_model=DetalheDaVenda, summary="Detalhe de uma venda")
 def detalhe(id_pedido: UUID, usuario: UsuarioDep, executar: ExecutarDep):
-    return executar(lambda c: service.obter_venda(c, id_pedido))
+    return executar(lambda c: service.obter_venda(c, usuario, id_pedido))

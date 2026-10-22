@@ -27,6 +27,14 @@ class EstoqueInsuficiente(ErroDeNegocio):
         self.detalhe = f"{sku}: restam {disponivel} unidades em estoque"
 
 
+class VendaNaoRegistrada(ErroDeNegocio):
+    """O banco recusou a gravacao (por exemplo, duas vendas mexendo na mesma peca ao mesmo tempo).
+    Nada foi gravado: a transacao inteira volta."""
+
+    status_code = status.HTTP_409_CONFLICT
+    detalhe = "Nao foi possivel registrar a venda agora. Confira as pecas e tente de novo."
+
+
 class LojaDaVendaInvalida(ErroDeNegocio):
     status_code = status.HTTP_409_CONFLICT
     detalhe = "Sua conta nao esta ligada a uma loja ativa"

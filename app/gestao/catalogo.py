@@ -17,7 +17,8 @@ from app.gestao import auditoria
 from app.gestao.erros import NomeDePecaJaExiste, PecaEmUso, PecaNaoEncontrada, SkuJaExiste
 from app.gestao.schemas import NovaPeca, PecaAlterada
 
-MARCA = "Casa Lorenzi"
+# Marca e unidade generica das pecas criadas pelo admin (texto no padrao do banco: minusculas).
+MARCA = "casa lorenzi"
 
 # Uma linha por peca ativa: o menor preco de venda, os SKUs e o estoque somado de todas as lojas.
 PECAS = """
@@ -108,15 +109,20 @@ def criar(conexao: Connection, usuario: UsuarioAtual, dados: NovaPeca) -> dict[s
         ).scalar():
             raise SkuJaExiste()
         if conexao.execute(
-            text("SELECT 1 FROM produto WHERE lower(nome) = lower(:nome) AND marca = :marca"),
+            text(
+                "SELECT 1 FROM produto "
+                "WHERE lower(nome) = lower(:nome) AND lower(marca) = :marca"
+            ),
             {"nome": dados.nome, "marca": MARCA},
         ).scalar():
             raise NomeDePecaJaExiste()
         id_produto = conexao.execute(
             text(
                 """
-                INSERT INTO produto (nome, marca, categoria, preco_base)
-                VALUES (:nome, :marca, :categoria, :preco) RETURNING id_produto
+                INSERT INTO produto (nome, marca, categoria, preco_base, id_unidade)
+                VALUES (:nome, :marca, :categoria, :preco,
+                        (SELECT id_unidade FROM unidade WHERE nome = :marca))
+                RETURNING id_produto
                 """
             ),
             {
@@ -130,7 +136,7 @@ def criar(conexao: Connection, usuario: UsuarioAtual, dados: NovaPeca) -> dict[s
             text(
                 """
                 INSERT INTO variacao_produto (id_produto, sku, cor, tamanho, preco_venda)
-                VALUES (:produto, :sku, 'Única', 'Único', :preco)
+                VALUES (:produto, :sku, 'única', 'U', :preco)
                 """
             ),
             {"produto": id_produto, "sku": dados.sku, "preco": dados.preco},
@@ -166,7 +172,8 @@ def alterar(
             dados.nome is not None
             and conexao.execute(
                 text(
-                    "SELECT 1 FROM produto WHERE lower(nome) = lower(:nome) AND marca = :marca "
+                    "SELECT 1 FROM produto "
+                    "WHERE lower(nome) = lower(:nome) AND lower(marca) = :marca "
                     "AND id_produto <> CAST(:id AS uuid)"
                 ),
                 {"nome": dados.nome, "marca": MARCA, "id": str(id_produto)},

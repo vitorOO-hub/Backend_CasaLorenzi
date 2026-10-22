@@ -19,7 +19,6 @@ import unicodedata
 from pathlib import Path
 
 import psycopg
-
 from vulto_integracao.lojas import CODIGO_LOJA_POR_ID_VULTO, resolver_id_loja_vulto
 
 TIPO_DO_PERFIL = {
@@ -30,6 +29,11 @@ TIPO_DO_PERFIL = {
 }
 DOMINIO = "vulto.example"
 IGNORAR = {"TESTE TI"}  # conta de teste do legado: nao entra
+
+
+def nome_padrao(nome: str) -> str:
+    """Padrao do banco: minusculas e um espaco so entre as palavras."""
+    return " ".join(nome.split()).lower()
 
 
 def email_de(nome: str) -> str:
@@ -64,7 +68,7 @@ def main() -> None:
     for f in funcionarios:
         if f["perfil"] not in TIPO_DO_PERFIL:
             sys.exit(f"Perfil sem regra: {f['perfil']!r} ({f['nome']})")
-        if f["loja_id"] is not None and f["loja_id"] not in LOJA_DO_LEGADO:
+        if f["loja_id"] is not None and f["loja_id"] not in CODIGO_LOJA_POR_ID_VULTO:
             sys.exit(f"loja_id sem regra: {f['loja_id']} ({f['nome']})")
 
     with psycopg.connect(url_do_banco(), prepare_threshold=None) as conn, conn.cursor() as cur:
@@ -91,7 +95,7 @@ def main() -> None:
                 cur.execute(
                     "INSERT INTO usuario (nome, email, ativo, id_tipo_usuario, id_loja) "
                     "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (email) DO NOTHING",
-                    (f["nome"], email, bool(f["ativo"]), id_tipo, id_loja),
+                    (nome_padrao(f["nome"]), email, bool(f["ativo"]), id_tipo, id_loja),
                 )
                 novos += cur.rowcount
                 existentes += 1 - cur.rowcount

@@ -79,7 +79,8 @@ def test_catalogo_criar_listar_editar_e_excluir_com_auditoria(sa_conn, fab_sa):
     editada = catalogo.alterar(
         sa_conn, admin, nova["id_produto"], PecaAlterada(nome="Peca nova", preco=Decimal("250"))
     )
-    assert editada["nome"] == "Peca nova" and editada["preco"] == 250.0
+    # Nome gravado no padrao do banco: minusculas.
+    assert editada["nome"] == "peca nova" and editada["preco"] == 250.0
 
     with pytest.raises(SkuJaExiste):
         catalogo.criar(sa_conn, admin, peca(nome="Outra"))
