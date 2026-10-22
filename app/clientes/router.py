@@ -75,6 +75,8 @@ def vulto_mais(
 ):
     def operacao(conexao):
         escopo = service.montar_escopo(conexao, usuario, id_loja)
-        return service.vulto_mais(conexao, usuario, escopo, id_cliente)
+        resposta = service.vulto_mais(conexao, usuario, escopo, id_cliente)
+        conexao.commit()  # grava os vencimentos lancados na leitura
+        return resposta
 
     return executar(operacao)

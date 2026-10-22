@@ -11,6 +11,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from app.chamados.schemas import Opcao
+from app.cliente.schemas import VencimentoProximo
 
 
 class Saida(BaseModel):
@@ -112,6 +113,8 @@ class VultoMaisDaFicha(Saida):
     faltam_para_proxima: int | None
     loja_cadastro: str | None
     extrato: list[MovimentoPontosFicha]
+    pontos_a_vencer: int = 0
+    proximos_vencimentos: list[VencimentoProximo] = []
     resgates: list[ResgateFicha]
 
 

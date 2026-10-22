@@ -145,6 +145,9 @@ OPCOES_AGENDAMENTO = {
     ],
 }
 
+# As rotas do Vulto+ confirmam a transacao (vencimentos lancados na leitura).
+CONEXAO_FALSA = SimpleNamespace(commit=lambda: None)
+
 
 def usar_cliente(app):
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
@@ -163,7 +166,7 @@ def devolve(resultado):
 
 
 def executa_operacao(_resultado_ignorado=None):
-    return lambda operacao: operacao(None)
+    return lambda operacao: operacao(CONEXAO_FALSA)
 
 
 def test_rotas_do_cliente_estao_registradas(app, cliente):
