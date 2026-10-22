@@ -103,6 +103,23 @@ def test_cliente_logado_nao_entra_em_nenhuma_rota_do_painel(cliente, par):
                 "/dashboard/",
             ),
         ),
+        # O vendedor so consulta o saldo, vende e ve clientes: nao movimenta nem transfere estoque,
+        # nao atende chamados e nao ve gerencia, gestao nem dashboards.
+        (
+            Papel.VENDEDOR,
+            (
+                "/api/v1/painel/estoque/movimentacoes",
+                "/api/v1/painel/estoque/ajustes",
+                "/api/v1/painel/estoque/transferencias",
+                "/api/v1/painel/estoque/minimos",
+                "/api/v1/painel/atendimentos",
+                "/api/v1/painel/chat",
+                "/api/v1/painel/clientes",
+                "/api/v1/painel/gerencia",
+                "/api/v1/painel/gestao",
+                "/dashboard/",
+            ),
+        ),
     ],
 )
 def test_cada_papel_so_entra_na_propria_area(cliente, par, papel, areas_negadas):
@@ -115,6 +132,17 @@ def test_cada_papel_so_entra_na_propria_area(cliente, par, papel, areas_negadas)
     assert liberadas == [], f"{papel.value} passou onde nao devia:\n" + "\n".join(liberadas)
 
 
+def test_so_o_vendedor_entra_nas_vendas_em_loja(cliente, par):
+    liberadas = []
+    for papel in (Papel.ATENDENTE, Papel.OPERADOR_ESTOQUE, Papel.GERENTE_LOJA, Papel.ADMIN):
+        for metodo, caminho in rotas_do_painel(cliente.app):
+            if caminho.startswith("/api/v1/painel/vendas"):
+                resposta = chamar(cliente, metodo, caminho, cabecalho(par, papel))
+                if resposta.status_code != 403:
+                    liberadas.append(f"{papel.value} {metodo} {caminho} -> {resposta.status_code}")
+    assert liberadas == [], "entrou nas vendas quem nao e vendedor:\n" + "\n".join(liberadas)
+
+
 def test_so_a_gestao_decide_ajuste_define_minimo_e_ve_a_gerencia(cliente, par):
     so_gestao = (
         ("POST", "/api/v1/painel/estoque/ajustes/{id}/aprovar"),
@@ -123,13 +151,30 @@ def test_so_a_gestao_decide_ajuste_define_minimo_e_ve_a_gerencia(cliente, par):
         ("PUT", "/api/v1/painel/estoque/minimos"),
     )
     for metodo, caminho in so_gestao:
-        for papel in (Papel.ATENDENTE, Papel.OPERADOR_ESTOQUE):
+        for papel in (Papel.ATENDENTE, Papel.OPERADOR_ESTOQUE, Papel.VENDEDOR):
             resposta = chamar(cliente, metodo, caminho, cabecalho(par, papel))
             assert resposta.status_code == 403, (metodo, caminho, papel)
 
 
+def test_vendedor_passa_so_no_saldo_nas_vendas_e_nos_clientes(cliente, par):
+    """Passar na trava de papel = nao ser 403 (aqui o banco falso responde 500 depois disso)."""
+    abertas = (
+        ("GET", "/api/v1/painel/estoque/saldo"),
+        ("GET", "/api/v1/painel/estoque/opcoes"),
+        ("GET", "/api/v1/painel/vendas"),
+        ("POST", "/api/v1/painel/vendas"),
+        ("GET", "/api/v1/painel/vendas/opcoes"),
+        ("GET", "/api/v1/painel/vendas/pecas"),
+        ("GET", "/api/v1/painel/vendas/clientes"),
+        ("POST", "/api/v1/painel/vendas/clientes/buscar"),
+    )
+    for metodo, caminho in abertas:
+        resposta = chamar(cliente, metodo, caminho, cabecalho(par, Papel.VENDEDOR))
+        assert resposta.status_code not in (401, 403), (metodo, caminho, resposta.status_code)
+
+
 def test_a_rede_e_a_gestao_do_admin_nao_abrem_para_os_demais(cliente, par):
-    for papel in (Papel.GERENTE_LOJA, Papel.ATENDENTE, Papel.OPERADOR_ESTOQUE):
+    for papel in (Papel.GERENTE_LOJA, Papel.ATENDENTE, Papel.OPERADOR_ESTOQUE, Papel.VENDEDOR):
         for metodo, caminho in (
             ("GET", "/api/v1/painel/gerencia/rede"),
             ("GET", "/api/v1/painel/gestao/usuarios"),

@@ -26,6 +26,9 @@ ABERTAS = {
     "/openapi.json",
     "/docs/oauth2-redirect",
     "/api/v1/cliente/catalogo/estoque",
+    # Ativacao da conta do cliente importado: ele ainda nao tem login (limite por IP).
+    "/api/v1/ativacao-conta",
+    "/api/v1/ativacao-conta/consultar",
 }
 METODOS = {"get", "post", "put", "patch", "delete"}
 

@@ -10,11 +10,16 @@ class Papel(StrEnum):
     ATENDENTE = "atendente"
     OPERADOR_ESTOQUE = "operador_estoque"
     GERENTE_LOJA = "gerente_loja"
+    # Vende e atende o cliente na loja e tambem da baixa no estoque: o que o operador de estoque e o
+    # atendente fazem, sem aprovar ajuste nem ver as compras do cliente.
+    VENDEDOR = "vendedor"
     ADMIN = "admin"
 
 
 # Papeis que pertencem a uma loja (CLAUDE.md, secao 3). Admin tem loja nula; cliente nao tem papel.
-PAPEIS_COM_LOJA = frozenset({Papel.ATENDENTE, Papel.OPERADOR_ESTOQUE, Papel.GERENTE_LOJA})
+PAPEIS_COM_LOJA = frozenset(
+    {Papel.ATENDENTE, Papel.OPERADOR_ESTOQUE, Papel.VENDEDOR, Papel.GERENTE_LOJA}
+)
 
 
 class UsuarioAtual(BaseModel):

@@ -19,6 +19,8 @@ class Settings(BaseSettings):
 
     database_url: SecretStr
     supabase_url: str | None = None
+    # So para o Admin API do Auth (ativar a conta de cliente importado). Segredo do servidor.
+    supabase_service_role_key: SecretStr | None = None
     cors_origins: Annotated[list[str], NoDecode] = []
     # /docs, /redoc e /openapi.json mostram o mapa inteiro da API: so ligam de proposito (dev).
     docs_habilitadas: bool = False

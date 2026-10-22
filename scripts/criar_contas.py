@@ -60,6 +60,7 @@ CONTAS = (
     Conta("cliente", "cliente", "cliente", "Cliente Casa Lorenzi", False),
     Conta("atendente", "atendente", "atendente", "Atendente Casa Lorenzi", True),
     Conta("operador_estoque", "operador_estoque", "operadorestoque", "Operador de Estoque", True),
+    Conta("vendedor", "vendedor", "vendedor", "Vendedor Casa Lorenzi", True),
     Conta("gerente_loja", "gerente_loja", "gerente", "Gerente da Loja", True),
     Conta("diretor", "admin", "admin", "Administrador Casa Lorenzi", False),
 )
