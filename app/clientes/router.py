@@ -10,7 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 
 from app.clientes import service
-from app.clientes.schemas import FichaCliente, ListaClientes
+from app.clientes.schemas import FichaCliente, ListaClientes, VultoMaisDaFicha
 from app.core.db import ExecutarDep
 from app.core.papeis import UsuarioAtual
 from app.core.security import requer_papel
@@ -47,5 +47,18 @@ def ficha(id_cliente: UUID, usuario: UsuarioDep, executar: ExecutarDep, id_loja:
     def operacao(conexao):
         escopo = service.montar_escopo(conexao, usuario, id_loja)
         return service.ficha(conexao, usuario, escopo, id_cliente)
+
+    return executar(operacao)
+
+
+@router.get(
+    "/{id_cliente}/vulto-mais", response_model=VultoMaisDaFicha, summary="Pontos Vulto+ do cliente"
+)
+def vulto_mais(
+    id_cliente: UUID, usuario: UsuarioDep, executar: ExecutarDep, id_loja: IdLoja = None
+):
+    def operacao(conexao):
+        escopo = service.montar_escopo(conexao, usuario, id_loja)
+        return service.vulto_mais(conexao, usuario, escopo, id_cliente)
 
     return executar(operacao)

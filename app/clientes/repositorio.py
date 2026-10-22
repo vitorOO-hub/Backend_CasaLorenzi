@@ -188,3 +188,34 @@ def ficha(
             ).mappings()
         ]
     return {"base": base, "chamados": chamados, "compras": compras}
+
+
+RESGATES_DA_FICHA = 10
+
+
+def resgates_e_loja_de_cadastro(conexao: Connection, id_cliente: UUID) -> dict[str, Any]:
+    """Ultimos resgates de pontos do cliente e a loja em que ele se cadastrou."""
+    loja = conexao.execute(
+        text(
+            """
+            SELECT l.nome FROM usuario u LEFT JOIN loja l ON l.id_loja = u.id_loja
+            WHERE u.id_usuario = CAST(:cid AS uuid)
+            """
+        ),
+        {"cid": str(id_cliente)},
+    ).scalar_one_or_none()
+    resgates = conexao.execute(
+        text(
+            """
+            SELECT r.resgatado_em, r.pontos, r.desconto, l.nome AS loja_nome, r.atendente,
+                   r.observacao
+            FROM resgate_pontos r
+            LEFT JOIN loja l ON l.id_loja = r.id_loja
+            WHERE r.id_usuario = CAST(:cid AS uuid)
+            ORDER BY r.resgatado_em DESC, r.criado_em DESC
+            LIMIT :limite
+            """
+        ),
+        {"cid": str(id_cliente), "limite": RESGATES_DA_FICHA},
+    ).mappings()
+    return {"loja_cadastro": loja, "resgates": [dict(r) for r in resgates]}

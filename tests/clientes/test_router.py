@@ -65,6 +65,21 @@ def chamadas(monkeypatch):
         }
 
     monkeypatch.setattr(service, "ficha", ficha_falsa)
+
+    def vulto_mais_falso(conexao, usuario, escopo, id_cliente):
+        registro.append(("vulto_mais", usuario, escopo, id_cliente))
+        return {
+            "saldo": 2000,
+            "categoria": "prata",
+            "creditos_no_ano": 2500,
+            "proxima_categoria": "ouro",
+            "faltam_para_proxima": 2500,
+            "loja_cadastro": "vulto pinheiros",
+            "extrato": [],
+            "resgates": [],
+        }
+
+    monkeypatch.setattr(service, "vulto_mais", vulto_mais_falso)
     return registro
 
 
@@ -92,7 +107,7 @@ def token(par, papel, loja=LOJA_A):
     return {"Authorization": f"Bearer {par.emitir(**claims)}"}
 
 
-ROTAS = ["", f"/{ID}"]
+ROTAS = ["", f"/{ID}", f"/{ID}/vulto-mais"]
 
 
 @pytest.mark.parametrize("caminho", ROTAS)
