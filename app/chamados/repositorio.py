@@ -19,6 +19,10 @@ EM_ANDAMENTO = ("em_andamento", "aguardando_cliente")
 RESOLVIDOS = ("resolvido", "encerrado")
 PRIORIDADES_ALTAS = ("alta", "urgente")
 
+# Atendimentos importados do historico da Vulto ficam fora das filas, contadores e paineis
+# (migration 20261023110000); continuam acessiveis pelo id e na ficha do cliente.
+FORA_DO_HISTORICO = "AND NOT a.historico_vulto"
+
 
 @dataclass(frozen=True)
 class Escopo:
@@ -177,7 +181,7 @@ def resumo(conexao: Connection, escopo: Escopo) -> dict[str, Any]:
                           AND a.id_usuario_responsavel = CAST(:id_usuario AS uuid)
                     ) AS meus
                 {DE_ONDE}
-                WHERE {NO_ESCOPO}
+                WHERE {NO_ESCOPO} {FORA_DO_HISTORICO}
                 """  # nosec B608
             ),
             {
@@ -208,6 +212,7 @@ def listar(
 ) -> tuple[int, list[dict[str, Any]]]:
     filtros = f"""
         WHERE {NO_ESCOPO}
+        {FORA_DO_HISTORICO}
         {SITUACOES[situacao]}
         {RESPONSAVEIS[responsavel]}
         AND (CAST(:prioridades AS text[]) IS NULL OR pr.codigo = ANY (CAST(:prioridades AS text[])))

@@ -25,7 +25,7 @@ WITH ped AS (
     JOIN status_pedido sp ON sp.id_status_pedido = p.id_status_pedido
     WHERE (CAST(:id_loja AS uuid) IS NULL OR p.id_loja = CAST(:id_loja AS uuid))
 ), cham AS (
-    SELECT a.id_cliente, a.id_usuario_responsavel, st.codigo AS status_codigo
+    SELECT a.id_cliente, a.id_usuario_responsavel, st.codigo AS status_codigo, a.historico_vulto
     FROM atendimento a
     JOIN status_atendimento st ON st.id_status_atendimento = a.id_status_atendimento
     WHERE {NO_ESCOPO}
@@ -35,7 +35,7 @@ WITH ped AS (
         cli.criado_em AS cliente_desde,
         (SELECT count(*) FROM cham c WHERE c.id_cliente = cli.id_usuario) AS total_chamados,
         (SELECT count(*) FROM cham c
-          WHERE c.id_cliente = cli.id_usuario
+          WHERE c.id_cliente = cli.id_usuario AND NOT c.historico_vulto
             AND c.status_codigo <> ALL (CAST(:finais AS text[]))) AS chamados_em_aberto,
         (SELECT count(*) FROM cham c
           WHERE c.id_cliente = cli.id_usuario
@@ -151,7 +151,8 @@ def ficha(
                 f"""
                 SELECT a.id_atendimento, a.protocolo, COALESCE(a.assunto, ct.nome) AS assunto,
                        ct.codigo AS categoria_codigo, ct.nome AS categoria_nome,
-                       st.codigo AS status_codigo, st.nome AS status_nome, a.aberto_em
+                       st.codigo AS status_codigo, st.nome AS status_nome, a.aberto_em,
+                       a.historico_vulto
                 FROM atendimento a
                 JOIN status_atendimento st ON st.id_status_atendimento = a.id_status_atendimento
                 JOIN categoria_atendimento ct

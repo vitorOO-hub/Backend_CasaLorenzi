@@ -695,6 +695,7 @@ def _linha_chamado(linha: dict[str, object]) -> dict[str, object]:
         "aberto_em": linha["aberto_em"],
         "atualizado_em": linha["atualizado_em"],
         "ultima_mensagem_em": linha["ultima_mensagem_em"],
+        "historico_vulto": linha["historico_vulto"],
     }
 
 
@@ -712,6 +713,7 @@ COLUNAS_CHAMADO_CLIENTE = """
     lj.nome AS loja_nome,
     a.aberto_em,
     a.atualizado_em,
+    a.historico_vulto,
     max(m.enviada_em) AS ultima_mensagem_em
 """
 
@@ -728,7 +730,8 @@ DE_ONDE_CHAMADO_CLIENTE = """
 
 AGRUPAR_CHAMADO_CLIENTE = """
     GROUP BY a.id_atendimento, a.protocolo, a.assunto, ct.nome, ct.codigo, st.codigo, st.nome,
-             a.id_pedido, p.numero_pedido, a.id_loja, lj.nome, a.aberto_em, a.atualizado_em
+             a.id_pedido, p.numero_pedido, a.id_loja, lj.nome, a.aberto_em, a.atualizado_em,
+             a.historico_vulto
 """
 
 
