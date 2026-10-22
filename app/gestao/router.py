@@ -4,7 +4,7 @@ Sempre exigem token valido e papel de admin, independente de AUTENTICACAO_OBRIGA
 aparece aqui. Mudancas valem para a pessoa quando o token dela renovar (o cargo vem do token).
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -16,7 +16,9 @@ from app.gestao import auditoria, catalogo, integracoes, service, vendas_pendent
 from app.gestao.schemas import (
     Auditoria,
     Catalogo,
+    DescarteDeVenda,
     Equipe,
+    ImportacaoDeVenda,
     Integracoes,
     MapeamentoDeRegistro,
     MudancaDeUsuario,
@@ -26,6 +28,8 @@ from app.gestao.schemas import (
     PecaExcluida,
     RegistroImportado,
     UsuarioDaEquipe,
+    VariacaoSugerida,
+    VendaPendenteDetalhe,
     VendasImportacaoPendentes,
 )
 
@@ -114,11 +118,74 @@ def vendas_aguardando_resolucao(
     executar: ExecutarDep,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    grupo: Literal[vendas_pendentes.GRUPOS] | None = None,  # type: ignore[valid-type]
+    estado: Literal["pendente", "importada", "descartada"] = "pendente",
+):
+    def operacao(conexao):
+        lista = vendas_pendentes.listar(
+            conexao, usuario, limit=limit, offset=offset, grupo=grupo, estado=estado
+        )
+        return {**lista, "por_grupo": vendas_pendentes.resumo_por_grupo(conexao, usuario, estado)}
+
+    return executar(operacao)
+
+
+@router.get(
+    "/vendas-pendentes/variacoes",
+    response_model=list[VariacaoSugerida],
+    summary="Buscar pecas para resolver uma venda pendente",
+)
+def variacoes_para_vendas_pendentes(
+    usuario: AdminDep,
+    executar: ExecutarDep,
+    busca: Annotated[str, Query(min_length=2, max_length=80)],
+):
+    return executar(lambda conexao: vendas_pendentes.buscar_variacoes(conexao, usuario, busca))
+
+
+@router.get(
+    "/vendas-pendentes/{id_venda}",
+    response_model=VendaPendenteDetalhe,
+    summary="Uma venda do Vulto aguardando resolucao, sem dados pessoais",
+)
+def venda_pendente(id_venda: UUID, usuario: AdminDep, executar: ExecutarDep):
+    return executar(lambda conexao: vendas_pendentes.detalhe(conexao, usuario, id_venda))
+
+
+def _confirmando(operacao):
+    def com_commit(conexao):
+        try:
+            resposta = operacao(conexao)
+            conexao.commit()
+            return resposta
+        except Exception:
+            conexao.rollback()
+            raise
+
+    return com_commit
+
+
+@router.post(
+    "/vendas-pendentes/{id_venda}/importar",
+    response_model=VendaPendenteDetalhe,
+    summary="Importar a venda como pedido, com o cliente e as pecas escolhidos",
+)
+def importar_venda_pendente(
+    id_venda: UUID, dados: ImportacaoDeVenda, usuario: AdminDep, executar: ExecutarDep
+):
+    return executar(_confirmando(lambda c: vendas_pendentes.importar(c, usuario, id_venda, dados)))
+
+
+@router.post(
+    "/vendas-pendentes/{id_venda}/descartar",
+    response_model=VendaPendenteDetalhe,
+    summary="Descartar a venda, com o porque",
+)
+def descartar_venda_pendente(
+    id_venda: UUID, dados: DescarteDeVenda, usuario: AdminDep, executar: ExecutarDep
 ):
     return executar(
-        lambda conexao: vendas_pendentes.listar(
-            conexao, usuario, limit=limit, offset=offset
-        )
+        _confirmando(lambda c: vendas_pendentes.descartar(c, usuario, id_venda, dados.observacao))
     )
 
 
