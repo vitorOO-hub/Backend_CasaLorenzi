@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from .lojas import CODIGO_LOJA_POR_ID_VULTO
-from .skus import normalizar_sku_reduzido
+from .skus import TAMANHO_NUMERICO, normalizar_sku_reduzido
 
 LOJA_POR_ABA = {
     "pinheiros": 1,
@@ -16,9 +16,6 @@ LOJA_POR_ABA = {
     "batel": 4,
     "cd": 7,
 }
-TAMANHO_NUMERICO = {"38": "P", "40": "M", "42": "G", "44": "G", "46": "GG"}
-
-
 def _texto(valor: object) -> str:
     return "" if valor is None else str(valor).strip()
 
@@ -65,9 +62,10 @@ def _sku(valor: object) -> str | None:
     )
     if canonico_numerico:
         categoria, modelo, cor, tamanho = canonico_numerico.groups()
-        tamanho_padrao = "PP" if int(tamanho) <= 36 else TAMANHO_NUMERICO.get(tamanho)
-        if tamanho_padrao:
-            return f"VLT-{categoria}-{modelo}-{cor}-{tamanho_padrao}"
+        tamanho_padrao = (
+            "PP" if int(tamanho) <= 36 else TAMANHO_NUMERICO.get(tamanho, tamanho)
+        )
+        return f"VLT-{categoria}-{modelo}-{cor}-{tamanho_padrao}"
     return texto.upper()
 
 
