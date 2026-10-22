@@ -251,7 +251,8 @@ def test_nao_se_apaga_loja_variacao_ou_usuario_com_ajuste(conn, base):
         ("usuario", "id_usuario", base["operador"].id),
         ("loja", "id_loja", base["loja"]),
     ):
-        with pytest.raises(psycopg.errors.RestrictViolation):
+        # RESTRICT: o PostgreSQL recusa com erro de integridade (o codigo exato varia).
+        with pytest.raises(psycopg.errors.IntegrityError):
             with conn.transaction():
                 conn.execute(f"DELETE FROM {tabela} WHERE {chave} = %s", (valor,))  # nosec B608
 

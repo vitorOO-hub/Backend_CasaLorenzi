@@ -81,6 +81,7 @@ def ficha(
                 "categoria": {"codigo": c["categoria_codigo"], "nome": c["categoria_nome"]},
                 "status": {"codigo": c["status_codigo"], "nome": c["status_nome"]},
                 "aberto_em": c["aberto_em"],
+                "historico_vulto": c["historico_vulto"],
             }
             for c in achada["chamados"]
         ],

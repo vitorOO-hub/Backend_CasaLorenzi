@@ -19,6 +19,10 @@ EM_ANDAMENTO = ("em_andamento", "aguardando_cliente")
 RESOLVIDOS = ("resolvido", "encerrado")
 PRIORIDADES_ALTAS = ("alta", "urgente")
 
+# Atendimentos importados do historico da Vulto ficam fora das filas, contadores e paineis
+# (migration 20261023110000); continuam acessiveis pelo id e na ficha do cliente.
+FORA_DO_HISTORICO = "AND NOT a.historico_vulto"
+
 
 @dataclass(frozen=True)
 class Escopo:
@@ -77,6 +81,8 @@ SITUACOES = {
     "em_andamento": "AND st.codigo = ANY (CAST(:em_andamento AS text[]))",
     "resolvido": "AND st.codigo = ANY (CAST(:resolvidos AS text[]))",
     "todos": "",
+    # So os importados do historico da Vulto, em qualquer situacao (consulta, fora da operacao).
+    "historico_vulto": "",
 }
 RESPONSAVEIS = {
     "eu": "AND a.id_usuario_responsavel = CAST(:id_usuario AS uuid)",
@@ -177,7 +183,7 @@ def resumo(conexao: Connection, escopo: Escopo) -> dict[str, Any]:
                           AND a.id_usuario_responsavel = CAST(:id_usuario AS uuid)
                     ) AS meus
                 {DE_ONDE}
-                WHERE {NO_ESCOPO}
+                WHERE {NO_ESCOPO} {FORA_DO_HISTORICO}
                 """  # nosec B608
             ),
             {
@@ -206,8 +212,10 @@ def listar(
     limit: int,
     offset: int,
 ) -> tuple[int, list[dict[str, Any]]]:
+    historico = "AND a.historico_vulto" if situacao == "historico_vulto" else FORA_DO_HISTORICO
     filtros = f"""
         WHERE {NO_ESCOPO}
+        {historico}
         {SITUACOES[situacao]}
         {RESPONSAVEIS[responsavel]}
         AND (CAST(:prioridades AS text[]) IS NULL OR pr.codigo = ANY (CAST(:prioridades AS text[])))

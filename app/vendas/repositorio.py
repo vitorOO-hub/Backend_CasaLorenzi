@@ -110,13 +110,14 @@ _VENDAS = """
     FROM pedido p
     JOIN loja l ON l.id_loja = p.id_loja
     JOIN status_pedido sp ON sp.id_status_pedido = p.id_status_pedido
-    JOIN usuario c ON c.id_usuario = p.id_cliente
+    LEFT JOIN usuario c ON c.id_usuario = p.id_cliente
     LEFT JOIN usuario v ON v.id_usuario = p.id_usuario_responsavel
     WHERE {filtro}
 """
 _COLUNAS_VENDA = """
     p.id_pedido, p.numero_pedido, p.criado_em, p.canal_venda, p.valor_total, p.observacao,
-    l.nome AS loja, c.nome AS cliente, c.documento AS cliente_cpf, v.nome AS vendedor,
+    l.nome AS loja, COALESCE(c.nome, 'Cliente nao identificado') AS cliente,
+    c.documento AS cliente_cpf, v.nome AS vendedor,
     sp.codigo AS status_codigo, sp.nome AS status,
     (SELECT COALESCE(sum(ip.quantidade), 0) FROM item_pedido ip
       WHERE ip.id_pedido = p.id_pedido)::int AS pecas
@@ -130,7 +131,8 @@ def _filtro_vendas(busca: str | None, id_loja: UUID) -> tuple[str, tuple[Any, ..
         return "p.id_loja = %s", (id_loja,)
     digitos = so_digitos(busca or "")
     return (
-        f"p.id_loja = %s AND (p.numero_pedido ILIKE %s {_ESC} OR c.nome ILIKE %s {_ESC} "
+        f"p.id_loja = %s AND (p.numero_pedido ILIKE %s {_ESC} "
+        f"OR COALESCE(c.nome, '') ILIKE %s {_ESC} "
         "OR (CAST(%s AS text) <> '' AND c.documento = %s))",
         (id_loja, padrao, padrao, digitos, digitos),
     )
@@ -295,7 +297,8 @@ def inserir_pedido(conexao: Connection, valores: tuple[Any, ...]) -> UUID:
         """,
         valores,
     )
-    assert linha is not None
+    if linha is None:  # INSERT ... RETURNING sempre devolve a linha
+        raise RuntimeError("pedido nao foi gravado")
     return linha["id_pedido"]
 
 

@@ -58,9 +58,11 @@ def cenario(fab):
     [
         ("cliente1", {"a1", "a3", "sem_loja", "resolvido"}),
         ("cliente2", {"a2"}),
-        ("atendente_a", {"a1", "a2", "resolvido"}),
-        ("gerente_a", {"a1", "a2", "resolvido"}),
-        ("atendente_b", {"a3"}),
+        # Chamado sem loja e da fila geral: atendente e gerente de qualquer loja veem
+        # (migration 20261014120000).
+        ("atendente_a", {"a1", "a2", "resolvido", "sem_loja"}),
+        ("gerente_a", {"a1", "a2", "resolvido", "sem_loja"}),
+        ("atendente_b", {"a3", "sem_loja"}),
         ("operador_a", set()),
         ("atendente_a_inativo", set()),
         ("admin", {"a1", "a2", "a3", "sem_loja", "resolvido"}),

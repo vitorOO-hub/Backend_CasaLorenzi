@@ -93,12 +93,12 @@ class PecaDaVenda(Saida):
     cor: str | None
     tamanho: str | None
     quantidade: int
-    preco_unitario: Decimal
-    valor_total: Decimal
+    preco_unitario: Decimal | None
+    valor_total: Decimal | None
 
 
 class DetalheDaVenda(ItemDeVenda):
-    cliente_cpf: str
+    cliente_cpf: str | None
     metodo_pagamento: str | None
     observacao: str | None
     itens_da_venda: list[PecaDaVenda]

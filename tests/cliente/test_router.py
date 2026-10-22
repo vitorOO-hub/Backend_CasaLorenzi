@@ -175,6 +175,7 @@ def test_rotas_do_cliente_estao_registradas(app, cliente):
     assert ("GET", "/api/v1/cliente/lojas") in registradas
     assert ("GET", "/api/v1/cliente/catalogo/estoque") in registradas
     assert ("GET", "/api/v1/cliente/perfil") in registradas
+    assert ("GET", "/api/v1/cliente/vulto-mais") in registradas
     assert ("GET", "/api/v1/cliente/pedidos") in registradas
     assert ("POST", "/api/v1/cliente/pedidos") in registradas
     assert ("GET", "/api/v1/cliente/pedidos/{id_pedido}") in registradas
@@ -200,6 +201,34 @@ def test_perfil_do_cliente_responde_200(app, cliente):
     assert resposta.status_code == 200
     assert resposta.json()["email"] == "cliente@casalorenzi.test"
     assert resposta.json()["total_pedidos"] == 2
+
+
+def test_vulto_mais_do_cliente_responde_200(app, cliente):
+    usar_cliente(app)
+    usar_executor(
+        app,
+        devolve(
+            {
+                "saldo": 4280,
+                "categoria": "prata",
+                "creditos_no_ano": 3100,
+                "proxima_categoria": "ouro",
+                "faltam_para_proxima": 1900,
+                "extrato": [
+                    {
+                        "ocorrido_em": "2026-10-12T15:00:00-03:00",
+                        "tipo": "credito",
+                        "pontos": 2340,
+                        "descricao": "compra 12 do banco antigo",
+                    }
+                ],
+            }
+        ),
+    )
+    resposta = cliente.get("/api/v1/cliente/vulto-mais")
+    assert resposta.status_code == 200
+    assert resposta.json()["saldo"] == 4280
+    assert resposta.json()["extrato"][0]["pontos"] == 2340
 
 
 def test_estoque_do_catalogo_responde_200_sem_login(app, cliente):

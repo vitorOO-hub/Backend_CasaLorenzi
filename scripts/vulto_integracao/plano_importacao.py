@@ -12,6 +12,7 @@ from .clientes_vendas import (
     resolver_id_cliente_venda,
 )
 from .lojas import CODIGO_LOJA_POR_ID_VULTO
+from .skus import resolver_id_variacao
 from .valores_vendas import reconciliar_valores_venda
 
 STATUS_POR_ORIGEM = {
@@ -129,7 +130,7 @@ def planejar_importacao(
         if _texto(variacao.get("sku")) and _texto(variacao.get("id_variacao"))
     }
 
-    pedidos, itens_pedido, pendencias = [], [], []
+    pedidos, itens_pedido, pendencias, rastreabilidade = [], [], [], []
     for venda_id, venda in vendas_por_id.items():
         motivos = []
         cliente_id, resolucao = resolver_id_cliente_venda(
@@ -170,7 +171,7 @@ def planejar_importacao(
         por_sku: dict[str, list[dict[str, object]]] = defaultdict(list)
         for item in linhas_item:
             sku = _texto(item.get("sku_padronizado"))
-            variacao_id = variacao_por_sku.get(sku)
+            variacao_id = resolver_id_variacao(sku, variacao_por_sku)
             if not variacao_id:
                 motivos.append("sku:variacao_nao_encontrada")
                 continue
@@ -197,7 +198,7 @@ def planejar_importacao(
             )
 
         itens_da_venda = []
-        for sku, linhas in por_sku.items():
+        for _, linhas in por_sku.items():
             precos = {linha["preco_unitario"] for linha in linhas}
             if len(precos) != 1:
                 motivos.append("sku:linhas_duplicadas_com_precos_diferentes")
@@ -220,6 +221,7 @@ def planejar_importacao(
             pendencias.append(
                 {
                     "venda_id": venda_id,
+                    "origem": "vulto",
                     "status_origem": status_origem or None,
                     "motivos": sorted(set(motivos)),
                     "dados_origem": {
@@ -249,10 +251,36 @@ def planejar_importacao(
                     f"Importado do Vulto; venda de origem {venda_id}; "
                     f"status original: {status_origem or 'ausente'}."
                 ),
+                "origem_importacao": "vulto",
+                "chave_origem": venda_id,
+                "venda_id_origem": venda_id,
+                "compra_id_origem": _texto(venda.get("compra_id_resolvida"))
+                or _texto(venda.get("compra_id")) or None,
+                "funcionario_id_origem": _texto(venda.get("funcionario_id")) or None,
+                "vendedor_padronizado": _texto(venda.get("vendedor_padronizado")) or None,
+                "dados_origem": {
+                    "venda": _campos_origem(venda, tuple(venda.keys())),
+                    "itens": [
+                        _campos_origem(item, tuple(item.keys()))
+                        for item in itens_por_venda.get(venda_id, [])
+                    ],
+                },
             }
         )
         for item in itens_da_venda:
             itens_pedido.append({"numero_pedido": f"VULTO-{venda_id}", **item})
+        rastreabilidade.append(
+            {
+                "numero_pedido": f"VULTO-{venda_id}",
+                "origem": "vulto",
+                "chave_origem": venda_id,
+                "venda_id_origem": venda_id,
+                "compra_id_origem": pedidos[-1]["compra_id_origem"],
+                "funcionario_id_origem": pedidos[-1]["funcionario_id_origem"],
+                "vendedor_padronizado": pedidos[-1]["vendedor_padronizado"],
+                "dados_origem": pedidos[-1]["dados_origem"],
+            }
+        )
 
     return {
         "codigo_lote": codigo_lote,
@@ -260,6 +288,7 @@ def planejar_importacao(
         "pedidos": pedidos,
         "itens_pedido": itens_pedido,
         "pendencias": pendencias,
+        "rastreabilidade": rastreabilidade,
         "total_vendas": len(vendas_por_id),
         "total_pedidos_planejados": len(pedidos),
         "total_vendas_pendentes": len(pendencias),
@@ -267,6 +296,8 @@ def planejar_importacao(
         "contagem_motivos_pendencia": dict(
             Counter(motivo for pendencia in pendencias for motivo in pendencia["motivos"])
         ),
-        "pagamentos": "nao planejados: a planilha de vendas nao fornece metodo/transacao de pagamento",
+        "pagamentos": (
+            "nao planejados: a planilha de vendas nao fornece metodo/transacao de pagamento"
+        ),
         "estoque": "nao alterado; pertence ao Bloco C",
     }

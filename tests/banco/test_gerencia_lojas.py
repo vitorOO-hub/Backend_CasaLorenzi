@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.core.padroes import texto_padrao
 from app.gerencia import service
 from app.gerencia.repositorio import Filtro
 
@@ -85,7 +86,7 @@ def test_cartao_da_loja_traz_so_numeros_da_propria_loja(sa_conn, cena):
     assert a["pecas_em_alerta"] == 1  # so a ativa abaixo do minimo (L2); L3 e inativa
     assert a["vendas_30_dias"] == 200.0
     assert a["chamados_abertos"] == 1
-    assert a["gerente"].startswith("Usuario")
+    assert a["gerente"].startswith(texto_padrao("Usuario"))
 
 
 def test_admin_ve_a_rede_e_cada_loja_tem_o_seu_numero(sa_conn, cena):

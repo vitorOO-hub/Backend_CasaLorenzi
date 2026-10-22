@@ -13,7 +13,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from app.chamados.repositorio import DE_ONDE, FINAIS, NO_ESCOPO, Escopo
+from app.chamados.repositorio import DE_ONDE, FINAIS, FORA_DO_HISTORICO, NO_ESCOPO, Escopo
 
 LIMITE_TEXTO_PREVIA = 140
 
@@ -46,7 +46,7 @@ LEFT JOIN LATERAL (
 ) nl ON true
 """
 
-ABERTAS = "AND st.codigo <> ALL (CAST(:finais AS text[]))"
+ABERTAS = f"AND st.codigo <> ALL (CAST(:finais AS text[])) {FORA_DO_HISTORICO}"
 
 # Fragmentos fixos escolhidos pelo codigo: o texto do usuario nunca vira SQL.
 SECOES = {

@@ -116,6 +116,24 @@ class PerfilCliente(BaseModel):
     complemento: str | None = None
 
 
+class MovimentoPontosCliente(BaseModel):
+    ocorrido_em: datetime
+    tipo: str
+    pontos: int
+    descricao: str
+
+
+class VultoMaisCliente(BaseModel):
+    """Programa de pontos da casa: saldo, categoria do ano e as ultimas movimentacoes."""
+
+    saldo: int
+    categoria: str
+    creditos_no_ano: int
+    proxima_categoria: str | None = None
+    faltam_para_proxima: int | None = None
+    extrato: list[MovimentoPontosCliente]
+
+
 class ItemPedidoCliente(BaseModel):
     id_item_pedido: UUID
     id_variacao: UUID
@@ -127,8 +145,8 @@ class ItemPedidoCliente(BaseModel):
     cor: str
     tamanho: str
     quantidade: int
-    preco_unitario: Decimal
-    valor_total: Decimal
+    preco_unitario: Decimal | None
+    valor_total: Decimal | None
 
 
 class PagamentoCliente(BaseModel):
@@ -235,6 +253,8 @@ class ChamadoCliente(BaseModel):
     aberto_em: datetime
     atualizado_em: datetime
     ultima_mensagem_em: datetime | None = None
+    # Atendimento importado do historico da Vulto (fora das filas da equipe).
+    historico_vulto: bool = False
 
 
 class DetalheChamadoCliente(ChamadoCliente):

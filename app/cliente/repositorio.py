@@ -695,6 +695,7 @@ def _linha_chamado(linha: dict[str, object]) -> dict[str, object]:
         "aberto_em": linha["aberto_em"],
         "atualizado_em": linha["atualizado_em"],
         "ultima_mensagem_em": linha["ultima_mensagem_em"],
+        "historico_vulto": linha["historico_vulto"],
     }
 
 
@@ -712,6 +713,7 @@ COLUNAS_CHAMADO_CLIENTE = """
     lj.nome AS loja_nome,
     a.aberto_em,
     a.atualizado_em,
+    a.historico_vulto,
     max(m.enviada_em) AS ultima_mensagem_em
 """
 
@@ -728,7 +730,8 @@ DE_ONDE_CHAMADO_CLIENTE = """
 
 AGRUPAR_CHAMADO_CLIENTE = """
     GROUP BY a.id_atendimento, a.protocolo, a.assunto, ct.nome, ct.codigo, st.codigo, st.nome,
-             a.id_pedido, p.numero_pedido, a.id_loja, lj.nome, a.aberto_em, a.atualizado_em
+             a.id_pedido, p.numero_pedido, a.id_loja, lj.nome, a.aberto_em, a.atualizado_em,
+             a.historico_vulto
 """
 
 
@@ -1385,3 +1388,56 @@ def criar_checkout(
         raise
 
     return obter_pedido_cliente(conexao, id_cliente, id_pedido)
+
+
+# Categoria pelos pontos creditados no ano (regra do programa Vulto+).
+CATEGORIAS_VULTO_MAIS = (("ouro", 5000), ("prata", 2000), ("bronze", 0))
+EXTRATO_VULTO_MAIS = 8
+
+
+def vulto_mais_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, object]:
+    """Saldo e categoria do programa de pontos. O saldo e a soma do extrato (ja com os
+    vencimentos lancados); a categoria vem dos creditos do ano corrente."""
+    resumo = (
+        conexao.execute(
+            text(
+                """
+            SELECT
+                COALESCE(sum(pontos), 0)::int AS saldo,
+                COALESCE(sum(pontos) FILTER (
+                    WHERE pontos > 0 AND tipo <> 'estorno'
+                      AND ocorrido_em >= date_trunc('year', now() AT TIME ZONE 'America/Sao_Paulo')
+                ), 0)::int AS creditos_no_ano
+            FROM movimento_pontos
+            WHERE id_usuario = CAST(:cliente AS uuid)
+            """
+            ),
+            {"cliente": str(id_cliente)},
+        )
+        .mappings()
+        .one()
+    )
+    extrato = conexao.execute(
+        text(
+            """
+        SELECT ocorrido_em, tipo, pontos, descricao
+        FROM movimento_pontos
+        WHERE id_usuario = CAST(:cliente AS uuid)
+        ORDER BY ocorrido_em DESC, criado_em DESC
+        LIMIT :limite
+        """
+        ),
+        {"cliente": str(id_cliente), "limite": EXTRATO_VULTO_MAIS},
+    ).mappings()
+    creditos = resumo["creditos_no_ano"]
+    categoria = next(nome for nome, minimo in CATEGORIAS_VULTO_MAIS if creditos >= minimo)
+    acima = [(nome, minimo) for nome, minimo in CATEGORIAS_VULTO_MAIS if minimo > creditos]
+    proxima = acima[-1] if acima else None
+    return {
+        "saldo": resumo["saldo"],
+        "categoria": categoria,
+        "creditos_no_ano": creditos,
+        "proxima_categoria": proxima[0] if proxima else None,
+        "faltam_para_proxima": proxima[1] - creditos if proxima else None,
+        "extrato": [dict(linha) for linha in extrato],
+    }

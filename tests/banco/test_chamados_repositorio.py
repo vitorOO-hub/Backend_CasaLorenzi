@@ -16,6 +16,7 @@ from app.chamados.erros import (
     ChamadoSemResponsavel,
     SemPermissaoNoChamado,
 )
+from app.core.padroes import telefone_padrao, texto_padrao
 from app.core.papeis import Papel, UsuarioAtual
 
 pytestmark = pytest.mark.banco
@@ -180,13 +181,16 @@ def test_protocolo_informado_e_respeitado_e_repetido_e_recusado(fab_sa, cenario)
         )
 
 
-def test_cidade_do_cliente_nao_aceita_texto_vazio(fab_sa, cenario):
-    import psycopg
-
-    with pytest.raises(psycopg.errors.CheckViolation):
-        fab_sa.conn.execute(
-            "UPDATE usuario SET cidade = '   ' WHERE id_usuario = %s", (cenario.cliente.id,)
-        )
+def test_cidade_do_cliente_nunca_fica_em_branco(fab_sa, cenario):
+    # A padronizacao (migration 20261023100000) transforma texto so de espacos em nulo antes da
+    # checagem: a cidade em branco nao e gravada, fica vazia.
+    fab_sa.conn.execute(
+        "UPDATE usuario SET cidade = '   ' WHERE id_usuario = %s", (cenario.cliente.id,)
+    )
+    cidade = fab_sa.conn.execute(
+        "SELECT cidade FROM usuario WHERE id_usuario = %s", (cenario.cliente.id,)
+    ).fetchone()[0]
+    assert cidade is None
 
 
 # ------------------------------------------------------------------ lista e filtros
@@ -310,7 +314,8 @@ def test_detalhe_traz_cliente_pedido_peca_anexo_e_outros_chamados(sa_conn, cenar
     token, escopo = contexto(sa_conn, cenario.ate_a)
     d = service.detalhe(sa_conn, token, escopo, cenario.ids["c1"])
     assert d["cliente"]["nome"] and d["cliente"]["email"].endswith("@teste.local")
-    assert d["cliente"]["telefone"] == "11 99999-0000" and d["cliente"]["cidade"] == "Sao Paulo, SP"
+    assert d["cliente"]["telefone"] == telefone_padrao("11 99999-0000")
+    assert d["cliente"]["cidade"] == texto_padrao("Sao Paulo, SP")
     assert d["pedido"]["numero_pedido"].startswith("PD-") and d["pedido"]["status"]
     assert len(d["pecas"]) == 1 and d["pecas"][0]["sku"].startswith("SKU-")
     assert [a["nome"] for a in d["anexos"]] == ["foto.jpg"]
@@ -403,7 +408,7 @@ def test_assumir_de_novo_diz_quem_ja_assumiu(sa_conn, cenario):
     _, escopo_a = contexto(sa_conn, cenario.ate_a)
     service.assumir(sa_conn, escopo_a, cenario.ids["c1"])
     _, escopo_a2 = contexto(sa_conn, cenario.ate_a2)
-    with pytest.raises(ChamadoJaAssumido, match=r"Usuario \d+ ja assumiu"):
+    with pytest.raises(ChamadoJaAssumido, match=r"usuario \d+ ja assumiu"):
         service.assumir(sa_conn, escopo_a2, cenario.ids["c1"])
     with pytest.raises(ChamadoJaAssumido, match="Voce ja assumiu"):
         service.assumir(sa_conn, escopo_a, cenario.ids["c1"])
