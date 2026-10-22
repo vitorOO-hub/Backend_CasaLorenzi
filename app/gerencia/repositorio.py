@@ -16,6 +16,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from app.core.padroes import texto_padrao
+
 FUSO = "America/Sao_Paulo"
 STATUS_DE_VENDA = ("pago", "separado", "entregue")
 CANAIS_DE_VENDA = (("loja", "Loja"), ("online", "Online"))
@@ -35,7 +37,8 @@ class Filtro:
         return {
             "id_loja": str(self.id_loja) if self.id_loja else None,
             "ids_loja": [str(i) for i in self.ids_loja],
-            "categoria": self.categoria,
+            # A categoria e gravada no padrao (minusculas): o filtro le no mesmo padrao.
+            "categoria": texto_padrao(self.categoria),
             "canal": self.canal,
             "status_de_venda": list(STATUS_DE_VENDA),
             "fuso": FUSO,

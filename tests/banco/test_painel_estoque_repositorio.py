@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from app.core.erros_auth import SemPermissao
+from app.core.padroes import texto_padrao
 from app.core.papeis import Papel, UsuarioAtual
 from app.dashboard.erros import PeriodoInvalido
 from app.painel_estoque import repositorio, service
@@ -197,12 +198,15 @@ def test_texto_da_busca_nunca_vira_curinga_nem_sql(sa_conn, cena, busca):
 
 
 def test_filtro_de_categoria_e_de_situacao(sa_conn, cena):
-    assert set(skus(saldo(sa_conn, FiltroSaldo(cena.a, categoria="Camisas")))) == {
+    assert set(skus(saldo(sa_conn, FiltroSaldo(cena.a, categoria=texto_padrao("Camisas"))))) == {
         "SKU-OK",
         "SKU-BAIXO",
     }
     assert skus(saldo(sa_conn, FiltroSaldo(cena.a, situacao="esgotado"))) == ["SKU-ESGOTADO"]
-    assert skus(saldo(sa_conn, FiltroSaldo(cena.a, categoria="Calcas", situacao="ok"))) == []
+    assert (
+        skus(saldo(sa_conn, FiltroSaldo(cena.a, categoria=texto_padrao("Calcas"), situacao="ok")))
+        == []
+    )
 
 
 def test_peca_ou_produto_inativo_nao_aparece(sa_conn, cena):
@@ -225,13 +229,13 @@ def test_paginacao_devolve_o_total_real(sa_conn, cena):
 
 def test_preco_e_o_de_venda_da_variacao(sa_conn, cena):
     item = next(i for i in saldo(sa_conn, FiltroSaldo(cena.a))["itens"] if i["sku"] == "SKU-BAIXO")
-    assert item["preco"] == 200.0 and item["cor"] == "Branco"
+    assert item["preco"] == 200.0 and item["cor"] == texto_padrao("Branco")
 
 
 def test_opcoes_trazem_categorias_pecas_e_escopo(sa_conn, cena):
     usuario = UsuarioAtual(id_auth=cena.gerente.auth, papel=Papel.GERENTE_LOJA, id_loja=cena.a)
     o = service.montar_opcoes(sa_conn, usuario, cena.a)
-    assert o["categorias"] == ["Calcas", "Camisas"]
+    assert o["categorias"] == [texto_padrao("Calcas"), texto_padrao("Camisas")]
     assert {p["sku"] for p in o["pecas"]} == {"SKU-OK", "SKU-BAIXO", "SKU-ESGOTADO"}
     assert [x["id_loja"] for x in o["lojas"]] == [cena.a]
     assert {cena.a, cena.b} <= {x["id_loja"] for x in o["rede"]}  # a rede toda, so id e nome
@@ -342,9 +346,9 @@ def test_mostra_responsavel_motivo_pedido_e_saldos(sa_conn, cena):
     r = {i["tipo_codigo"]: i for i in historico(sa_conn, FiltroMovimentacoes(cena.a))["itens"]}
     assert (r["venda"]["responsavel"], r["venda"]["numero_pedido"]) == (None, "SD-777")
     assert (r["venda"]["quantidade_anterior"], r["venda"]["quantidade_posterior"]) == (20, 18)
-    assert r["entrada"]["responsavel"].startswith("Usuario")  # nome de quem registrou
+    assert r["entrada"]["responsavel"].startswith(texto_padrao("Usuario"))  # nome de quem registrou
     assert r["entrada"]["motivo"] == "Fornecedor" and r["entrada"]["numero_pedido"] is None
-    assert r["entrada"]["produto"] == "Camisa Linho"
+    assert r["entrada"]["produto"] == texto_padrao("Camisa Linho")
 
 
 def test_operador_ve_so_o_que_ele_registrou(sa_conn, cena):

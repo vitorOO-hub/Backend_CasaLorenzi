@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 
 from app.cliente import repositorio
+from app.core.padroes import texto_padrao
 from tests.banco.test_chat_repositorio import SemCommit
 
 pytestmark = pytest.mark.banco
@@ -43,9 +44,10 @@ def test_subtotal_do_carrinho_e_isolamento_entre_clientes(sa_conn, fab_sa):
 
     # O checkout abre com o endereco do cadastro; a conta da fabrica ja tem um completo.
     perfil = repositorio.perfil_cliente(sa_conn, id_a)
+    # Endereco gravado no padrao do banco (app/core/padroes.py).
     assert (perfil["rua"], perfil["bairro"], perfil["numero_endereco"], perfil["cep"]) == (
-        "Rua Teste",
-        "Centro",
+        texto_padrao("Rua Teste"),
+        texto_padrao("Centro"),
         "10",
         "01001000",
     )

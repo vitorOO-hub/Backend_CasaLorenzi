@@ -11,6 +11,7 @@ from sqlalchemy import create_engine
 
 from app.core.db import _url_sqlalchemy
 from app.core.erros_auth import SemPermissao
+from app.core.padroes import texto_padrao
 from app.core.papeis import Papel, UsuarioAtual
 from app.painel_estoque import service, service_escrita
 from app.painel_estoque.erros import (
@@ -257,7 +258,7 @@ def test_pedido_guarda_a_diferenca_e_nao_mexe_no_saldo(sa_conn, cena):
     a = pedir(sa_conn, cena, cena.p.operador, 2)
     assert (a["quantidade"], a["saldo_atual"], a["status"]) == (-3, 5, "pendente")
     assert (a["decisor"], a["decidido_em"], a["motivo_recusa"]) == (None, None, None)
-    assert a["solicitante"].startswith("Usuario") and a["sku"] == "SKU-5"
+    assert a["solicitante"].startswith(texto_padrao("Usuario")) and a["sku"] == "SKU-5"
     assert saldo_de(cena, cena.a, cena.v.com_saldo) == 5
     assert cena.c.execute("SELECT count(*) FROM movimentacao_estoque").fetchone()[0] == 0
 
