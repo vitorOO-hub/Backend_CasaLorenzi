@@ -65,7 +65,8 @@ WITH ped AS (
     LEFT JOIN LATERAL (
         SELECT sum(m.pontos)::int AS saldo,
                COALESCE(sum(m.pontos) FILTER (
-                   WHERE m.pontos > 0 AND m.tipo <> 'estorno'
+                   WHERE ((m.pontos > 0 AND m.tipo <> 'estorno')
+                          OR (m.tipo = 'estorno' AND m.id_pedido IS NOT NULL))
                      AND m.ocorrido_em >= date_trunc('year', now() AT TIME ZONE 'America/Sao_Paulo')
                ), 0)::int AS creditos_no_ano
         FROM movimento_pontos m

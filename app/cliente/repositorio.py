@@ -1405,7 +1405,9 @@ def vulto_mais_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, objec
             SELECT
                 COALESCE(sum(pontos), 0)::int AS saldo,
                 COALESCE(sum(pontos) FILTER (
-                    WHERE pontos > 0 AND tipo <> 'estorno'
+                    -- creditos do ano; compra cancelada (estorno ligado ao pedido) desconta
+                    WHERE ((pontos > 0 AND tipo <> 'estorno')
+                           OR (tipo = 'estorno' AND id_pedido IS NOT NULL))
                       AND ocorrido_em >= date_trunc('year', now() AT TIME ZONE 'America/Sao_Paulo')
                 ), 0)::int AS creditos_no_ano
             FROM movimento_pontos
