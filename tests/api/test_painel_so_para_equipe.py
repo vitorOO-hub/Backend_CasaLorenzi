@@ -140,6 +140,7 @@ def test_a_rede_e_a_gestao_do_admin_nao_abrem_para_os_demais(cliente, par):
             ("DELETE", "/api/v1/painel/gestao/catalogo/{id}"),
             ("GET", "/api/v1/painel/gestao/auditoria"),
             ("GET", "/api/v1/painel/gestao/integracoes"),
+            ("GET", "/api/v1/painel/gestao/vendas-pendentes"),
             ("POST", "/api/v1/painel/gestao/integracoes/registros/{id}/mapear"),
         ):
             resposta = chamar(cliente, metodo, caminho, cabecalho(par, papel))
