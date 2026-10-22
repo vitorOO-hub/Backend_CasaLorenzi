@@ -64,6 +64,7 @@ def test_so_o_admin_ve_o_time_e_cliente_nunca_aparece(sa_conn, fab_sa):
         "atendente",
         "gerente_loja",
         "operador_estoque",
+        "vendedor",
     }
     assert str(loja) in {str(x["id_loja"]) for x in equipe["opcoes"]["lojas"]}
     assert equipe["total"] == len(equipe["itens"])

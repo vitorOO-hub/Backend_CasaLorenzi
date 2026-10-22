@@ -20,7 +20,7 @@ def cliente_pendente(conexao: Connection, cpf: str, *, travar: bool = False) -> 
           AND u.ativo IS TRUE
           AND u.auth_user_id IS NULL
         {"FOR UPDATE OF u" if travar else ""}
-        """,  # noqa: S608 - so o sufixo fixo acima muda; o CPF vai como parametro
+        """,  # noqa: S608  # nosec B608 - so o sufixo fixo acima muda; o CPF vai como parametro
         (cpf,),
     )
 

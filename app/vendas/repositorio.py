@@ -297,7 +297,8 @@ def inserir_pedido(conexao: Connection, valores: tuple[Any, ...]) -> UUID:
         """,
         valores,
     )
-    assert linha is not None
+    if linha is None:  # INSERT ... RETURNING sempre devolve a linha
+        raise RuntimeError("pedido nao foi gravado")
     return linha["id_pedido"]
 
 
