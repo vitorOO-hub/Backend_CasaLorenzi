@@ -9,6 +9,7 @@ from sqlalchemy.engine import Connection
 from app.chamados.repositorio import Escopo
 from app.chamados.service import GESTAO, PAPEIS_DO_PAINEL, montar_escopo, resolver_loja
 from app.cliente import repositorio as repositorio_do_cliente
+from app.cliente.vencimento_pontos import lancar_vencimentos
 from app.clientes import repositorio
 from app.clientes.erros import ClienteNaoEncontrado
 from app.core.papeis import UsuarioAtual
@@ -138,11 +139,13 @@ def vulto_mais(
     escopo nao ve os pontos dele. O valor dos resgates segue a regra das compras."""
     if repositorio.ficha(conexao, escopo, id_cliente, ver_compras=False) is None:
         raise ClienteNaoEncontrado()
+    aviso = lancar_vencimentos(conexao, id_cliente)
     pontos = repositorio_do_cliente.vulto_mais_cliente(conexao, id_cliente)
     extra = repositorio.resgates_e_loja_de_cadastro(conexao, id_cliente)
     ver = pode_ver_compras(usuario)
     return {
         **pontos,
+        **aviso,
         "loja_cadastro": extra["loja_cadastro"],
         "resgates": [{**r, "desconto": r["desconto"] if ver else None} for r in extra["resgates"]],
     }

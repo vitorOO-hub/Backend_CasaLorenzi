@@ -1,5 +1,6 @@
 """Rotas de clientes do painel: papel, escopo, validacao e privacidade, sem banco."""
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -33,6 +34,9 @@ ITEM = {
     "compras": None,
     "total_gasto": None,
 }
+
+# As rotas do Vulto+ confirmam a transacao (vencimentos lancados na leitura).
+CONEXAO_FALSA = SimpleNamespace(commit=lambda: None)
 
 
 @pytest.fixture
@@ -94,7 +98,7 @@ def cliente(par, chamadas):
         Settings(_env_file=None, database_url=DATABASE_URL_TESTE, supabase_url=SUPABASE_URL)
     )
     app.state.provedor_chaves = provedor_para(par)
-    app.dependency_overrides[get_executar] = lambda: lambda operacao: operacao(None)
+    app.dependency_overrides[get_executar] = lambda: lambda operacao: operacao(CONEXAO_FALSA)
     return TestClient(app)
 
 

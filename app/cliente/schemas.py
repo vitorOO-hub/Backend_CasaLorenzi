@@ -123,6 +123,11 @@ class MovimentoPontosCliente(BaseModel):
     descricao: str
 
 
+class VencimentoProximo(BaseModel):
+    vence_em: datetime
+    pontos: int
+
+
 class VultoMaisCliente(BaseModel):
     """Programa de pontos da casa: saldo, categoria do ano e as ultimas movimentacoes."""
 
@@ -132,6 +137,9 @@ class VultoMaisCliente(BaseModel):
     proxima_categoria: str | None = None
     faltam_para_proxima: int | None = None
     extrato: list[MovimentoPontosCliente]
+    # Aviso: pontos que vencem nos proximos 30 dias, por data.
+    pontos_a_vencer: int = 0
+    proximos_vencimentos: list[VencimentoProximo] = []
 
 
 class ItemPedidoCliente(BaseModel):
