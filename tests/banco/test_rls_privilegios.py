@@ -77,11 +77,12 @@ def test_anon_so_tem_privilegio_no_catalogo(conn):
 
 
 def test_anon_ainda_le_o_catalogo_publico(conn, fab):
+    # As migrations tambem criam lojas (Vulto, e-commerce): confere as deste teste.
     ativa = fab.loja()
-    fab.loja(ativa=False)
+    inativa = fab.loja(ativa=False)
     with como(conn, role="anon"):
         ids = {linha[0] for linha in tenta(conn, "SELECT id_loja FROM loja")}
-    assert ids == {ativa}
+    assert ativa in ids and inativa not in ids
 
 
 def test_authenticated_so_escreve_nas_duas_excecoes(conn):

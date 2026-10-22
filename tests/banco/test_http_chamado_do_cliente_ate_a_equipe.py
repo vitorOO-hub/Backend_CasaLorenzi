@@ -142,9 +142,17 @@ def test_chamado_sem_loja_aparece_para_a_equipe_de_todas_as_lojas(cena):
     assert proto in _protocolos(http, como("atendente_b"))
 
 
-def test_chamado_com_pedido_vai_para_a_loja_do_pedido(cena):
+def test_chamado_com_pedido_sem_loja_escolhida_vai_para_a_fila_geral(cena):
+    # A loja do chamado e so a que o cliente escolhe; o pedido e contexto (migration 20261014120000).
     http, como, ids, _ = cena
     proto = _abrir(http, como, id_pedido=str(ids["pedido_b"]))["protocolo"]
+    assert proto in _protocolos(http, como("atendente_b"))
+    assert proto in _protocolos(http, como("atendente_a"))
+
+
+def test_chamado_com_pedido_e_loja_escolhida_vai_so_para_a_loja(cena):
+    http, como, ids, _ = cena
+    proto = _abrir(http, como, id_pedido=str(ids["pedido_b"]), id_loja=str(ids["b"]))["protocolo"]
     assert proto in _protocolos(http, como("atendente_b"))
     assert proto not in _protocolos(http, como("atendente_a"))
 
