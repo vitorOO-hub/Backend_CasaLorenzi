@@ -51,7 +51,14 @@ WITH venda AS (
         p.canal_venda,
         (p.criado_em AT TIME ZONE :fuso)::date AS dia,
         i.quantidade,
-        i.valor_total AS valor,
+        COALESCE(i.valor_total, 0) AS valor,
+        CASE
+            WHEN i.preco_unitario IS NULL
+             AND CAST(:categoria AS text) IS NULL
+             AND row_number() OVER (PARTITION BY p.id_pedido ORDER BY i.id_item_pedido) = 1
+            THEN p.valor_total - p.valor_frete
+            ELSE 0
+        END AS valor_sem_rateio,
         produto.id_produto,
         produto.nome AS produto,
         produto.categoria
@@ -83,10 +90,10 @@ def resumo(conexao: Connection, filtro: Filtro, inicio: date, fim: date) -> dict
                 VENDAS
                 + """
                 SELECT
-                    COALESCE(sum(valor), 0) AS faturamento,
+                    COALESCE(sum(valor + valor_sem_rateio), 0) AS faturamento,
                     count(DISTINCT id_pedido) AS pedidos,
                     COALESCE(sum(quantidade), 0) AS pecas,
-                    COALESCE(sum(valor) FILTER (WHERE canal_venda = 'online'), 0)
+                    COALESCE(sum(valor + valor_sem_rateio) FILTER (WHERE canal_venda = 'online'), 0)
                         AS faturamento_online,
                     count(DISTINCT id_pedido) FILTER (WHERE canal_venda = 'online')
                         AS pedidos_online
@@ -110,7 +117,7 @@ def serie_diaria(
             + """
             SELECT
                 dias.dia::date AS data,
-                COALESCE(sum(venda.valor), 0) AS faturamento,
+                COALESCE(sum(venda.valor + venda.valor_sem_rateio), 0) AS faturamento,
                 count(DISTINCT venda.id_pedido) AS pedidos,
                 COALESCE(sum(venda.quantidade), 0) AS pecas
             FROM generate_series(
@@ -298,13 +305,24 @@ SELECT
      JOIN variacao_produto v ON v.id_variacao = e.id_variacao AND v.ativa
      WHERE e.id_loja = l.id_loja AND e.quantidade <= e.estoque_minimo) AS pecas_em_alerta,
     COALESCE((
-        SELECT sum(i.valor_total)
+        SELECT sum(COALESCE(i.valor_total, 0))
         FROM pedido p
         JOIN status_pedido s ON s.id_status_pedido = p.id_status_pedido
         JOIN item_pedido i ON i.id_pedido = p.id_pedido
         WHERE p.id_loja = l.id_loja
           AND s.codigo = ANY(CAST(:status_de_venda AS text[]))
           AND p.criado_em >= now() - interval '30 days'
+    ), 0) + COALESCE((
+        SELECT sum(p.valor_total - p.valor_frete)
+        FROM pedido p
+        JOIN status_pedido s ON s.id_status_pedido = p.id_status_pedido
+        WHERE p.id_loja = l.id_loja
+          AND s.codigo = ANY(CAST(:status_de_venda AS text[]))
+          AND p.criado_em >= now() - interval '30 days'
+          AND EXISTS (
+              SELECT 1 FROM item_pedido i
+              WHERE i.id_pedido = p.id_pedido AND i.preco_unitario IS NULL
+          )
     ), 0) AS vendas_30_dias,
     (SELECT count(*) FROM atendimento a
      JOIN status_atendimento sa ON sa.id_status_atendimento = a.id_status_atendimento
@@ -398,10 +416,10 @@ def vendas_por_loja(
             + """
             SELECT
                 id_loja,
-                COALESCE(sum(valor), 0) AS faturamento,
+                COALESCE(sum(valor + valor_sem_rateio), 0) AS faturamento,
                 count(DISTINCT id_pedido) AS pedidos,
                 COALESCE(sum(quantidade), 0) AS pecas,
-                COALESCE(sum(valor) FILTER (WHERE canal_venda = 'online'), 0)
+                COALESCE(sum(valor + valor_sem_rateio) FILTER (WHERE canal_venda = 'online'), 0)
                     AS faturamento_online
             FROM venda
             WHERE id_loja IS NOT NULL

@@ -51,10 +51,12 @@ def validar_plano(plano: dict[str, Any]) -> None:
     pedidos = plano.get("pedidos")
     itens = plano.get("itens_pedido")
     pendencias = plano.get("pendencias", [])
+    rastreabilidade = plano.get("rastreabilidade", [])
     if (
         not isinstance(pedidos, list)
         or not isinstance(itens, list)
         or not isinstance(pendencias, list)
+        or not isinstance(rastreabilidade, list)
     ):
         raise ImportacaoVultoError(
             "Plano precisa conter listas de pedidos, itens_pedido e pendencias"
@@ -67,8 +69,9 @@ def validar_plano(plano: dict[str, Any]) -> None:
     ids_pendentes = set()
     for pendencia in pendencias:
         venda_id = str(pendencia.get("venda_id") or "").strip()
+        chave = (str(pendencia.get("origem") or "vulto"), venda_id)
         motivos = pendencia.get("motivos")
-        if not venda_id or venda_id in ids_pendentes:
+        if not venda_id or chave in ids_pendentes:
             raise ImportacaoVultoError("Plano contem venda pendente sem ID ou com ID duplicado")
         if (
             not isinstance(motivos, list)
@@ -78,13 +81,7 @@ def validar_plano(plano: dict[str, Any]) -> None:
             raise ImportacaoVultoError(f"Venda pendente sem motivos validos: {venda_id}")
         if not isinstance(pendencia.get("dados_origem"), dict):
             raise ImportacaoVultoError(f"Venda pendente sem dados de origem: {venda_id}")
-        ids_pendentes.add(venda_id)
-
-    ids_prontos = {
-        str(pedido.get("numero_pedido") or "").removeprefix("VULTO-") for pedido in pedidos
-    }
-    if ids_pendentes & ids_prontos:
-        raise ImportacaoVultoError("Uma venda aparece como pronta e pendente no mesmo plano")
+        ids_pendentes.add(chave)
 
     pedidos_por_numero = {}
     for pedido in pedidos:
@@ -92,15 +89,32 @@ def validar_plano(plano: dict[str, Any]) -> None:
         if not numero or numero in pedidos_por_numero:
             raise ImportacaoVultoError("Plano contem numero_pedido vazio ou duplicado")
         pedidos_por_numero[numero] = pedido
+        chave = (
+            str(pedido.get("origem_importacao") or "vulto"),
+            str(pedido.get("chave_origem") or ""),
+        )
+        if chave[1] and chave in ids_pendentes:
+            raise ImportacaoVultoError("Uma origem aparece como pronta e pendente no mesmo plano")
+
+    chaves_rastreabilidade = set()
+    for registro in rastreabilidade:
+        origem = str(registro.get("origem") or "vulto")
+        chave = str(registro.get("chave_origem") or "").strip()
+        numero = str(registro.get("numero_pedido") or "").strip()
+        if not chave or numero not in pedidos_por_numero:
+            raise ImportacaoVultoError("Rastreabilidade sem chave ou pedido correspondente")
+        if (origem, chave) in chaves_rastreabilidade:
+            raise ImportacaoVultoError("Plano contem chave de origem duplicada")
+        chaves_rastreabilidade.add((origem, chave))
 
     itens_por_pedido: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in itens:
         numero = str(item.get("numero_pedido") or "").strip()
         if numero not in pedidos_por_numero:
             raise ImportacaoVultoError("Item sem pedido correspondente no plano")
-        if (
-            int(item.get("quantidade", 0)) <= 0
-            or Decimal(str(item.get("preco_unitario", -1))) < 0
+        preco = item.get("preco_unitario")
+        if int(item.get("quantidade", 0)) <= 0 or (
+            preco is not None and Decimal(str(preco)) < 0
         ):
             raise ImportacaoVultoError("Item com quantidade ou preco invalido")
         itens_por_pedido[numero].append(item)
@@ -109,14 +123,22 @@ def validar_plano(plano: dict[str, Any]) -> None:
         linhas = itens_por_pedido.get(numero, [])
         if not linhas:
             raise ImportacaoVultoError(f"Pedido sem itens: {numero}")
+        sem_preco = [item for item in linhas if item.get("preco_unitario") is None]
+        if sem_preco and (
+            len(sem_preco) != len(linhas)
+            or pedido.get("origem_importacao") != "vulto_batel_manual"
+        ):
+            raise ImportacaoVultoError(
+                f"Preco unitario ausente permitido somente para itens do Batel manual: {numero}"
+            )
         total_itens = sum(
             Decimal(str(item["quantidade"])) * Decimal(str(item["preco_unitario"]))
-            for item in linhas
+            for item in linhas if item.get("preco_unitario") is not None
         )
         total_esperado = Decimal(str(pedido["valor_total"])) - Decimal(
             str(pedido.get("valor_frete", 0))
         )
-        if total_itens != total_esperado:
+        if not sem_preco and total_itens != total_esperado:
             raise ImportacaoVultoError(
                 f"Itens + frete nao fecham o pedido {numero}; pedido mantido sem gravar"
             )
@@ -127,6 +149,7 @@ def gravar_plano(conexao: Any, plano: dict[str, Any]) -> dict[str, int]:
     validar_plano(plano)
     pedidos = plano["pedidos"]
     pendencias = plano.get("pendencias", [])
+    rastreabilidade = plano.get("rastreabilidade", [])
 
     with conexao.transaction():
         with conexao.cursor() as cursor:
@@ -159,18 +182,46 @@ def gravar_plano(conexao: Any, plano: dict[str, Any]) -> dict[str, int]:
             )
             id_lote = cursor.fetchone()[0]
 
-            ids_origem = [str(pendencia["venda_id"]) for pendencia in pendencias]
-            ids_origem.extend(numero.removeprefix("VULTO-") for numero in numeros)
-            ids_origem = sorted(set(ids_origem))
-            if ids_origem:
+            chaves_por_origem: dict[str, set[str]] = defaultdict(set)
+            for pendencia in pendencias:
+                chaves_por_origem[str(pendencia.get("origem") or "vulto")].add(
+                    str(pendencia["venda_id"])
+                )
+            for registro in rastreabilidade:
+                chaves_por_origem[str(registro.get("origem") or "vulto")].add(
+                    str(registro["chave_origem"])
+                )
+            for pedido in pedidos:
+                if pedido.get("chave_origem"):
+                    chaves_por_origem[str(pedido.get("origem_importacao") or "vulto")].add(
+                        str(pedido["chave_origem"])
+                    )
+
+            for origem, chaves in chaves_por_origem.items():
+                cursor.execute(
+                    """
+                    SELECT origem, chave_origem
+                    FROM public.venda_importacao_origem
+                    WHERE origem = %s AND chave_origem = ANY(%s)
+                    FOR UPDATE
+                    """,
+                    (origem, sorted(chaves)),
+                )
+                existentes_origem = cursor.fetchall()
+                if existentes_origem:
+                    amostra = ", ".join(f"{o}:{c}" for o, c in existentes_origem[:5])
+                    raise ImportacaoVultoError(
+                        f"Carga cancelada: {len(existentes_origem)} origens ja importadas "
+                        f"(ex.: {amostra})"
+                    )
                 cursor.execute(
                     """
                     SELECT venda_id_origem, estado
                     FROM public.venda_importacao_pendente
-                    WHERE origem = 'vulto' AND venda_id_origem = ANY(%s)
+                    WHERE origem = %s AND venda_id_origem = ANY(%s)
                     FOR UPDATE
                     """,
-                    (ids_origem,),
+                    (origem, sorted(chaves)),
                 )
                 estados_existentes = dict(cursor.fetchall())
                 resolvidas = sorted(
@@ -182,7 +233,7 @@ def gravar_plano(conexao: Any, plano: dict[str, Any]) -> dict[str, int]:
                     amostra = ", ".join(resolvidas[:5])
                     raise ImportacaoVultoError(
                         "Carga cancelada: ha vendas pendentes previamente resolvidas "
-                        f"(ex.: {amostra})"
+                        f"(origem {origem}, ex.: {amostra})"
                     )
 
             if pendencias:
@@ -191,7 +242,7 @@ def gravar_plano(conexao: Any, plano: dict[str, Any]) -> dict[str, int]:
                     INSERT INTO public.venda_importacao_pendente AS atual (
                         id_lote, origem, venda_id_origem, status_origem, motivos,
                         quantidade_itens, dados_origem
-                    ) VALUES (%s, 'vulto', %s, %s, %s, %s, CAST(%s AS jsonb))
+                    ) VALUES (%s, %s, %s, %s, %s, %s, CAST(%s AS jsonb))
                     ON CONFLICT (origem, venda_id_origem) DO UPDATE SET
                         id_lote = EXCLUDED.id_lote,
                         status_origem = EXCLUDED.status_origem,
@@ -204,10 +255,14 @@ def gravar_plano(conexao: Any, plano: dict[str, Any]) -> dict[str, int]:
                     (
                         (
                             id_lote,
+                            str(pendencia.get("origem") or "vulto"),
                             str(pendencia["venda_id"]),
                             pendencia.get("status_origem"),
                             pendencia["motivos"],
-                            len(pendencia["dados_origem"].get("itens", [])),
+                            len(
+                                pendencia["dados_origem"].get("itens", [])
+                                or pendencia["dados_origem"].get("itens_mapeados", [])
+                            ),
                             json.dumps(
                                 pendencia["dados_origem"], ensure_ascii=False, default=str
                             ),
@@ -234,7 +289,7 @@ def gravar_plano(conexao: Any, plano: dict[str, Any]) -> dict[str, int]:
                     (
                         [p["numero_pedido"] for p in pedidos],
                         [str(p["id_loja"]) for p in pedidos],
-                        [str(p["id_cliente"]) for p in pedidos],
+                        [str(p["id_cliente"]) if p.get("id_cliente") else None for p in pedidos],
                         [str(p["id_status_pedido"]) for p in pedidos],
                         [p["valor_total"] for p in pedidos],
                         [p["valor_frete"] for p in pedidos],
@@ -261,25 +316,65 @@ def gravar_plano(conexao: Any, plano: dict[str, Any]) -> dict[str, int]:
                         [item["numero_pedido"] for item in itens],
                         [str(item["id_variacao"]) for item in itens],
                         [item["quantidade"] for item in itens],
-                        [item["preco_unitario"] for item in itens],
+                        [item.get("preco_unitario") for item in itens],
                     ],
                 )
-            if numeros:
+            if rastreabilidade:
+                cursor.executemany(
+                    """
+                    INSERT INTO public.venda_importacao_origem (
+                        id_lote, id_pedido, origem, chave_origem, venda_id_origem,
+                        compra_id_origem, funcionario_id_origem, vendedor_padronizado,
+                        dados_origem
+                    )
+                    SELECT %s, p.id_pedido, %s, %s, %s, %s, %s, %s, CAST(%s AS jsonb)
+                    FROM public.pedido p WHERE p.numero_pedido = %s
+                    """,
+                    (
+                        (
+                            id_lote,
+                            registro.get("origem") or "vulto",
+                            str(registro["chave_origem"]),
+                            registro.get("venda_id_origem"),
+                            registro.get("compra_id_origem"),
+                            registro.get("funcionario_id_origem"),
+                            registro.get("vendedor_padronizado"),
+                            json.dumps(
+                                registro.get("dados_origem") or {},
+                                ensure_ascii=False,
+                                default=str,
+                            ),
+                            registro["numero_pedido"],
+                        )
+                        for registro in rastreabilidade
+                    ),
+                )
+
+            pedidos_com_origem = [
+                pedido for pedido in pedidos if pedido.get("chave_origem")
+            ]
+            if pedidos_com_origem:
                 cursor.execute(
                     """
                     UPDATE public.venda_importacao_pendente vp
-                    SET estado = 'importada', id_pedido = (
-                            SELECT p.id_pedido FROM public.pedido p
-                            WHERE p.numero_pedido = 'VULTO-' || vp.venda_id_origem
-                        ),
+                    SET estado = 'importada', id_pedido = p.id_pedido,
                         resolvida_em = now(), atualizada_em = now()
-                    WHERE vp.origem = 'vulto' AND vp.estado = 'pendente'
-                      AND ('VULTO-' || vp.venda_id_origem) = ANY(%s::text[])
+                    FROM unnest(%s::text[], %s::text[], %s::text[])
+                        AS origem_pronta(origem, chave_origem, numero_pedido)
+                    JOIN public.pedido p ON p.numero_pedido = origem_pronta.numero_pedido
+                    WHERE vp.origem = origem_pronta.origem
+                      AND vp.venda_id_origem = origem_pronta.chave_origem
+                      AND vp.estado = 'pendente'
                     """,
-                    (numeros,),
+                    (
+                        [str(p.get("origem_importacao") or "vulto") for p in pedidos_com_origem],
+                        [str(p["chave_origem"]) for p in pedidos_com_origem],
+                        [str(p["numero_pedido"]) for p in pedidos_com_origem],
+                    ),
                 )
     return {
         "pedidos": len(pedidos),
         "itens": len(plano["itens_pedido"]),
         "pendencias": len(pendencias),
+        "rastreabilidade": len(rastreabilidade),
     }

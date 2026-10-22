@@ -52,9 +52,21 @@ class Cena:
             (loja, variacao, quantidade, minimo),
         )
 
-    def pedido(self, loja, cliente, itens, *, status="pago", canal="loja", quando=None, frete=0):
+    def pedido(
+        self,
+        loja,
+        cliente,
+        itens,
+        *,
+        status="pago",
+        canal="loja",
+        quando=None,
+        frete=0,
+        numero_pedido=None,
+        valor_total=None,
+    ):
         """`itens` = [(id_variacao, quantidade, preco_unitario)]."""
-        subtotal = sum(q * p for _, q, p in itens)
+        subtotal = sum(q * p for _, q, p in itens if p is not None)
         id_pedido = self._um(
             """
             INSERT INTO pedido (numero_pedido, id_loja, id_cliente, id_status_pedido,
@@ -65,11 +77,11 @@ class Cena:
             RETURNING id_pedido
             """,
             (
-                f"T-{uuid4().hex[:12]}",
+                numero_pedido or f"T-{uuid4().hex[:12]}",
                 loja,
                 cliente.id,
                 status,
-                subtotal + frete,
+                valor_total if valor_total is not None else subtotal + frete,
                 canal,
                 frete,
                 quando or em(10),
@@ -196,6 +208,26 @@ def test_filtro_de_categoria_conta_so_os_itens_da_categoria(sa_conn, cena):
     r = resumo(sa_conn, Filtro(a, categoria="Calcas"))
     assert (r["pedidos"], float(r["faturamento"]), r["pecas"]) == (2, 600.0, 3)
     assert resumo(sa_conn, Filtro(a, categoria="Inexistente"))["pedidos"] == 0
+
+
+def test_venda_manual_sem_preco_preserva_total_sem_ratear_por_categoria(sa_conn, cena):
+    cena.c.pedido(
+        cena.loja_a,
+        cena.cliente,
+        [(cena.cam_p, 1, None), (cena.cal, 1, None)],
+        numero_pedido="VULTO-BATEL-MANUAL-teste",
+        valor_total=300,
+    )
+
+    geral = resumo(sa_conn, Filtro(cena.loja_a))
+    por_camisas = resumo(sa_conn, Filtro(cena.loja_a, categoria="Camisas"))
+    por_calcas = resumo(sa_conn, Filtro(cena.loja_a, categoria="Calcas"))
+    lojas = repositorio.vendas_por_loja(sa_conn, Filtro(cena.loja_a), INICIO, FIM)
+
+    assert float(geral["faturamento"]) == 300.0
+    assert float(por_camisas["faturamento"]) == 0.0
+    assert float(por_calcas["faturamento"]) == 0.0
+    assert float(lojas[0]["faturamento"]) == 300.0
 
 
 def test_periodo_usa_o_dia_de_sao_paulo(sa_conn, cena):
@@ -425,7 +457,8 @@ def test_transferencias_aguardando_a_decisao_da_loja(sa_conn, cena):
     nova("reposicao_rede", "solicitada", None, a)  # a propria reposicao de A nao e dela
     nova("reposicao_rede", "solicitada", None, outra)
     assert repositorio.transferencias_aguardando(sa_conn, Filtro(a)) == 3
-    assert repositorio.transferencias_aguardando(sa_conn, Filtro(None)) == 6  # solicitadas e em transito
+    # Solicitadas e em transito nas duas lojas.
+    assert repositorio.transferencias_aguardando(sa_conn, Filtro(None)) == 6
 
 
 def test_pendencias_juntam_os_tres_numeros(sa_conn, cena):

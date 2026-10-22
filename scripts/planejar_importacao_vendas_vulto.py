@@ -4,10 +4,11 @@ import argparse
 import csv
 import hashlib
 import json
+from collections import Counter
 from pathlib import Path
 
 from openpyxl import load_workbook
-
+from vulto_integracao.plano_batel import planejar_vendas_batel
 from vulto_integracao.plano_importacao import planejar_importacao
 
 
@@ -18,7 +19,7 @@ def _linhas_planilha(caminho: Path, aba: str) -> list[dict[str, object]]:
         cabecalhos = next(linhas, None)
         if not cabecalhos:
             return []
-        return [dict(zip(cabecalhos, valores)) for valores in linhas]
+        return [dict(zip(cabecalhos, valores, strict=True)) for valores in linhas]
     finally:
         workbook.close()
 
@@ -33,6 +34,11 @@ def main() -> int:
     parser.add_argument("planilha", type=Path)
     parser.add_argument("referencias", type=Path, help="Diretorio com os CSVs exportados")
     parser.add_argument(
+        "--batel-manual",
+        type=Path,
+        help="Planilha opcional com vendas manuais Batel já conciliadas e mapeadas",
+    )
+    parser.add_argument(
         "--saida",
         type=Path,
         help="JSON detalhado do plano; pode conter dados pessoais, proteja o arquivo",
@@ -43,6 +49,10 @@ def main() -> int:
     with args.planilha.open("rb") as arquivo:
         for bloco in iter(lambda: arquivo.read(1024 * 1024), b""):
             digest.update(bloco)
+    if args.batel_manual:
+        with args.batel_manual.open("rb") as arquivo:
+            for bloco in iter(lambda: arquivo.read(1024 * 1024), b""):
+                digest.update(bloco)
     codigo_lote = f"VULTO-VENDAS-{digest.hexdigest()[:12].upper()}"
 
     referencias = args.referencias
@@ -57,15 +67,45 @@ def main() -> int:
         variacoes=_linhas_csv(referencias / "variacao_produto_rows.csv"),
         codigo_lote=codigo_lote,
     )
+    if args.batel_manual:
+        plano_batel = planejar_vendas_batel(
+            vendas=_linhas_planilha(args.batel_manual, "vendas_padronizadas"),
+            itens_mapeados=_linhas_planilha(args.batel_manual, "mapeamento_pecas"),
+            lojas=_linhas_csv(referencias / "loja_rows.csv"),
+            status_pedido=_linhas_csv(referencias / "status_pedido_rows.csv"),
+            variacoes=_linhas_csv(referencias / "variacao_produto_rows.csv"),
+            usuarios=_linhas_csv(referencias / "usuario_rows.csv"),
+            tipos_usuario=_linhas_csv(referencias / "tipo_usuario_rows.csv"),
+            codigo_lote=codigo_lote,
+        )
+        for chave in ("pedidos", "itens_pedido", "pendencias", "rastreabilidade"):
+            plano[chave].extend(plano_batel[chave])
+        contagens = (
+            "total_vendas",
+            "total_pedidos_planejados",
+            "total_vendas_pendentes",
+            "total_itens_planejados",
+        )
+        for chave in contagens:
+            plano[chave] += plano_batel[chave]
+        motivos = Counter(plano.get("contagem_motivos_pendencia", {}))
+        motivos.update(plano_batel.get("contagem_motivos_pendencia", {}))
+        plano["contagem_motivos_pendencia"] = dict(motivos)
+        plano["vendas_batel_manual"] = {
+            chave: valor
+            for chave, valor in plano_batel.items()
+            if chave not in {"pedidos", "itens_pedido", "pendencias", "rastreabilidade"}
+        }
     resumo = {
         chave: valor
         for chave, valor in plano.items()
-        if chave not in {"pedidos", "itens_pedido", "pendencias"}
+        if chave not in {"pedidos", "itens_pedido", "pendencias", "rastreabilidade"}
     }
     print(json.dumps(resumo, ensure_ascii=False, indent=2, default=str))
     if args.saida:
         args.saida.parent.mkdir(parents=True, exist_ok=True)
-        args.saida.write_text(json.dumps(plano, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
+        conteudo = json.dumps(plano, ensure_ascii=False, indent=2, default=str) + "\n"
+        args.saida.write_text(conteudo, encoding="utf-8")
         print(f"Plano detalhado salvo em: {args.saida}")
     return 0
 

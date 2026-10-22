@@ -98,10 +98,15 @@ class ConexaoFalsa:
 def test_grava_pedido_e_itens_na_mesma_transacao():
     conexao = ConexaoFalsa()
 
-    assert gravar_plano(conexao, _plano()) == {"pedidos": 1, "itens": 1, "pendencias": 0}
+    assert gravar_plano(conexao, _plano()) == {
+        "pedidos": 1, "itens": 1, "pendencias": 0, "rastreabilidade": 0
+    }
     assert conexao.committed is True
     assert conexao.rolled_back is False
-    assert any("INSERT INTO public.importacao_lote" in sql for sql, _ in conexao.cursor_falso.comandos)
+    assert any(
+        "INSERT INTO public.importacao_lote" in sql
+        for sql, _ in conexao.cursor_falso.comandos
+    )
 
 
 def test_recusa_pedido_ja_existente_e_faz_rollback():
@@ -144,6 +149,53 @@ def test_valida_plano_sem_itens():
         validar_plano(plano)
 
 
+def test_valida_venda_manual_com_cliente_e_preco_nao_informados_e_total_negativo():
+    plano = {
+        "codigo_lote": "VULTO-BATEL-MANUAL-TESTE",
+        "pendencias": [],
+        "pedidos": [
+            {
+                "numero_pedido": "VULTO-BATEL-MANUAL-linha_21",
+                "origem_importacao": "vulto_batel_manual",
+                "chave_origem": "vendas_batel_manual_marco:linha_21",
+                "id_cliente": None,
+                "id_loja": "loja-batel",
+                "id_status_pedido": "status-cancelado",
+                "valor_total": Decimal("-359.90"),
+                "valor_frete": Decimal("0.00"),
+                "canal_venda": "loja",
+                "criado_em": "2026-03-10T12:00:00-03:00",
+            }
+        ],
+        "itens_pedido": [
+            {
+                "numero_pedido": "VULTO-BATEL-MANUAL-linha_21",
+                "id_variacao": "variacao-1",
+                "quantidade": 1,
+                "preco_unitario": None,
+            }
+        ],
+        "rastreabilidade": [
+            {
+                "numero_pedido": "VULTO-BATEL-MANUAL-linha_21",
+                "origem": "vulto_batel_manual",
+                "chave_origem": "vendas_batel_manual_marco:linha_21",
+                "dados_origem": {},
+            }
+        ],
+    }
+
+    validar_plano(plano)
+
+
+def test_rejeita_preco_nulo_em_venda_que_nao_e_batel_manual():
+    plano = _plano()
+    plano["itens_pedido"][0]["preco_unitario"] = None
+
+    with pytest.raises(ImportacaoVultoError, match="somente para itens do Batel manual"):
+        validar_plano(plano)
+
+
 def test_aceita_e_grava_lote_so_com_vendas_pendentes():
     plano = {
         "codigo_lote": "VULTO-VENDAS-PENDENTE",
@@ -160,7 +212,9 @@ def test_aceita_e_grava_lote_so_com_vendas_pendentes():
     }
     conexao = ConexaoFalsa()
 
-    assert gravar_plano(conexao, plano) == {"pedidos": 0, "itens": 0, "pendencias": 1}
+    assert gravar_plano(conexao, plano) == {
+        "pedidos": 0, "itens": 0, "pendencias": 1, "rastreabilidade": 0
+    }
     assert conexao.committed is True
     assert any(
         "INSERT INTO public.venda_importacao_pendente" in sql

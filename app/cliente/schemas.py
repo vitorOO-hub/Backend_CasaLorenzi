@@ -127,8 +127,8 @@ class ItemPedidoCliente(BaseModel):
     cor: str
     tamanho: str
     quantidade: int
-    preco_unitario: Decimal
-    valor_total: Decimal
+    preco_unitario: Decimal | None
+    valor_total: Decimal | None
 
 
 class PagamentoCliente(BaseModel):
