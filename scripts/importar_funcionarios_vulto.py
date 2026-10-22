@@ -20,15 +20,8 @@ from pathlib import Path
 
 import psycopg
 
-LOJA_DO_LEGADO = {
-    1: "vulto pinheiros",
-    2: "vulto shopping eldorado",
-    3: "vulto savassi",
-    4: "vulto batel",
-    5: "vulto e-commerce",
-    6: "vulto app",
-    7: "cd cajamar",
-}
+from vulto_integracao.lojas import CODIGO_LOJA_POR_ID_VULTO, resolver_id_loja_vulto
+
 TIPO_DO_PERFIL = {
     "vendedor": "vendedor",
     "gerente": "gerente_loja",
@@ -75,17 +68,23 @@ def main() -> None:
             sys.exit(f"loja_id sem regra: {f['loja_id']} ({f['nome']})")
 
     with psycopg.connect(url_do_banco(), prepare_threshold=None) as conn, conn.cursor() as cur:
-        cur.execute("SELECT nome, id_loja FROM loja")
+        cur.execute(
+            "SELECT codigo, id_loja FROM loja WHERE codigo = ANY(%s)",
+            (list(CODIGO_LOJA_POR_ID_VULTO.values()),),
+        )
         loja = dict(cur.fetchall())
         cur.execute("SELECT codigo, id_tipo_usuario FROM tipo_usuario")
         tipo = dict(cur.fetchall())
         novos = existentes = 0
         for f, email in zip(funcionarios, emails, strict=True):
-            id_loja = loja[LOJA_DO_LEGADO[f["loja_id"]]] if f["loja_id"] else None
+            id_loja = (
+                resolver_id_loja_vulto(f["loja_id"], loja) if f["loja_id"] is not None else None
+            )
             id_tipo = tipo[TIPO_DO_PERFIL[f["perfil"]]]
             print(
                 f"{f['id']:>2} {f['nome']:<22} {f['perfil']:<9} -> "
-                f"{TIPO_DO_PERFIL[f['perfil']]:<16} loja={LOJA_DO_LEGADO.get(f['loja_id'])} "
+                f"{TIPO_DO_PERFIL[f['perfil']]:<16} "
+                f"loja={CODIGO_LOJA_POR_ID_VULTO.get(f['loja_id'])} "
                 f"ativo={bool(f['ativo'])} {email}"
             )
             if "--aplicar" in sys.argv or "--ensaio" in sys.argv:
