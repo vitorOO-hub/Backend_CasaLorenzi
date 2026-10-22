@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from app.cliente import resgate_pontos
 from app.cliente.erros import (
     CadastroClienteNaoEncontrado,
     ChamadoClienteFinalizado,
@@ -18,7 +19,6 @@ from app.cliente.erros import (
     ReferenciaCheckoutInvalida,
     VariacaoIndisponivel,
 )
-from app.cliente import resgate_pontos
 from app.core.padroes import telefone_padrao, texto_padrao
 from app.core.repositorio import buscar_todos, buscar_um, executar_sql, serializar_linha
 

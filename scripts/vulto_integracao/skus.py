@@ -18,7 +18,7 @@ COR_REDUZIDA = {
     "V": "OLI",
     "H": "VIN",
 }
-TAMANHO_NUMERICO = {"38": "P", "40": "M", "46": "GG"}
+TAMANHO_NUMERICO = {"38": "P", "40": "M", "42": "G", "44": "G", "46": "GG"}
 PADRAO_SKU_REDUZIDO = re.compile(
     r"^([A-Z]{3})(\d{3})([YAGBCJELMOPVH])(PP|GG|P|M|G|U|\d{2})$"
 )
