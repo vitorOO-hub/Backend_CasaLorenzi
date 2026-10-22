@@ -59,6 +59,8 @@ class ChamadoDoCliente(Saida):
     categoria: Opcao
     status: Opcao
     aberto_em: datetime
+    # Atendimento importado do historico da Vulto (fora das filas da equipe).
+    historico_vulto: bool = False
 
 
 class CompraDoCliente(Saida):

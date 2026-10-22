@@ -218,6 +218,12 @@ def importar(conexao, registros: list[dict[str, str]]) -> tuple[int, Counter[str
                     aberto_em,
                 ),
             )
+            # Historico da Vulto fica fora das filas (migration 20261023110000). A marca vem depois
+            # da mensagem porque mensagem nova num atendimento marcado tira a marca.
+            cursor.execute(
+                "UPDATE public.atendimento SET historico_vulto = true WHERE id_atendimento = %s",
+                (id_atendimento,),
+            )
             inseridos += 1
     return inseridos, pendencias
 

@@ -65,7 +65,8 @@ WITH base AS (
         JOIN tipo_usuario tipo ON tipo.id_tipo_usuario = autor.id_tipo_usuario
         WHERE m.id_atendimento = a.id_atendimento AND tipo.codigo <> 'cliente'
     ) resposta ON true
-    WHERE a.aberto_em >= CAST(:inicio AS date)::timestamp AT TIME ZONE :fuso
+    WHERE NOT a.historico_vulto
+      AND a.aberto_em >= CAST(:inicio AS date)::timestamp AT TIME ZONE :fuso
       AND a.aberto_em < (CAST(:fim AS date) + 1)::timestamp AT TIME ZONE :fuso
       AND (
         (CAST(:id_loja AS uuid) IS NULL AND cardinality(CAST(:ids_loja AS uuid[])) = 0)
@@ -217,6 +218,7 @@ JOIN prioridade_atendimento prioridade
 JOIN usuario cliente ON cliente.id_usuario = a.id_cliente
 LEFT JOIN loja ON loja.id_loja = a.id_loja
 WHERE status.codigo NOT IN ('resolvido', 'encerrado', 'cancelado')
+  AND NOT a.historico_vulto
   AND (
         CAST(:id_loja AS uuid) IS NULL
         OR a.id_loja = CAST(:id_loja AS uuid)
@@ -311,6 +313,7 @@ def abertos_agora(conexao: Connection, ids_loja: tuple[UUID, ...]) -> list[dict[
             FROM atendimento a
             JOIN status_atendimento s ON s.id_status_atendimento = a.id_status_atendimento
             WHERE s.codigo <> ALL(CAST(:finalizados AS text[]))
+              AND NOT a.historico_vulto
               AND (cardinality(CAST(:ids_loja AS uuid[])) = 0
                    OR a.id_loja = ANY(CAST(:ids_loja AS uuid[])))
             GROUP BY a.id_loja

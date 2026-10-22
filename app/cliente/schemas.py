@@ -253,6 +253,8 @@ class ChamadoCliente(BaseModel):
     aberto_em: datetime
     atualizado_em: datetime
     ultima_mensagem_em: datetime | None = None
+    # Atendimento importado do historico da Vulto (fora das filas da equipe).
+    historico_vulto: bool = False
 
 
 class DetalheChamadoCliente(ChamadoCliente):

@@ -326,7 +326,8 @@ SELECT
     ), 0) AS vendas_30_dias,
     (SELECT count(*) FROM atendimento a
      JOIN status_atendimento sa ON sa.id_status_atendimento = a.id_status_atendimento
-     WHERE a.id_loja = l.id_loja AND sa.codigo NOT IN ('resolvido', 'encerrado', 'cancelado'))
+     WHERE a.id_loja = l.id_loja AND NOT a.historico_vulto
+       AND sa.codigo NOT IN ('resolvido', 'encerrado', 'cancelado'))
         AS chamados_abertos
 FROM loja l
 WHERE l.ativa AND (CAST(:id_loja AS uuid) IS NULL OR l.id_loja = CAST(:id_loja AS uuid))
