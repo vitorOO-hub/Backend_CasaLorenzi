@@ -116,6 +116,24 @@ class PerfilCliente(BaseModel):
     complemento: str | None = None
 
 
+class MovimentoPontosCliente(BaseModel):
+    ocorrido_em: datetime
+    tipo: str
+    pontos: int
+    descricao: str
+
+
+class VultoMaisCliente(BaseModel):
+    """Programa de pontos da casa: saldo, categoria do ano e as ultimas movimentacoes."""
+
+    saldo: int
+    categoria: str
+    creditos_no_ano: int
+    proxima_categoria: str | None = None
+    faltam_para_proxima: int | None = None
+    extrato: list[MovimentoPontosCliente]
+
+
 class ItemPedidoCliente(BaseModel):
     id_item_pedido: UUID
     id_variacao: UUID

@@ -26,6 +26,7 @@ from app.cliente.schemas import (
     OpcoesChamadoCliente,
     PedidoCliente,
     PerfilCliente,
+    VultoMaisCliente,
 )
 from app.core.db import ExecutarDep
 from app.core.papeis import UsuarioAtual
@@ -55,6 +56,13 @@ def listar_estoque_catalogo(executar: ExecutarDep):
 @router.get("/perfil", response_model=PerfilCliente, summary="Perfil do cliente logado")
 def obter_perfil(usuario: UsuarioDep, executar: ExecutarDep):
     return executar(lambda conexao: service.obter_perfil(conexao, usuario))
+
+
+@router.get(
+    "/vulto-mais", response_model=VultoMaisCliente, summary="Pontos Vulto+ do cliente logado"
+)
+def obter_vulto_mais(usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(lambda conexao: service.obter_vulto_mais(conexao, usuario))
 
 
 @router.get("/pedidos", response_model=list[PedidoCliente], summary="Pedidos do cliente logado")
@@ -163,9 +171,7 @@ def opcoes_agendamento(usuario: UsuarioDep, executar: ExecutarDep):
     summary="Agendar prova ou ajuste do cliente logado",
 )
 def criar_agendamento(dados: AgendamentoCriacao, usuario: UsuarioDep, executar: ExecutarDep):
-    return executar(
-        lambda conexao: service.criar_agendamento(conexao, usuario, dados.model_dump())
-    )
+    return executar(lambda conexao: service.criar_agendamento(conexao, usuario, dados.model_dump()))
 
 
 @router.get(
@@ -191,9 +197,7 @@ def listar_chamados(
     summary="Abrir chamado do cliente logado",
 )
 def criar_chamado(dados: ChamadoCriacao, usuario: UsuarioDep, executar: ExecutarDep):
-    return executar(
-        lambda conexao: service.criar_chamado(conexao, usuario, dados.model_dump())
-    )
+    return executar(lambda conexao: service.criar_chamado(conexao, usuario, dados.model_dump()))
 
 
 @router.get(
