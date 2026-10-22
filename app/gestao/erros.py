@@ -60,33 +60,3 @@ class RegistroJaMapeado(ErroDeNegocio):
 class SkuInvalido(ErroDeNegocio):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     detalhe = "Escolha um SKU ativo do catalogo"
-
-
-class VendaPendenteNaoEncontrada(ErroDeNegocio):
-    status_code = status.HTTP_404_NOT_FOUND
-    detalhe = "Venda pendente nao encontrada"
-
-
-class VendaJaResolvida(ErroDeNegocio):
-    status_code = status.HTTP_409_CONFLICT
-    detalhe = "Esta venda ja foi resolvida"
-
-
-class VendaNaoImportavel(ErroDeNegocio):
-    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
-    detalhe = "Loja, canal, status ou data da venda de origem nao reconhecidos; descarte a venda"
-
-
-class ClienteDaVendaInvalido(ErroDeNegocio):
-    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
-    detalhe = "Escolha um cliente cadastrado"
-
-
-class PecaDaVendaInvalida(ErroDeNegocio):
-    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
-    detalhe = "Uma das pecas escolhidas nao existe no catalogo"
-
-
-class PecaRepetidaNaVenda(ErroDeNegocio):
-    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
-    detalhe = "A mesma peca aparece em duas linhas; junte as quantidades numa linha so"

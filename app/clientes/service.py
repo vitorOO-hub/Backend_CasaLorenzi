@@ -8,20 +8,11 @@ from sqlalchemy.engine import Connection
 
 from app.chamados.repositorio import Escopo
 from app.chamados.service import GESTAO, PAPEIS_DO_PAINEL, montar_escopo, resolver_loja
-from app.cliente import repositorio as repositorio_do_cliente
-from app.cliente.vencimento_pontos import lancar_vencimentos
 from app.clientes import repositorio
 from app.clientes.erros import ClienteNaoEncontrado
 from app.core.papeis import UsuarioAtual
 
-__all__ = [
-    "PAPEIS_DO_PAINEL",
-    "ficha",
-    "listar",
-    "montar_escopo",
-    "resolver_loja",
-    "vulto_mais",
-]
+__all__ = ["PAPEIS_DO_PAINEL", "ficha", "listar", "montar_escopo", "resolver_loja"]
 
 
 def pode_ver_compras(usuario: UsuarioAtual) -> bool:
@@ -38,9 +29,6 @@ def listar(
     secao: str,
     limit: int,
     offset: int,
-    categoria: str | None = None,
-    id_loja_cadastro: UUID | None = None,
-    marca: str | None = None,
 ) -> dict[str, Any]:
     total, itens = repositorio.listar(
         conexao,
@@ -50,31 +38,8 @@ def listar(
         secao=secao,
         limit=limit,
         offset=offset,
-        categoria=categoria,
-        id_loja_cadastro=id_loja_cadastro,
-        marca=marca,
     )
     return {"total": total, "itens": itens}
-
-
-def opcoes(conexao: Connection) -> dict[str, Any]:
-    """Opcoes dos filtros da lista: lojas em que ha cliente cadastrado e as categorias Vulto+."""
-    return {
-        "lojas_cadastro": repositorio.lojas_de_cadastro(conexao),
-        "marcas": [
-            {"codigo": "casa_lorenzi", "nome": "Casa Lorenzi"},
-            {"codigo": "vulto", "nome": "Vulto"},
-        ],
-        "categorias": [
-            {"codigo": c, "nome": n}
-            for c, n in (
-                ("ouro", "Ouro"),
-                ("prata", "Prata"),
-                ("bronze", "Bronze"),
-                ("sem_pontos", "Sem pontos"),
-            )
-        ],
-    }
 
 
 def ficha(
@@ -135,23 +100,4 @@ def ficha(
             if ver and achada["compras"] is not None
             else None
         ),
-    }
-
-
-def vulto_mais(
-    conexao: Connection, usuario: UsuarioAtual, escopo: Escopo, id_cliente: UUID
-) -> dict[str, Any]:
-    """Pontos Vulto+ do cliente para a equipe. Mesma regra da ficha: quem nao ve o cliente no seu
-    escopo nao ve os pontos dele. O valor dos resgates segue a regra das compras."""
-    if repositorio.ficha(conexao, escopo, id_cliente, ver_compras=False) is None:
-        raise ClienteNaoEncontrado()
-    aviso = lancar_vencimentos(conexao, id_cliente)
-    pontos = repositorio_do_cliente.vulto_mais_cliente(conexao, id_cliente)
-    extra = repositorio.resgates_e_loja_de_cadastro(conexao, id_cliente)
-    ver = pode_ver_compras(usuario)
-    return {
-        **pontos,
-        **aviso,
-        "loja_cadastro": extra["loja_cadastro"],
-        "resgates": [{**r, "desconto": r["desconto"] if ver else None} for r in extra["resgates"]],
     }

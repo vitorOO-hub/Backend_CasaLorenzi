@@ -3,7 +3,6 @@
 from uuid import UUID
 
 from app.cliente import repositorio
-from app.cliente.vencimento_pontos import lancar_vencimentos
 from app.core.erros_auth import SemPermissao
 from app.core.papeis import UsuarioAtual
 
@@ -34,10 +33,8 @@ def obter_perfil(conexao, usuario: UsuarioAtual):
 
 
 def obter_vulto_mais(conexao, usuario: UsuarioAtual):
-    """Lanca antes os vencimentos pendentes, para o saldo e o extrato ja virem em dia."""
     id_cliente = _id_cliente(conexao, usuario)
-    aviso = lancar_vencimentos(conexao, id_cliente)
-    return {**repositorio.vulto_mais_cliente(conexao, id_cliente), **aviso}
+    return repositorio.vulto_mais_cliente(conexao, id_cliente)
 
 
 def listar_pedidos(conexao, usuario: UsuarioAtual, *, limit: int, offset: int):

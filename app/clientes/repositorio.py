@@ -48,35 +48,9 @@ WITH ped AS (
         CASE WHEN CAST(:ver_compras AS boolean) THEN
             (SELECT COALESCE(sum(p.valor_total), 0) FROM ped p
               WHERE p.id_cliente = cli.id_usuario AND p.status_codigo <> 'cancelado')
-        END AS total_gasto,
-        cli.id_loja AS id_loja_cadastro,
-        lc.nome AS loja_cadastro,
-        -- Marca do cadastro: loja Vulto (inclui app e site da Vulto); o resto, sem loja ou loja
-        -- Casa Lorenzi (inclui quem se cadastrou pelo site), e Casa Lorenzi.
-        CASE WHEN lc.codigo LIKE 'LOJA-VULTO%' THEN 'vulto' ELSE 'casa_lorenzi' END
-            AS marca_cadastro,
-        pts.saldo AS saldo_pontos,
-        -- Mesma regra do cartao Vulto+ (app/cliente/repositorio.py): creditos do ano corrente.
-        CASE
-            WHEN pts.saldo IS NULL THEN NULL
-            WHEN pts.creditos_no_ano >= 5000 THEN 'ouro'
-            WHEN pts.creditos_no_ano >= 2000 THEN 'prata'
-            ELSE 'bronze'
-        END AS categoria_vulto_mais
+        END AS total_gasto
     FROM usuario cli
     JOIN tipo_usuario t ON t.id_tipo_usuario = cli.id_tipo_usuario
-    LEFT JOIN loja lc ON lc.id_loja = cli.id_loja
-    LEFT JOIN LATERAL (
-        SELECT sum(m.pontos)::int AS saldo,
-               COALESCE(sum(m.pontos) FILTER (
-                   WHERE ((m.pontos > 0 AND m.tipo <> 'estorno')
-                          OR (m.tipo = 'estorno' AND m.id_pedido IS NOT NULL AND m.pontos < 0))
-                     AND m.ocorrido_em >= date_trunc('year', now() AT TIME ZONE 'America/Sao_Paulo')
-               ), 0)::int AS creditos_no_ano
-        FROM movimento_pontos m
-        WHERE m.id_usuario = cli.id_usuario
-        HAVING count(*) > 0
-    ) pts ON true
     WHERE t.codigo = 'cliente' AND cli.ativo
 )
 """  # nosec B608
@@ -103,23 +77,8 @@ SECOES = {
 
 COLUNAS_ITEM = (
     "id_cliente, nome, email, telefone, cidade, cliente_desde, total_chamados, "
-    "chamados_em_aberto, compras, total_gasto, id_loja_cadastro, loja_cadastro, saldo_pontos, "
-    "categoria_vulto_mais"
+    "chamados_em_aberto, compras, total_gasto"
 )
-
-# Filtros do Vulto+ (fixos, escolhidos pelo codigo). "sem_pontos": fora do programa.
-FILTRO_DE_CATEGORIA = """
-    AND (CAST(:categoria AS text) IS NULL
-         OR (CAST(:categoria AS text) = 'sem_pontos' AND categoria_vulto_mais IS NULL)
-         OR categoria_vulto_mais = CAST(:categoria AS text))
-"""
-FILTRO_DE_MARCA = """
-    AND (CAST(:marca AS text) IS NULL OR marca_cadastro = CAST(:marca AS text))
-"""
-FILTRO_DE_LOJA_DE_CADASTRO = """
-    AND (CAST(:id_loja_cadastro AS uuid) IS NULL
-         OR id_loja_cadastro = CAST(:id_loja_cadastro AS uuid))
-"""
 
 
 def escapar_busca(termo: str | None) -> str | None:
@@ -144,22 +103,9 @@ def listar(
     secao: str,
     limit: int,
     offset: int,
-    categoria: str | None = None,
-    id_loja_cadastro: UUID | None = None,
-    marca: str | None = None,
 ) -> tuple[int, list[dict[str, Any]]]:
-    onde = (
-        f"WHERE {VISIVEL} AND {BUSCA} {SECOES[secao]} "
-        f"{FILTRO_DE_CATEGORIA} {FILTRO_DE_LOJA_DE_CADASTRO} {FILTRO_DE_MARCA}"
-    )
-    parametros = _parametros(
-        escopo,
-        ver_compras=ver_compras,
-        busca=escapar_busca(busca),
-        categoria=categoria,
-        id_loja_cadastro=str(id_loja_cadastro) if id_loja_cadastro else None,
-        marca=marca,
-    )
+    onde = f"WHERE {VISIVEL} AND {BUSCA} {SECOES[secao]}"
+    parametros = _parametros(escopo, ver_compras=ver_compras, busca=escapar_busca(busca))
     contagem = f"{CTES} SELECT count(*) FROM base {onde}"  # nosec B608
     total = conexao.execute(text(contagem), parametros).scalar_one()
     linhas = conexao.execute(
@@ -242,50 +188,3 @@ def ficha(
             ).mappings()
         ]
     return {"base": base, "chamados": chamados, "compras": compras}
-
-
-RESGATES_DA_FICHA = 10
-
-
-def resgates_e_loja_de_cadastro(conexao: Connection, id_cliente: UUID) -> dict[str, Any]:
-    """Ultimos resgates de pontos do cliente e a loja em que ele se cadastrou."""
-    loja = conexao.execute(
-        text(
-            """
-            SELECT l.nome FROM usuario u LEFT JOIN loja l ON l.id_loja = u.id_loja
-            WHERE u.id_usuario = CAST(:cid AS uuid)
-            """
-        ),
-        {"cid": str(id_cliente)},
-    ).scalar_one_or_none()
-    resgates = conexao.execute(
-        text(
-            """
-            SELECT r.resgatado_em, r.pontos, r.desconto, l.nome AS loja_nome, r.atendente,
-                   r.observacao
-            FROM resgate_pontos r
-            LEFT JOIN loja l ON l.id_loja = r.id_loja
-            WHERE r.id_usuario = CAST(:cid AS uuid)
-            ORDER BY r.resgatado_em DESC, r.criado_em DESC
-            LIMIT :limite
-            """
-        ),
-        {"cid": str(id_cliente), "limite": RESGATES_DA_FICHA},
-    ).mappings()
-    return {"loja_cadastro": loja, "resgates": [dict(r) for r in resgates]}
-
-
-def lojas_de_cadastro(conexao: Connection) -> list[dict[str, Any]]:
-    """Lojas em que ha pelo menos um cliente cadastrado (filtro da lista de clientes)."""
-    linhas = conexao.execute(
-        text(
-            """
-            SELECT DISTINCT l.id_loja, l.nome
-            FROM usuario u
-            JOIN tipo_usuario t ON t.id_tipo_usuario = u.id_tipo_usuario AND t.codigo = 'cliente'
-            JOIN loja l ON l.id_loja = u.id_loja
-            ORDER BY l.nome
-            """
-        )
-    ).mappings()
-    return [dict(linha) for linha in linhas]

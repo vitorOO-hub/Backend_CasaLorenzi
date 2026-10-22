@@ -1,6 +1,5 @@
 """Rotas de clientes do painel: papel, escopo, validacao e privacidade, sem banco."""
 
-from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -35,9 +34,6 @@ ITEM = {
     "total_gasto": None,
 }
 
-# As rotas do Vulto+ confirmam a transacao (vencimentos lancados na leitura).
-CONEXAO_FALSA = SimpleNamespace(commit=lambda: None)
-
 
 @pytest.fixture
 def chamadas(monkeypatch):
@@ -69,21 +65,6 @@ def chamadas(monkeypatch):
         }
 
     monkeypatch.setattr(service, "ficha", ficha_falsa)
-
-    def vulto_mais_falso(conexao, usuario, escopo, id_cliente):
-        registro.append(("vulto_mais", usuario, escopo, id_cliente))
-        return {
-            "saldo": 2000,
-            "categoria": "prata",
-            "creditos_no_ano": 2500,
-            "proxima_categoria": "ouro",
-            "faltam_para_proxima": 2500,
-            "loja_cadastro": "vulto pinheiros",
-            "extrato": [],
-            "resgates": [],
-        }
-
-    monkeypatch.setattr(service, "vulto_mais", vulto_mais_falso)
     return registro
 
 
@@ -98,7 +79,7 @@ def cliente(par, chamadas):
         Settings(_env_file=None, database_url=DATABASE_URL_TESTE, supabase_url=SUPABASE_URL)
     )
     app.state.provedor_chaves = provedor_para(par)
-    app.dependency_overrides[get_executar] = lambda: lambda operacao: operacao(CONEXAO_FALSA)
+    app.dependency_overrides[get_executar] = lambda: lambda operacao: operacao(None)
     return TestClient(app)
 
 
@@ -111,7 +92,7 @@ def token(par, papel, loja=LOJA_A):
     return {"Authorization": f"Bearer {par.emitir(**claims)}"}
 
 
-ROTAS = ["", f"/{ID}", f"/{ID}/vulto-mais"]
+ROTAS = ["", f"/{ID}"]
 
 
 @pytest.mark.parametrize("caminho", ROTAS)
@@ -173,40 +154,12 @@ def test_repassa_busca_secao_e_paginacao(cliente, par, chamadas):
         "secao": "com_aberto",
         "limit": 50,
         "offset": 10,
-        "categoria": None,
-        "id_loja_cadastro": None,
-        "marca": None,
     }
 
 
 def test_padroes_da_lista(cliente, par, chamadas):
     cliente.get(BASE, headers=token(par, Papel.ATENDENTE))
-    assert chamadas[0][3] == {
-        "busca": None,
-        "secao": "todos",
-        "limit": 20,
-        "offset": 0,
-        "categoria": None,
-        "id_loja_cadastro": None,
-        "marca": None,
-    }
-
-
-def test_filtros_do_vulto_mais_chegam_ao_service(cliente, par, chamadas):
-    cliente.get(
-        BASE,
-        headers=token(par, Papel.ADMIN),
-        params={"categoria": "ouro", "id_loja_cadastro": str(LOJA_B), "marca": "vulto"},
-    )
-    assert chamadas[0][3]["categoria"] == "ouro"
-    assert chamadas[0][3]["marca"] == "vulto"
-    assert str(chamadas[0][3]["id_loja_cadastro"]) == str(LOJA_B)
-
-
-@pytest.mark.parametrize("params", [{"categoria": "diamante"}, {"marca": "outra"}])
-def test_categoria_ou_marca_desconhecida_e_recusada(cliente, par, params):
-    resposta = cliente.get(BASE, headers=token(par, Papel.ADMIN), params=params)
-    assert resposta.status_code == 422
+    assert chamadas[0][3] == {"busca": None, "secao": "todos", "limit": 20, "offset": 0}
 
 
 @pytest.mark.parametrize(

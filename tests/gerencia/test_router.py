@@ -42,16 +42,6 @@ DASHBOARD = {
             "faturamento": 300.0,
         }
     ],
-    "marcas": [
-        {
-            "marca": "vulto",
-            "faturamento": 300.0,
-            "pedidos": 2,
-            "pecas": 3,
-            "faturamento_anterior": 100.0,
-        }
-    ],
-    "evolucao_marcas": [{"mes": "2026-09-01", "marca": "vulto", "faturamento": 300.0}],
     "opcoes": {
         "lojas": [{"id_loja": str(LOJA_A), "nome": "Centro"}],
         "canais": [{"codigo": "loja", "nome": "Loja"}],

@@ -46,36 +46,6 @@ def _resumo(linha: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _marcas(
-    conexao: Connection, filtro: Filtro, inicio: date, fim: date, ant_inicio: date, ant_fim: date
-) -> list[dict[str, Any]]:
-    """Vendas por marca da peca no periodo, com o faturamento do periodo anterior ao lado."""
-    antes = {
-        x["marca"]: _dinheiro(x["faturamento"])
-        for x in repositorio.vendas_por_marca(conexao, filtro, ant_inicio, ant_fim)
-    }
-    return [
-        {
-            "marca": x["marca"],
-            "faturamento": _dinheiro(x["faturamento"]),
-            "pedidos": int(x["pedidos"]),
-            "pecas": int(x["pecas"]),
-            "faturamento_anterior": antes.get(x["marca"], 0.0),
-        }
-        for x in repositorio.vendas_por_marca(conexao, filtro, inicio, fim)
-    ]
-
-
-def _evolucao_marcas(conexao: Connection, filtro: Filtro, fim: date) -> list[dict[str, Any]]:
-    """Ultimos 12 meses ate o fim do periodo, mes a mes, por marca."""
-    ano, mes = (fim.year, fim.month - 11) if fim.month > 11 else (fim.year - 1, fim.month + 1)
-    inicio = date(ano, mes, 1)
-    return [
-        {"mes": x["mes"], "marca": x["marca"], "faturamento": _dinheiro(x["faturamento"])}
-        for x in repositorio.evolucao_mensal_por_marca(conexao, filtro, inicio, fim)
-    ]
-
-
 def montar_dashboard(
     conexao: Connection,
     usuario: UsuarioAtual,
@@ -123,13 +93,10 @@ def montar_dashboard(
                 conexao, filtro, inicio, fim, limite=PECAS_NO_RANKING
             )
         ],
-        "marcas": _marcas(conexao, filtro, inicio, fim, ant_inicio, ant_fim),
-        "evolucao_marcas": _evolucao_marcas(conexao, filtro, fim),
         "opcoes": {
             "lojas": lojas,
             "canais": [{"codigo": c, "nome": n} for c, n in CANAIS_DE_VENDA],
             "categorias": repositorio.categorias_de_produto(conexao),
-            "marcas": repositorio.marcas_de_produto(conexao),
         },
         "escopo": {
             "papel": usuario.papel.value if usuario.papel else "",
@@ -313,13 +280,12 @@ def montar_rede(
     ids_loja: tuple[UUID, ...],
     categoria: str | None,
     canal: str | None,
-    marca: str | None = None,
 ) -> dict[str, Any]:
     """Inicio do admin: a rede (ou as lojas escolhidas) lado a lado. Exclusivo do admin."""
     if usuario.papel is not Papel.ADMIN:
         raise SemPermissao()
     ant_inicio, ant_fim = periodo_anterior(inicio, fim)
-    selecao = Filtro(categoria=categoria, canal=canal, ids_loja=ids_loja, marca=marca)
+    selecao = Filtro(categoria=categoria, canal=canal, ids_loja=ids_loja)
     # Chamados nao tem canal de venda nem categoria de produto: so o recorte de lojas vale.
     chamados = FiltroDeChamados(ids_loja=ids_loja)
     lojas = repositorio.lojas_ativas(conexao, ids_loja)
@@ -389,12 +355,9 @@ def montar_rede(
             ant_fim=ant_fim,
             abertos_por_loja=abertos_por_loja,
         ),
-        "marcas": _marcas(conexao, selecao, inicio, fim, ant_inicio, ant_fim),
-        "evolucao_marcas": _evolucao_marcas(conexao, selecao, fim),
         "opcoes": {
             "lojas": repositorio_de_chamados.opcoes_de_loja(conexao, None),
             "canais": [{"codigo": c, "nome": n} for c, n in CANAIS_DE_VENDA],
             "categorias": repositorio.categorias_de_produto(conexao),
-            "marcas": repositorio.marcas_de_produto(conexao),
         },
     }

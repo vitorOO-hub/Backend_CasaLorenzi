@@ -30,7 +30,6 @@ UsuarioDep = Annotated[UsuarioAtual, Depends(requer_papel(*service.PAPEIS_DA_GER
 IdLoja = Annotated[UUID | None, Query(description="So o admin escolhe a loja")]
 Categoria = Annotated[str | None, Query(max_length=80)]
 Canal = Annotated[str | None, Query(max_length=10, pattern=r"^(loja|online)$")]
-Marca = Annotated[str | None, Query(max_length=40, description="Marca da peca vendida")]
 
 
 @router.get("/dashboard", response_model=DashboardGerente, summary="Vendas e indicadores")
@@ -42,10 +41,9 @@ def dashboard(
     id_loja: IdLoja = None,
     categoria: Categoria = None,
     canal: Canal = None,
-    marca: Marca = None,
 ):
     service.validar_periodo(inicio, fim)
-    filtro = Filtro(service.loja_do_escopo(usuario, id_loja), categoria, canal, marca=marca)
+    filtro = Filtro(service.loja_do_escopo(usuario, id_loja), categoria, canal)
     return executar(
         lambda conexao: service.montar_dashboard(
             conexao, usuario, inicio=inicio, fim=fim, filtro=filtro
@@ -98,7 +96,6 @@ def rede(
     ids_loja: IdsLoja = None,
     categoria: Categoria = None,
     canal: Canal = None,
-    marca: Marca = None,
 ):
     service.validar_periodo(inicio, fim)
     return executar(
@@ -110,6 +107,5 @@ def rede(
             ids_loja=tuple(dict.fromkeys(ids_loja or ())),
             categoria=categoria,
             canal=canal,
-            marca=marca,
         )
     )

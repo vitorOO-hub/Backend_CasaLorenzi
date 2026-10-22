@@ -480,36 +480,3 @@ def test_pendencias_juntam_os_tres_numeros(sa_conn, cena):
     }
     sem = service.montar_pendencias(sa_conn, Filtro(a), incluir_chamados_sem_loja=False)
     assert sem["chamados_sem_resposta"] == 1
-
-
-# ------------------------------------------------------------------ vendas por marca
-
-
-def test_vendas_por_marca_seguem_a_marca_da_peca(sa_conn, cena):
-    """Pedido com pecas das duas marcas conta para as duas: cada peca vai para a sua."""
-    c, a = cena.c, cena.loja_a
-    c.fab.conn.execute("UPDATE produto SET marca = 'Vulto' WHERE id_produto = %s", (cena.calca,))
-    c.pedido(a, cena.cliente, [(cena.cam_p, 2, 100), (cena.cal, 1, 200)], quando=em(10))
-    c.pedido(a, cena.cliente, [(cena.cal, 1, 200)], quando=em(11))
-    por_marca = {
-        m["marca"]: m for m in repositorio.vendas_por_marca(sa_conn, Filtro(a), INICIO, FIM)
-    }
-    assert float(por_marca["casa lorenzi"]["faturamento"]) == 200.0
-    assert float(por_marca["vulto"]["faturamento"]) == 400.0
-    assert (por_marca["casa lorenzi"]["pedidos"], por_marca["vulto"]["pedidos"]) == (1, 2)
-    # O filtro aceita a marca em qualquer grafia (le no padrao do banco).
-    so_vulto = resumo(sa_conn, Filtro(a, marca="Vulto"))
-    assert float(so_vulto["faturamento"]) == 400.0 and so_vulto["pedidos"] == 2
-
-
-def test_dashboard_traz_marcas_e_evolucao_mensal(sa_conn, cena):
-    c, a = cena.c, cena.loja_a
-    c.fab.conn.execute("UPDATE produto SET marca = 'Vulto' WHERE id_produto = %s", (cena.calca,))
-    c.pedido(a, cena.cliente, [(cena.cal, 1, 200)], quando=em(10))
-    c.pedido(a, cena.cliente, [(cena.cam_p, 1, 100)], quando=em(10, mes=8))  # periodo anterior
-    d = service.montar_dashboard(sa_conn, usuario(cena), inicio=INICIO, fim=FIM, filtro=Filtro(a))
-    marcas = {m["marca"]: m for m in d["marcas"]}
-    assert marcas["vulto"]["faturamento"] == 200.0
-    assert {"casa lorenzi", "vulto"} <= set(d["opcoes"]["marcas"])
-    meses = {(m["mes"].month, m["marca"]) for m in d["evolucao_marcas"]}
-    assert (9, "vulto") in meses and (8, "casa lorenzi") in meses

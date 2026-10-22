@@ -78,8 +78,6 @@ class CheckoutCriacao(EntradaRestrita):
     frete: Decimal = Field(default=Decimal("0.00"), ge=0, decimal_places=2)
     endereco_entrega: EnderecoEntrega | None = None
     itens: list[ItemCheckout] = Field(min_length=1, max_length=50)
-    # Lorenzi+: pontos que viram desconto (R$ 5 a cada 100), em multiplos de 100.
-    pontos_resgatados: int = Field(default=0, ge=0, le=1_000_000, multiple_of=100)
 
 
 class LojaCliente(BaseModel):
@@ -125,18 +123,6 @@ class MovimentoPontosCliente(BaseModel):
     descricao: str
 
 
-class VencimentoProximo(BaseModel):
-    vence_em: datetime
-    pontos: int
-
-
-class RegrasLorenziMais(BaseModel):
-    reais_a_cada_100_pontos: Decimal
-    multiplo_de_resgate: int
-    pontos_por_real_loja: int
-    pontos_por_real_online: int
-
-
 class VultoMaisCliente(BaseModel):
     """Programa de pontos da casa: saldo, categoria do ano e as ultimas movimentacoes."""
 
@@ -146,10 +132,6 @@ class VultoMaisCliente(BaseModel):
     proxima_categoria: str | None = None
     faltam_para_proxima: int | None = None
     extrato: list[MovimentoPontosCliente]
-    # Aviso: pontos que vencem nos proximos 30 dias, por data.
-    pontos_a_vencer: int = 0
-    proximos_vencimentos: list[VencimentoProximo] = []
-    regras: RegrasLorenziMais | None = None
 
 
 class ItemPedidoCliente(BaseModel):

@@ -72,23 +72,6 @@ class Opcoes(Saida):
     lojas: list[LojaOpcao]
     canais: list[Opcao]
     categorias: list[str]
-    marcas: list[str] = []
-
-
-class VendasDaMarca(Saida):
-    """Vendas de uma marca (pela marca da peca vendida) no periodo e no anterior."""
-
-    marca: str
-    faturamento: float
-    pedidos: int
-    pecas: int
-    faturamento_anterior: float
-
-
-class MesDaMarca(Saida):
-    mes: date
-    marca: str
-    faturamento: float
 
 
 class DashboardGerente(Saida):
@@ -99,8 +82,6 @@ class DashboardGerente(Saida):
     serie_diaria: list[VendaDia]
     movimento_semana: list[MovimentoDiaSemana]
     pecas_mais_vendidas: list[PecaMaisVendida]
-    marcas: list[VendasDaMarca] = []
-    evolucao_marcas: list[MesDaMarca] = []
     opcoes: Opcoes
     escopo: Escopo
 
@@ -224,6 +205,4 @@ class DashboardRede(Saida):
     atendimento: AtendimentoDaRede
     estoque: EstoqueDaRede
     unidades: list[UnidadeDaRede]
-    marcas: list[VendasDaMarca] = []
-    evolucao_marcas: list[MesDaMarca] = []
     opcoes: Opcoes

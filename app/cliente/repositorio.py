@@ -18,7 +18,6 @@ from app.cliente.erros import (
     ReferenciaCheckoutInvalida,
     VariacaoIndisponivel,
 )
-from app.cliente import resgate_pontos
 from app.core.padroes import telefone_padrao, texto_padrao
 from app.core.repositorio import buscar_todos, buscar_um, executar_sql, serializar_linha
 
@@ -1353,27 +1352,12 @@ def criar_checkout(
             )
             subtotal += preco * quantidade
 
-        # Pontos Lorenzi+ viram desconto nas pecas (nunca no frete).
-        pontos = int(dados.get("pontos_resgatados") or 0)
-        desconto = Decimal("0.00")
-        nota_resgate = ""
-        if pontos:
-            desconto = resgate_pontos.resgatar(
-                conexao,
-                id_cliente=id_cliente,
-                id_pedido=id_pedido,
-                id_loja=id_loja,
-                numero_pedido=numero,
-                pontos=pontos,
-                valor_das_pecas=subtotal,
-            )
-            nota_resgate = f" Resgate Lorenzi+: {pontos} pontos (R$ {desconto})."
-        total = _dinheiro(subtotal - desconto + frete)
+        total = _dinheiro(subtotal + frete)
         executar_sql(
             conexao,
             "UPDATE pedido SET valor_total = %s, valor_frete = %s, canal_venda = 'online', "
-            "observacao = observacao || %s, atualizado_em = now() WHERE id_pedido = %s",
-            (total, frete, nota_resgate, id_pedido),
+            "atualizado_em = now() WHERE id_pedido = %s",
+            (total, frete, id_pedido),
         )
         executar_sql(
             conexao,
@@ -1421,9 +1405,7 @@ def vulto_mais_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, objec
             SELECT
                 COALESCE(sum(pontos), 0)::int AS saldo,
                 COALESCE(sum(pontos) FILTER (
-                    -- creditos do ano; compra cancelada (estorno ligado ao pedido) desconta
-                    WHERE ((pontos > 0 AND tipo <> 'estorno')
-                           OR (tipo = 'estorno' AND id_pedido IS NOT NULL AND pontos < 0))
+                    WHERE pontos > 0 AND tipo <> 'estorno'
                       AND ocorrido_em >= date_trunc('year', now() AT TIME ZONE 'America/Sao_Paulo')
                 ), 0)::int AS creditos_no_ano
             FROM movimento_pontos
@@ -1452,7 +1434,6 @@ def vulto_mais_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, objec
     acima = [(nome, minimo) for nome, minimo in CATEGORIAS_VULTO_MAIS if minimo > creditos]
     proxima = acima[-1] if acima else None
     return {
-        "regras": resgate_pontos.regras(),
         "saldo": resumo["saldo"],
         "categoria": categoria,
         "creditos_no_ano": creditos,

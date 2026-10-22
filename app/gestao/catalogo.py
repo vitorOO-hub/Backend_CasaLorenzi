@@ -110,7 +110,8 @@ def criar(conexao: Connection, usuario: UsuarioAtual, dados: NovaPeca) -> dict[s
             raise SkuJaExiste()
         if conexao.execute(
             text(
-                "SELECT 1 FROM produto WHERE lower(nome) = lower(:nome) AND lower(marca) = :marca"
+                "SELECT 1 FROM produto "
+                "WHERE lower(nome) = lower(:nome) AND lower(marca) = :marca"
             ),
             {"nome": dados.nome, "marca": MARCA},
         ).scalar():

@@ -10,7 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 
 from app.clientes import service
-from app.clientes.schemas import FichaCliente, ListaClientes, OpcoesClientes, VultoMaisDaFicha
+from app.clientes.schemas import FichaCliente, ListaClientes
 from app.core.db import ExecutarDep
 from app.core.papeis import UsuarioAtual
 from app.core.security import requer_papel
@@ -30,34 +30,16 @@ def listar(
     ] = None,
     secao: Literal["todos", "com_aberto", "meus"] = "todos",
     id_loja: IdLoja = None,
-    categoria: Literal["ouro", "prata", "bronze", "sem_pontos"] | None = None,
-    id_loja_cadastro: Annotated[UUID | None, Query(description="Loja de cadastro")] = None,
-    marca: Literal["casa_lorenzi", "vulto"] | None = None,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):
     def operacao(conexao):
         escopo = service.montar_escopo(conexao, usuario, id_loja)
         return service.listar(
-            conexao,
-            usuario,
-            escopo,
-            busca=busca,
-            secao=secao,
-            limit=limit,
-            offset=offset,
-            categoria=categoria,
-            id_loja_cadastro=id_loja_cadastro,
-            marca=marca,
+            conexao, usuario, escopo, busca=busca, secao=secao, limit=limit, offset=offset
         )
 
     return executar(operacao)
-
-
-# Antes de "/{id_cliente}": senao "opcoes" seria lido como um id.
-@router.get("/opcoes", response_model=OpcoesClientes, summary="Opcoes dos filtros da lista")
-def opcoes(usuario: UsuarioDep, executar: ExecutarDep):
-    return executar(service.opcoes)
 
 
 @router.get("/{id_cliente}", response_model=FichaCliente, summary="Ficha do cliente")
@@ -65,20 +47,5 @@ def ficha(id_cliente: UUID, usuario: UsuarioDep, executar: ExecutarDep, id_loja:
     def operacao(conexao):
         escopo = service.montar_escopo(conexao, usuario, id_loja)
         return service.ficha(conexao, usuario, escopo, id_cliente)
-
-    return executar(operacao)
-
-
-@router.get(
-    "/{id_cliente}/vulto-mais", response_model=VultoMaisDaFicha, summary="Pontos Vulto+ do cliente"
-)
-def vulto_mais(
-    id_cliente: UUID, usuario: UsuarioDep, executar: ExecutarDep, id_loja: IdLoja = None
-):
-    def operacao(conexao):
-        escopo = service.montar_escopo(conexao, usuario, id_loja)
-        resposta = service.vulto_mais(conexao, usuario, escopo, id_cliente)
-        conexao.commit()  # grava os vencimentos lancados na leitura
-        return resposta
 
     return executar(operacao)
