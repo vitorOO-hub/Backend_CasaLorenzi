@@ -4,6 +4,7 @@
 import pytest
 
 from app.core.erros_auth import SemPermissao
+from app.core.padroes import texto_padrao
 from app.core.papeis import Papel
 from app.gerencia import service
 from tests.banco.test_gerencia_repositorio import FIM, INICIO, cena, em, usuario  # noqa: F401
@@ -78,7 +79,7 @@ def test_periodo_anterior_e_filtros_de_canal_e_categoria(sa_conn, cena):
     calcas = rede(sa_conn, cena, categoria="Calcas")
     assert calcas["atual"]["faturamento"] == 200.0
     assert [(c["categoria"], c["faturamento"]) for c in calcas["grupos"][0]["categorias"]] == [
-        ("Calcas", 200.0)
+        (texto_padrao("Calcas"), 200.0)
     ]
 
 

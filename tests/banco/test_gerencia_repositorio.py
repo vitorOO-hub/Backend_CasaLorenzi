@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from app.core.erros_auth import SemPermissao
+from app.core.padroes import texto_padrao
 from app.core.papeis import Papel, UsuarioAtual
 from app.gerencia import repositorio, service
 from app.gerencia.repositorio import Filtro
@@ -276,10 +277,13 @@ def test_pecas_mais_vendidas_somam_as_variacoes_do_produto(sa_conn, cena):
     c.pedido(a, cena.cliente, [(cena.cal, 4, 200)])
     ranking = repositorio.pecas_mais_vendidas(sa_conn, Filtro(a), INICIO, FIM, limite=10)
     assert [(r["nome"], r["unidades"]) for r in ranking] == [
-        ("Camisa Teste", 5),
-        ("Calca Teste", 4),
+        (texto_padrao("Camisa Teste"), 5),
+        (texto_padrao("Calca Teste"), 4),
     ]
-    assert ranking[0]["nome"] == "Camisa Teste" and float(ranking[0]["faturamento"]) == 500.0
+    assert (
+        ranking[0]["nome"] == texto_padrao("Camisa Teste")
+        and float(ranking[0]["faturamento"]) == 500.0
+    )
     assert len(repositorio.pecas_mais_vendidas(sa_conn, Filtro(a), INICIO, FIM, limite=1)) == 1
 
 
@@ -316,7 +320,7 @@ def test_dashboard_compara_com_o_periodo_anterior(sa_conn, cena):
     assert d["anterior"]["pedidos"] == 1 and d["anterior"]["faturamento"] == 100.0
     assert d["escopo"]["loja_nome"] and d["escopo"]["pode_escolher_loja"] is False
     assert {o["codigo"] for o in d["opcoes"]["canais"]} == {"loja", "online"}
-    assert "Camisas" in d["opcoes"]["categorias"]
+    assert texto_padrao("Camisas") in d["opcoes"]["categorias"]
     # 10/09 e quinta; o mes tem 4 quintas e 1 pedido nelas.
     assert [m["pedidos_por_dia"] for m in d["movimento_semana"] if m["dia_semana"] == 4] == [0.25]
 

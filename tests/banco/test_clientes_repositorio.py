@@ -10,6 +10,7 @@ import pytest
 from app.chamados import service as chamados
 from app.clientes import service
 from app.clientes.erros import ClienteNaoEncontrado
+from app.core.padroes import telefone_padrao, texto_padrao
 from app.core.papeis import Papel, UsuarioAtual
 
 pytestmark = pytest.mark.banco
@@ -112,28 +113,38 @@ def test_atendente_ve_so_clientes_com_pedido_ou_chamado_no_escopo(sa_conn, cenar
     r = lista(sa_conn, cenario.ate_a)
     # Helena (pedido e chamados na loja A) e Zeca (chamado sem loja);
     # nao Bruno (so loja B) nem a Zilda (sem historico)
-    assert set(nomes(r["itens"])) == {"Helena Vasconcelos", "Zeca Andrade"}
+    assert set(nomes(r["itens"])) == {
+        texto_padrao("Helena Vasconcelos"),
+        texto_padrao("Zeca Andrade"),
+    }
     assert r["total"] == 2
 
 
 def test_equipe_de_outra_loja_nao_ve_clientes_da_loja_a(sa_conn, cenario):
     r = lista(sa_conn, cenario.ate_b)
-    assert set(nomes(r["itens"])) == {"Helena Vasconcelos", "Bruno Teixeira", "Zeca Andrade"}
+    assert set(nomes(r["itens"])) == {
+        texto_padrao("Helena Vasconcelos"),
+        texto_padrao("Bruno Teixeira"),
+        texto_padrao("Zeca Andrade"),
+    }
     # Helena aparece por causa do pedido e do chamado na loja B, mas so conta o que e da loja B
-    helena = next(i for i in r["itens"] if i["nome"].startswith("Helena"))
+    helena = next(i for i in r["itens"] if i["nome"].startswith(texto_padrao("Helena")))
     assert helena["total_chamados"] == 2 - 1  # h3 (loja B) + sem os da A; h2 e h1 nao contam
     assert helena["chamados_em_aberto"] == 1
 
 
 def test_admin_ve_todos_os_clientes_inclusive_sem_historico(sa_conn, cenario):
     r = lista(sa_conn, cenario.admin)
-    assert "Zilda Sem Historico" in nomes(r["itens"])
+    assert texto_padrao("Zilda Sem Historico") in nomes(r["itens"])
     assert r["total"] >= 5
 
 
 def test_admin_filtrando_uma_loja_ve_so_quem_tem_historico_nela(sa_conn, cenario):
     r = lista(sa_conn, cenario.admin, id_loja=cenario.lojas[1])
-    assert set(nomes(r["itens"])) == {"Helena Vasconcelos", "Bruno Teixeira"}
+    assert set(nomes(r["itens"])) == {
+        texto_padrao("Helena Vasconcelos"),
+        texto_padrao("Bruno Teixeira"),
+    }
 
 
 # ------------------------------------------------------------------ privacidade das compras
@@ -146,7 +157,7 @@ def test_atendente_nao_recebe_compras_nem_valores(sa_conn, cenario):
 
 def test_gerente_ve_compras_da_propria_loja_sem_contar_cancelados(sa_conn, cenario):
     r = lista(sa_conn, cenario.ger_a)
-    helena = next(i for i in r["itens"] if i["nome"].startswith("Helena"))
+    helena = next(i for i in r["itens"] if i["nome"].startswith(texto_padrao("Helena")))
     assert helena["compras"] == 1 and helena["total_gasto"] == Decimal(
         "100"
     )  # o de 900 e da loja B
@@ -154,7 +165,7 @@ def test_gerente_ve_compras_da_propria_loja_sem_contar_cancelados(sa_conn, cenar
 
 def test_admin_soma_a_rede_inteira(sa_conn, cenario):
     r = lista(sa_conn, cenario.admin)
-    helena = next(i for i in r["itens"] if i["nome"].startswith("Helena"))
+    helena = next(i for i in r["itens"] if i["nome"].startswith(texto_padrao("Helena")))
     assert helena["compras"] == 2 and helena["total_gasto"] == Decimal("1000")
 
 
@@ -174,11 +185,16 @@ def test_o_banco_nem_calcula_valores_para_o_atendente(sa_conn, cenario):
 
 def test_secao_com_chamados_em_aberto(sa_conn, cenario):
     r = lista(sa_conn, cenario.ate_a, secao="com_aberto")
-    assert set(nomes(r["itens"])) == {"Helena Vasconcelos", "Zeca Andrade"}
+    assert set(nomes(r["itens"])) == {
+        texto_padrao("Helena Vasconcelos"),
+        texto_padrao("Zeca Andrade"),
+    }
 
 
 def test_secao_meus_clientes_so_os_que_eu_assumi(sa_conn, cenario):
-    assert nomes(lista(sa_conn, cenario.ate_a, secao="meus")["itens"]) == ["Helena Vasconcelos"]
+    assert nomes(lista(sa_conn, cenario.ate_a, secao="meus")["itens"]) == [
+        texto_padrao("Helena Vasconcelos")
+    ]
     assert lista(sa_conn, cenario.ate_a2, secao="meus")["itens"] == []
 
 
@@ -191,11 +207,13 @@ def test_ordem_chamados_em_aberto_primeiro_depois_nome(sa_conn, cenario):
 @pytest.mark.parametrize("termo", ["helena", "HELENA", "vasconc", "98844", "teste.local"])
 def test_busca_por_nome_telefone_ou_email_sem_diferenciar_maiusculas(sa_conn, cenario, termo):
     r = lista(sa_conn, cenario.admin, busca=termo)
-    assert any(n.startswith("Helena") for n in nomes(r["itens"]))
+    assert any(n.startswith(texto_padrao("Helena")) for n in nomes(r["itens"]))
 
 
 def test_busca_trata_coringa_digitado_como_letra(sa_conn, cenario):
-    assert nomes(lista(sa_conn, cenario.admin, busca="100%")["itens"]) == ["Caio 100% Silva"]
+    assert nomes(lista(sa_conn, cenario.admin, busca="100%")["itens"]) == [
+        texto_padrao("Caio 100% Silva")
+    ]
     assert lista(sa_conn, cenario.admin, busca="%")["total"] == 1  # so quem tem '%' no nome
     assert lista(sa_conn, cenario.admin, busca="_")["total"] == 0
 
@@ -231,10 +249,9 @@ def test_nunca_lista_equipe_como_cliente(sa_conn, cenario):
 def test_ficha_do_atendente_tem_contato_e_chamados_mas_nao_compras(sa_conn, cenario):
     token, escopo = contexto(sa_conn, cenario.ate_a)
     f = service.ficha(sa_conn, token, escopo, cenario.helena.id)
-    assert (
-        f["cliente"]["nome"] == "Helena Vasconcelos" and f["cliente"]["telefone"] == "11 98844-2210"
-    )
-    assert f["cliente"]["cidade"] == "Sao Paulo, SP"
+    assert f["cliente"]["nome"] == texto_padrao(texto_padrao("Helena Vasconcelos"))
+    assert f["cliente"]["telefone"] == telefone_padrao("11 98844-2210")
+    assert f["cliente"]["cidade"] == texto_padrao("Sao Paulo, SP")
     assert "documento" not in f["cliente"]
     assert f["compras"] is None
     assert f["resumo"] == {

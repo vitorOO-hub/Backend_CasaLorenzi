@@ -14,6 +14,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from app.core.padroes import texto_padrao
+
 FUSO = "America/Sao_Paulo"
 
 SITUACOES = (("ok", "OK"), ("baixo", "Estoque baixo"), ("esgotado", "Esgotado"))
@@ -51,7 +53,8 @@ class FiltroSaldo:
         return {
             **parametros_da_data(self.id_loja, self.em),
             "busca": self.busca,
-            "categoria": self.categoria,
+            # A categoria e gravada no padrao (minusculas): o filtro le no mesmo padrao.
+            "categoria": texto_padrao(self.categoria),
             "situacao": self.situacao,
         }
 

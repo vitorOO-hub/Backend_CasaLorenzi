@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.erros_auth import SemPermissao
+from app.core.padroes import texto_padrao
 from app.core.papeis import Papel, UsuarioAtual
 from app.dashboard import service
 from app.dashboard.repositorio import Filtro
@@ -210,7 +211,7 @@ def test_fila_respeita_loja_paginacao_e_assunto(sa_conn, cenario):
 def test_fila_nao_expoe_contato_do_cliente(sa_conn, cenario):
     item = service.montar_fila(sa_conn, Filtro(), limit=1, offset=0)["itens"][0]
     assert {"email", "telefone", "documento"}.isdisjoint(item)
-    assert item["cliente_nome"].startswith("Usuario")
+    assert item["cliente_nome"].startswith(texto_padrao("Usuario"))
 
 
 def test_atendente_nao_consulta_outra_loja(cenario):
