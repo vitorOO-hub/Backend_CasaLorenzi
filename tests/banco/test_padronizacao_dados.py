@@ -34,3 +34,61 @@ def test_nulo_continua_nulo(conn):
     assert conn.execute(
         "SELECT public.texto_padrao(NULL), public.telefone_padrao(NULL)"
     ).fetchone() == (None, None)
+
+
+@pytest.mark.parametrize(
+    "tabela",
+    [
+        "usuario",
+        "loja",
+        "unidade",
+        "produto",
+        "variacao_produto",
+        "agendamento_cliente",
+        "resgate_pontos",
+    ],
+)
+def test_gatilho_de_padrao_existe_em_todas_as_tabelas_cadastrais(conn, tabela):
+    existe = conn.execute(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM pg_trigger t
+            JOIN pg_class c ON c.oid = t.tgrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relname = %s
+              AND t.tgname = %s
+              AND NOT t.tgisinternal
+        )
+        """,
+        (tabela, f"trg_{tabela}_normaliza_gravacao"),
+    ).fetchone()[0]
+    assert existe
+
+
+def test_insert_e_update_normalizam_loja_e_produto(conn, fab):
+    loja_id = fab.loja()
+    conn.execute(
+        """
+        UPDATE loja
+        SET nome = '  VULTO   PINHEIROS ', cidade = ' SAO   PAULO ',
+            telefone = '+55 (11) 99999-0001', email = ' LOJA@EXEMPLO.COM '
+        WHERE id_loja = %s
+        """,
+        (loja_id,),
+    )
+    assert conn.execute(
+        "SELECT nome, cidade, telefone, email FROM loja WHERE id_loja = %s", (loja_id,)
+    ).fetchone() == ("vulto pinheiros", "sao paulo", "11999990001", "loja@exemplo.com")
+
+    produto_id = conn.execute(
+        """
+        INSERT INTO produto (nome, marca, preco_base, colecao)
+        VALUES ('  Camisa   LINHO ', ' VULTO ', 10, 'VERAO 2026')
+        RETURNING id_produto
+        """
+    ).fetchone()[0]
+    assert conn.execute(
+        "SELECT nome, marca, colecao FROM produto WHERE id_produto = %s", (produto_id,)
+    ).fetchone() == ("camisa linho", "vulto", "verão 2026")
