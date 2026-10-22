@@ -126,3 +126,4 @@ class LojaDeCadastro(Saida):
 class OpcoesClientes(Saida):
     lojas_cadastro: list[LojaDeCadastro]
     categorias: list[Opcao]
+    marcas: list[Opcao] = []

@@ -32,6 +32,7 @@ def listar(
     id_loja: IdLoja = None,
     categoria: Literal["ouro", "prata", "bronze", "sem_pontos"] | None = None,
     id_loja_cadastro: Annotated[UUID | None, Query(description="Loja de cadastro")] = None,
+    marca: Literal["casa_lorenzi", "vulto"] | None = None,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):
@@ -47,6 +48,7 @@ def listar(
             offset=offset,
             categoria=categoria,
             id_loja_cadastro=id_loja_cadastro,
+            marca=marca,
         )
 
     return executar(operacao)

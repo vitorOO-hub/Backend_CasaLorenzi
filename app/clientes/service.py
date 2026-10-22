@@ -40,6 +40,7 @@ def listar(
     offset: int,
     categoria: str | None = None,
     id_loja_cadastro: UUID | None = None,
+    marca: str | None = None,
 ) -> dict[str, Any]:
     total, itens = repositorio.listar(
         conexao,
@@ -51,6 +52,7 @@ def listar(
         offset=offset,
         categoria=categoria,
         id_loja_cadastro=id_loja_cadastro,
+        marca=marca,
     )
     return {"total": total, "itens": itens}
 
@@ -59,6 +61,10 @@ def opcoes(conexao: Connection) -> dict[str, Any]:
     """Opcoes dos filtros da lista: lojas em que ha cliente cadastrado e as categorias Vulto+."""
     return {
         "lojas_cadastro": repositorio.lojas_de_cadastro(conexao),
+        "marcas": [
+            {"codigo": "casa_lorenzi", "nome": "Casa Lorenzi"},
+            {"codigo": "vulto", "nome": "Vulto"},
+        ],
         "categorias": [
             {"codigo": c, "nome": n}
             for c, n in (

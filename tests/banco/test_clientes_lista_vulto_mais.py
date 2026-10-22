@@ -76,3 +76,15 @@ def test_opcoes_trazem_as_lojas_com_cliente_e_as_categorias(sa_conn, cena):
     lojas = {x["id_loja"] for x in o["lojas_cadastro"]}
     assert {cena["loja_v"], cena["loja_c"]} <= lojas
     assert [c["codigo"] for c in o["categorias"]] == ["ouro", "prata", "bronze", "sem_pontos"]
+
+
+def test_filtro_por_marca_do_cadastro(sa_conn, cena):
+    # A marca vem do codigo da loja de cadastro: loja Vulto comeca com LOJA-VULTO.
+    sa_conn.exec_driver_sql(
+        "UPDATE loja SET codigo = 'LOJA-VULTO-TESTE-' || id_loja WHERE id_loja = %(l)s",
+        {"l": cena["loja_v"]},
+    )
+    vulto = set(por_id(lista(sa_conn, cena["admin"], marca="vulto")))
+    casa = set(por_id(lista(sa_conn, cena["admin"], marca="casa_lorenzi")))
+    assert {str(cena["ouro"].id), str(cena["bronze"].id)} <= vulto
+    assert str(cena["fora"].id) in casa and str(cena["ouro"].id) not in casa

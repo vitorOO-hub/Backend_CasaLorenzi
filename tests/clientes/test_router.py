@@ -175,6 +175,7 @@ def test_repassa_busca_secao_e_paginacao(cliente, par, chamadas):
         "offset": 10,
         "categoria": None,
         "id_loja_cadastro": None,
+        "marca": None,
     }
 
 
@@ -187,6 +188,7 @@ def test_padroes_da_lista(cliente, par, chamadas):
         "offset": 0,
         "categoria": None,
         "id_loja_cadastro": None,
+        "marca": None,
     }
 
 
@@ -194,14 +196,16 @@ def test_filtros_do_vulto_mais_chegam_ao_service(cliente, par, chamadas):
     cliente.get(
         BASE,
         headers=token(par, Papel.ADMIN),
-        params={"categoria": "ouro", "id_loja_cadastro": str(LOJA_B)},
+        params={"categoria": "ouro", "id_loja_cadastro": str(LOJA_B), "marca": "vulto"},
     )
     assert chamadas[0][3]["categoria"] == "ouro"
+    assert chamadas[0][3]["marca"] == "vulto"
     assert str(chamadas[0][3]["id_loja_cadastro"]) == str(LOJA_B)
 
 
-def test_categoria_desconhecida_e_recusada(cliente, par):
-    resposta = cliente.get(BASE, headers=token(par, Papel.ADMIN), params={"categoria": "diamante"})
+@pytest.mark.parametrize("params", [{"categoria": "diamante"}, {"marca": "outra"}])
+def test_categoria_ou_marca_desconhecida_e_recusada(cliente, par, params):
+    resposta = cliente.get(BASE, headers=token(par, Papel.ADMIN), params=params)
     assert resposta.status_code == 422
 
 
