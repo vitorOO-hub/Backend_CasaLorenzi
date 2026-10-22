@@ -169,7 +169,7 @@ def _obter_id_por_codigo(conexao, tabela: str, coluna_id: str, codigo: str) -> o
 
 
 def _loja_de_venda(conexao, id_loja: UUID) -> UUID:
-    """Loja que recebe a venda (funcao do banco, migration 20261022120000)."""
+    """Loja que recebe a venda (funcao do banco, migration 20261022160000)."""
     return buscar_um(conexao, "SELECT public.loja_de_venda(%s) AS id_loja", (id_loja,))["id_loja"]
 
 
