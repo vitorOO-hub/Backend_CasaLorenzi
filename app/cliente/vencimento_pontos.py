@@ -1,16 +1,22 @@
-"""Vencimento dos pontos Vulto+: lanca no extrato o que venceu e conta o que esta para vencer.
+"""Vencimento dos pontos Lorenzi+ (antigo Vulto+): o que venceu e o que esta para vencer.
 
 Regra do programa (a mesma da carga em scripts/clientes_vulto_carga/clientes_vulto/pontos.py):
 cada credito vale 365 dias (`vence_em`) e o que sai do saldo consome primeiro os pontos mais
 antigos. Credito sem `vence_em` (ajuste de conciliacao, por exemplo) nao vence.
 
 A carga ja lancou tudo o que venceu ate a data de referencia dela (CORTE_DA_CARGA). Daqui para a
-frente, cada lote que vence e lancado aqui como uma linha `vencimento` com `ocorrido_em` igual ao
-`vence_em` do lote, o que torna o lancamento idempotente: rodar de novo nao duplica nada.
+frente, cada lote que vence vira uma linha `vencimento` com `ocorrido_em` igual ao `vence_em` do
+lote, o que torna o lancamento idempotente: rodar de novo nao duplica nada.
+
+Quem grava e a funcao `public.lancar_vencimentos_pontos` do banco (migracao 20261024100000), que o
+pg_cron roda todo dia e a leitura do Lorenzi+ chama antes de mostrar o saldo. Este modulo tem a
+mesma regra em Python para o aviso dos proximos 30 dias; os testes de banco conferem que as duas
+dao o mesmo resultado.
 
 O saldo na data de corte e repartido entre os lotes ainda vivos do mais novo para o mais antigo
 (quem consome primeiro os antigos deixa o que sobra nos novos). Depois do corte, cada saida
-consome os lotes vivos na ordem em que entraram, e lote vencido nao e mais consumido.
+consome os lotes vivos na ordem em que entraram (o estorno de uma compra sai primeiro do credito
+dela), e lote vencido nao e mais consumido.
 """
 
 from collections.abc import Sequence
@@ -29,17 +35,20 @@ JANELA_DO_AVISO = timedelta(days=30)
 
 
 class _Lote:
-    __slots__ = ("entrada", "resta", "vence_em")
+    __slots__ = ("entrada", "id_pedido", "resta", "vence_em")
 
-    def __init__(self, entrada: datetime, resta: int, vence_em: datetime | None) -> None:
+    def __init__(
+        self, entrada: datetime, resta: int, vence_em: datetime | None, id_pedido: Any = None
+    ) -> None:
         self.entrada, self.resta, self.vence_em = entrada, resta, vence_em
+        self.id_pedido = id_pedido
 
 
 def _movimentos(conexao: Connection, id_cliente: UUID) -> Sequence[Any]:
     return conexao.execute(
         text(
             """
-            SELECT tipo, pontos, ocorrido_em, vence_em
+            SELECT tipo, pontos, ocorrido_em, vence_em, id_pedido
             FROM movimento_pontos
             WHERE id_usuario = CAST(:cliente AS uuid)
             ORDER BY ocorrido_em, criado_em, id_movimento
@@ -59,13 +68,15 @@ def _lotes_no_corte(movimentos: Sequence[Any]) -> list[_Lote]:
     for m in reversed(vivos):
         parte = min(m.pontos, saldo)
         saldo -= parte
-        lotes.append(_Lote(m.ocorrido_em, parte, m.vence_em))
+        lotes.append(_Lote(m.ocorrido_em, parte, m.vence_em, m.id_pedido))
     lotes.reverse()
     return lotes
 
 
-def _consumir(lotes: list[_Lote], pontos: int, quando: datetime) -> None:
-    for lote in lotes:
+def _consumir(lotes: list[_Lote], pontos: int, quando: datetime, id_pedido: Any = None) -> None:
+    # Estorno de compra sai primeiro do credito da propria compra; o resto, dos mais antigos.
+    da_compra = [lote for lote in lotes if id_pedido is not None and lote.id_pedido == id_pedido]
+    for lote in [*da_compra, *lotes]:
         if pontos <= 0:
             return
         if lote.resta <= 0 or (lote.vence_em is not None and lote.vence_em <= quando):
@@ -122,9 +133,9 @@ def calcular(
     for m in depois:
         vencer_ate(m.ocorrido_em, inclusive=False)
         if m.pontos > 0:
-            lotes.append(_Lote(m.ocorrido_em, m.pontos, m.vence_em))
+            lotes.append(_Lote(m.ocorrido_em, m.pontos, m.vence_em, m.id_pedido))
         else:
-            _consumir(lotes, -m.pontos, m.ocorrido_em)
+            _consumir(lotes, -m.pontos, m.ocorrido_em, m.id_pedido)
     vencer_ate(agora, inclusive=True)
     return faltam, lotes
 
@@ -132,24 +143,14 @@ def calcular(
 def lancar_vencimentos(
     conexao: Connection, id_cliente: UUID, agora: datetime | None = None
 ) -> dict[str, Any]:
-    """Lanca os vencimentos que faltam e devolve o aviso dos proximos 30 dias. Quem chama confirma
-    a transacao. A trava por cliente evita que duas leituras ao mesmo tempo lancem em dobro."""
+    """Lanca os vencimentos que faltam (funcao do banco, com trava por cliente) e devolve o aviso
+    dos proximos 30 dias. Quem chama confirma a transacao."""
     agora = agora or datetime.now(UTC)
     conexao.execute(
-        text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:cliente AS text), 0))"),
-        {"cliente": str(id_cliente)},
+        text("SELECT public.lancar_vencimentos_pontos(CAST(:cliente AS uuid), :agora)"),
+        {"cliente": str(id_cliente), "agora": agora},
     )
-    faltam, lotes = calcular(_movimentos(conexao, id_cliente), agora)
-    for v in faltam:
-        conexao.execute(
-            text(
-                """
-                INSERT INTO movimento_pontos (id_usuario, tipo, pontos, ocorrido_em, descricao)
-                VALUES (CAST(:cliente AS uuid), 'vencimento', :pontos, :ocorrido_em, :descricao)
-                """
-            ),
-            {"cliente": str(id_cliente), **v},
-        )
+    _, lotes = calcular(_movimentos(conexao, id_cliente), agora)
     return aviso(lotes, agora)
 
 

@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from app.cliente.vencimento_pontos import CORTE_DA_CARGA, aviso, calcular
 
-M = namedtuple("M", "tipo pontos ocorrido_em vence_em")
+M = namedtuple("M", "tipo pontos ocorrido_em vence_em id_pedido", defaults=(None,))
 ANO = timedelta(days=365)
 DIA = timedelta(days=1)
 
