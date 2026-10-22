@@ -39,11 +39,18 @@ def main() -> int:
         help="Planilha opcional com vendas manuais Batel já conciliadas e mapeadas",
     )
     parser.add_argument(
+        "--somente-batel-manual",
+        action="store_true",
+        help="Gera um plano isolado para o Batel, sem repetir as vendas consolidadas",
+    )
+    parser.add_argument(
         "--saida",
         type=Path,
         help="JSON detalhado do plano; pode conter dados pessoais, proteja o arquivo",
     )
     args = parser.parse_args()
+    if args.somente_batel_manual and not args.batel_manual:
+        parser.error("--somente-batel-manual requer --batel-manual")
 
     digest = hashlib.sha256()
     with args.planilha.open("rb") as arquivo:
@@ -56,46 +63,51 @@ def main() -> int:
     codigo_lote = f"VULTO-VENDAS-{digest.hexdigest()[:12].upper()}"
 
     referencias = args.referencias
-    plano = planejar_importacao(
-        vendas=_linhas_planilha(args.planilha, "vendas_importacao"),
-        itens=_linhas_planilha(args.planilha, "itens_venda_importacao"),
-        compras=_linhas_planilha(args.planilha, "compras_importacao"),
-        usuarios=_linhas_csv(referencias / "usuario_rows.csv"),
-        tipos_usuario=_linhas_csv(referencias / "tipo_usuario_rows.csv"),
-        lojas=_linhas_csv(referencias / "loja_rows.csv"),
-        status_pedido=_linhas_csv(referencias / "status_pedido_rows.csv"),
-        variacoes=_linhas_csv(referencias / "variacao_produto_rows.csv"),
-        codigo_lote=codigo_lote,
-    )
+    referencias_base = {
+        "usuarios": _linhas_csv(referencias / "usuario_rows.csv"),
+        "tipos_usuario": _linhas_csv(referencias / "tipo_usuario_rows.csv"),
+        "lojas": _linhas_csv(referencias / "loja_rows.csv"),
+        "status_pedido": _linhas_csv(referencias / "status_pedido_rows.csv"),
+        "variacoes": _linhas_csv(referencias / "variacao_produto_rows.csv"),
+    }
+    if args.somente_batel_manual:
+        plano = None
+    else:
+        plano = planejar_importacao(
+            vendas=_linhas_planilha(args.planilha, "vendas_importacao"),
+            itens=_linhas_planilha(args.planilha, "itens_venda_importacao"),
+            compras=_linhas_planilha(args.planilha, "compras_importacao"),
+            **referencias_base,
+            codigo_lote=codigo_lote,
+        )
     if args.batel_manual:
         plano_batel = planejar_vendas_batel(
             vendas=_linhas_planilha(args.batel_manual, "vendas_padronizadas"),
             itens_mapeados=_linhas_planilha(args.batel_manual, "mapeamento_pecas"),
-            lojas=_linhas_csv(referencias / "loja_rows.csv"),
-            status_pedido=_linhas_csv(referencias / "status_pedido_rows.csv"),
-            variacoes=_linhas_csv(referencias / "variacao_produto_rows.csv"),
-            usuarios=_linhas_csv(referencias / "usuario_rows.csv"),
-            tipos_usuario=_linhas_csv(referencias / "tipo_usuario_rows.csv"),
+            **referencias_base,
             codigo_lote=codigo_lote,
         )
-        for chave in ("pedidos", "itens_pedido", "pendencias", "rastreabilidade"):
-            plano[chave].extend(plano_batel[chave])
-        contagens = (
-            "total_vendas",
-            "total_pedidos_planejados",
-            "total_vendas_pendentes",
-            "total_itens_planejados",
-        )
-        for chave in contagens:
-            plano[chave] += plano_batel[chave]
-        motivos = Counter(plano.get("contagem_motivos_pendencia", {}))
-        motivos.update(plano_batel.get("contagem_motivos_pendencia", {}))
-        plano["contagem_motivos_pendencia"] = dict(motivos)
-        plano["vendas_batel_manual"] = {
-            chave: valor
-            for chave, valor in plano_batel.items()
-            if chave not in {"pedidos", "itens_pedido", "pendencias", "rastreabilidade"}
-        }
+        if args.somente_batel_manual:
+            plano = plano_batel
+        else:
+            for chave in ("pedidos", "itens_pedido", "pendencias", "rastreabilidade"):
+                plano[chave].extend(plano_batel[chave])
+            contagens = (
+                "total_vendas",
+                "total_pedidos_planejados",
+                "total_vendas_pendentes",
+                "total_itens_planejados",
+            )
+            for chave in contagens:
+                plano[chave] += plano_batel[chave]
+            motivos = Counter(plano.get("contagem_motivos_pendencia", {}))
+            motivos.update(plano_batel.get("contagem_motivos_pendencia", {}))
+            plano["contagem_motivos_pendencia"] = dict(motivos)
+            plano["vendas_batel_manual"] = {
+                chave: valor
+                for chave, valor in plano_batel.items()
+                if chave not in {"pedidos", "itens_pedido", "pendencias", "rastreabilidade"}
+            }
     resumo = {
         chave: valor
         for chave, valor in plano.items()

@@ -1,8 +1,8 @@
 """dados no padrao do negocio: textos cadastrais em minusculas, telefone e CPF so com digitos
 
-Revision ID: 20261022200000
-Revises: 20261022190000
-Create Date: 2026-10-22 20:00:00
+Revision ID: 20261022210000
+Revises: 20261022200000
+Create Date: 2026-10-22 21:00:00
 
 - `texto_padrao(text)`: minusculas, sem espaco nas pontas e um espaco so entre as palavras
   ("  Fernanda   K. " -> "fernanda k."). `telefone_padrao(text)`: so digitos, DDD + numero, sem o
@@ -27,8 +27,8 @@ from pathlib import Path
 
 from alembic import op
 
-revision: str = "20261022200000"
-down_revision: str | Sequence[str] | None = "20261022190000"
+revision: str = "20261022210000"
+down_revision: str | Sequence[str] | None = "20261022200000"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
