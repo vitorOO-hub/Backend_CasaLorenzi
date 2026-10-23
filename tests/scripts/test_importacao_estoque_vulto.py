@@ -21,7 +21,7 @@ LOJAS = {
 }
 
 
-def test_snapshot_preserva_quantidade_negativa():
+def test_snapshot_zera_saldo_negativo_e_preserva_quantidade_de_origem():
     snapshot = preparar_snapshot(
         [
             {
@@ -34,10 +34,12 @@ def test_snapshot_preserva_quantidade_negativa():
         LOJAS,
     )
 
-    assert snapshot[0]["quantidade"] == -3
+    assert snapshot[0]["quantidade"] == 0
+    assert snapshot[0]["quantidade_origem"] == -3
+    assert snapshot[0]["saldo_negativo_zerado"] is True
 
 
-def test_movimentos_reconstroem_historico_com_saldo_negativo():
+def test_movimentos_preservam_historico_e_registram_ajuste_de_migracao():
     snapshot = preparar_snapshot(
         [
             {
@@ -65,9 +67,54 @@ def test_movimentos_reconstroem_historico_com_saldo_negativo():
         LOJAS,
     )
 
-    assert movimentos[0]["quantidade_anterior"] == 1
-    assert movimentos[0]["quantidade_posterior"] == -1
-    assert movimentos[0]["id_loja_destino"] == "loja-3"
+    movimento_legado, ajuste_migracao = movimentos
+    assert movimento_legado["quantidade_anterior"] == 1
+    assert movimento_legado["quantidade_posterior"] == -1
+    assert movimento_legado["id_loja_destino"] == "loja-3"
+    assert ajuste_migracao["codigo_tipo"] == "ajuste_positivo"
+    assert ajuste_migracao["quantidade"] == 1
+    assert ajuste_migracao["quantidade_anterior"] == -1
+    assert ajuste_migracao["quantidade_posterior"] == 0
+    assert ajuste_migracao["dados_origem"]["movimento_sintetico"] is True
+    assert "nao representa entrada fisica" in ajuste_migracao["motivo"]
+
+
+def test_saldo_positivo_nao_gera_ajuste_de_zeramento():
+    snapshot = preparar_snapshot(
+        [
+            {
+                "loja_id": 4,
+                "sku_padronizado": "SKU-POSITIVO",
+                "qtd": 4,
+                "data_padronizada": "2026-03-22T10:00:00-03:00",
+            }
+        ],
+        LOJAS,
+    )
+    movimentos = preparar_movimentos([], snapshot, LOJAS)
+
+    assert snapshot[0]["quantidade"] == 4
+    assert movimentos == []
+
+
+def test_saldo_negativo_sem_movimentos_gera_ajuste_para_zero():
+    snapshot = preparar_snapshot(
+        [
+            {
+                "loja_id": 4,
+                "sku_padronizado": "SKU-NEGATIVO-SEM-MOVIMENTO",
+                "qtd": -2,
+                "data_padronizada": "2026-03-22T10:00:00-03:00",
+            }
+        ],
+        LOJAS,
+    )
+    ajuste = preparar_movimentos([], snapshot, LOJAS)[0]
+
+    assert ajuste["codigo_tipo"] == "ajuste_positivo"
+    assert ajuste["quantidade"] == 2
+    assert ajuste["quantidade_anterior"] == -2
+    assert ajuste["quantidade_posterior"] == 0
 
 
 def test_movimento_reconstruido_sem_id_usa_referencia_do_envio():
