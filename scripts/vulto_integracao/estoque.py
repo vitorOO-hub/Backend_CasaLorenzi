@@ -2,7 +2,7 @@
 
 import re
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -132,6 +132,14 @@ def _id_origem_movimento(linha: dict[str, object]) -> str:
     return f"derivado-envio-{envio.group(1)}"
 
 
+def _ordem_id_movimento(id_origem: str) -> tuple[int, int]:
+    if id_origem.startswith("ajuste-zeramento-"):
+        return (1, 0)
+    if id_origem.startswith("derivado-envio-"):
+        id_origem = id_origem.removeprefix("derivado-envio-")
+    return (0, int(id_origem))
+
+
 def preparar_snapshot(
     linhas: list[dict[str, object]], lojas_por_codigo: dict[str, object]
 ) -> list[dict[str, object]]:
@@ -144,7 +152,8 @@ def preparar_snapshot(
         except ValueError as erro:
             raise ImportacaoEstoqueError(str(erro)) from erro
         sku = _sku_linha(linha)
-        quantidade = _inteiro(linha.get("qtd"), f"estoque {sku}.qtd")
+        quantidade_origem = _inteiro(linha.get("qtd"), f"estoque {sku}.qtd")
+        quantidade = max(0, quantidade_origem)
         atualizado = _data_hora(
             linha.get("data_padronizada") or linha.get("atualizado_em"),
             f"estoque {sku}.data_padronizada",
@@ -159,6 +168,8 @@ def preparar_snapshot(
                 "id_loja": id_loja,
                 "sku": sku,
                 "quantidade": quantidade,
+                "quantidade_origem": quantidade_origem,
+                "saldo_negativo_zerado": quantidade_origem < 0,
                 "atualizado_em": atualizado,
                 "saldo_inferido_por_ausencia": False,
             }
@@ -349,8 +360,11 @@ def preparar_movimentos(
     lojas_por_codigo: dict[str, object],
 ) -> list[dict[str, object]]:
     """Reconstrui saldos encadeados; bloqueia chaves sem saldo final oficial."""
-    saldos_finais = {
-        (linha["loja_id_vulto"], linha["sku"]): linha["quantidade"] for linha in snapshot
+    saldos_finais_origem = {
+        (linha["loja_id_vulto"], linha["sku"]): linha.get(
+            "quantidade_origem", linha["quantidade"]
+        )
+        for linha in snapshot
     }
     normalizados = []
     ids_vistos = set()
@@ -429,7 +443,7 @@ def preparar_movimentos(
         normalizados.append(item)
         por_chave[(loja_legada, sku)].append(item)
 
-    chaves_sem_snapshot = sorted(set(por_chave) - set(saldos_finais))
+    chaves_sem_snapshot = sorted(set(por_chave) - set(saldos_finais_origem))
     if chaves_sem_snapshot:
         raise ImportacaoEstoqueError(
             f"{len(chaves_sem_snapshot)} combinacoes sem saldo final; "
@@ -442,14 +456,14 @@ def preparar_movimentos(
     }
 
     for chave, movimentos in por_chave.items():
-        saldo_final = saldos_finais[chave]
+        saldo_final = saldos_finais_origem[chave]
         saldo_abertura = saldo_final - sum(m["sinal"] * m["quantidade"] for m in movimentos)
         saldo_atual = saldo_abertura
         for movimento in sorted(
             movimentos,
             key=lambda m: (
                 m["criada_em"],
-                int(m["id_origem"].removeprefix("derivado-envio-")),
+                _ordem_id_movimento(m["id_origem"]),
             ),
         ):
             movimento["quantidade_anterior"] = saldo_atual
@@ -460,11 +474,53 @@ def preparar_movimentos(
         if saldo_atual != saldo_final:
             raise ImportacaoEstoqueError(f"Saldo reconstruido nao fechou para {chave}")
 
+    for linha in snapshot:
+        saldo_origem = linha.get("quantidade_origem", linha["quantidade"])
+        if saldo_origem >= 0:
+            continue
+        chave = (linha["loja_id_vulto"], linha["sku"])
+        movimentos_chave = por_chave.get(chave, [])
+        ultima_data = max(
+            [linha["atualizado_em"], *(movimento["criada_em"] for movimento in movimentos_chave)]
+        )
+        normalizados.append(
+            {
+                "id_origem": f"ajuste-zeramento-{chave[0]}-{chave[1]}",
+                "id_loja": linha["id_loja"],
+                "id_loja_destino": None,
+                "loja_id_vulto": chave[0],
+                "sku": chave[1],
+                "codigo_tipo": "ajuste_positivo",
+                "sinal": 1,
+                "quantidade": abs(saldo_origem),
+                "quantidade_anterior": saldo_origem,
+                "quantidade_posterior": 0,
+                "criada_em": ultima_data + timedelta(microseconds=1),
+                "motivo": (
+                    "Ajuste de migracao aprovado: saldo legado negativo tratado como zero; "
+                    "nao representa entrada fisica."
+                ),
+                "custo_unitario": None,
+                "nota_fiscal": None,
+                "fornecedor": None,
+                "dados_origem": {
+                    "movimento_sintetico": True,
+                    "regra_migracao": "saldo_final_negativo_igual_zero",
+                    "quantidade_legada": saldo_origem,
+                    "sku_padronizado": chave[1],
+                    "loja_id_legado": chave[0],
+                    "data_snapshot_legado": linha["atualizado_em"].isoformat(),
+                },
+                "saldo_reconstruido": False,
+                "snapshot_ausente_tratado_como_zero": False,
+            }
+        )
+
     return sorted(
         normalizados,
         key=lambda m: (
             m["criada_em"],
-            int(m["id_origem"].removeprefix("derivado-envio-")),
+            _ordem_id_movimento(m["id_origem"]),
         ),
     )
 
@@ -588,10 +644,22 @@ def gravar_importacao(conexao: Any, fontes: dict[str, list[dict[str, object]]]) 
                 FROM public.tipo_movimentacao_estoque
                 WHERE codigo = ANY(%s)
                 """,
-                (["entrada", "transferencia_entrada", "transferencia_saida"],),
+                (
+                    [
+                        "entrada",
+                        "transferencia_entrada",
+                        "transferencia_saida",
+                        "ajuste_positivo",
+                    ],
+                ),
             )
             tipos = {codigo: id_tipo for codigo, id_tipo in cursor.fetchall()}
-            tipos_necessarios = {"entrada", "transferencia_entrada", "transferencia_saida"}
+            tipos_necessarios = {
+                "entrada",
+                "transferencia_entrada",
+                "transferencia_saida",
+                "ajuste_positivo",
+            }
             if tipos_necessarios - set(tipos):
                 raise ImportacaoEstoqueError(
                     "Tipos de movimento ausentes no Supabase: "
@@ -741,6 +809,11 @@ def gravar_importacao(conexao: Any, fontes: dict[str, list[dict[str, object]]]) 
             bool(linha.get("saldo_inferido_por_ausencia")) for linha in snapshot
         ),
         "movimentos": len(movimentos),
+        "ajustes_zeramento_saldo": sum(
+            movimento["codigo_tipo"] == "ajuste_positivo"
+            and movimento["id_origem"].startswith("ajuste-zeramento-")
+            for movimento in movimentos
+        ),
     }
 
 

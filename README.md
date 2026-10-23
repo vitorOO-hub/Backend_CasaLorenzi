@@ -281,6 +281,22 @@ Todos mostram o plano e **não alteram nada** sem `--aplicar`. São só para des
 | `scripts/semear_vendas.py` | lojas, catálogo, clientes fictícios e ~13 meses de pedidos coerentes |
 | `scripts/semear_chamados.py` | chamados de exemplo para ver a fila funcionando |
 | `scripts/semear_integracao.py` | registros de exemplo para a tela de integrações |
+| `scripts/corrigir_estoque_negativo_vulto.py` | prévia read-only ou correção rastreável dos saldos negativos já importados da Vulto |
+
+A correção do estoque Vulto só atua se os saldos atuais ainda coincidirem com a planilha e não houver
+movimentos posteriores nesses SKUs. Primeiro rode a prévia, que não grava nada:
+
+```powershell
+python -m scripts.corrigir_estoque_negativo_vulto
+```
+
+Para aplicar no Supabase, são obrigatórios os dois sinalizadores; cada saldo negativo vira zero e recebe
+um `ajuste_positivo` identificado como correção de migração (não como entrada física). Os movimentos
+originais permanecem intactos:
+
+```powershell
+python -m scripts.corrigir_estoque_negativo_vulto --aplicar-producao --confirmar-producao
+```
 
 Para `criar_contas.py`, a service role key entra só numa variável do terminal, nunca no `.env`:
 
