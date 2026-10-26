@@ -4,7 +4,7 @@ from pydantic import ValidationError
 from app.core.config import Settings
 from tests.conftest import DATABASE_URL_TESTE
 
-VARIAVEIS = ["DATABASE_URL", "SUPABASE_URL", "CORS_ORIGINS"]
+VARIAVEIS = ["DATABASE_URL", "SUPABASE_URL", "FRONTEND_URL", "CORS_ORIGINS"]
 
 
 @pytest.fixture(autouse=True)
@@ -22,15 +22,18 @@ def test_valores_padrao():
     settings = criar()
     assert settings.supabase_url is None
     assert settings.cors_origins == []
+    assert settings.frontend_url == "https://projetocasalorenzi.vercel.app"
 
 
 def test_le_variaveis_de_ambiente(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", DATABASE_URL_TESTE)
     monkeypatch.setenv("SUPABASE_URL", "https://abc.supabase.co/")
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:5173/")
     monkeypatch.setenv("CORS_ORIGINS", "https://casa-lorenzi.vercel.app/, http://localhost:5173")
     settings = Settings(_env_file=None)
     assert settings.database_url.get_secret_value() == DATABASE_URL_TESTE
     assert settings.supabase_url == "https://abc.supabase.co"
+    assert settings.frontend_url == "http://localhost:5173"
     assert settings.cors_origins == ["https://casa-lorenzi.vercel.app", "http://localhost:5173"]
 
 
@@ -47,3 +50,8 @@ def test_database_url_precisa_ser_postgresql_e_o_erro_nao_vaza_o_valor():
 
 def test_database_url_nao_aparece_no_repr():
     assert "senha-de-teste" not in repr(criar())
+
+
+def test_frontend_url_precisa_ser_absoluta():
+    with pytest.raises(ValidationError):
+        criar(frontend_url="localhost:5173")

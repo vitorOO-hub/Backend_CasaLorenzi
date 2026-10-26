@@ -22,6 +22,9 @@ services:
       # https://<projeto>.supabase.co (a API valida os tokens pelas chaves publicas dele).
       - key: SUPABASE_URL
         sync: false
+      # URL base do frontend; usada como destino seguro do link de convite.
+      - key: FRONTEND_URL
+        value: https://projetocasalorenzi.vercel.app
       # URL do front na Vercel (sem barra no fim), separadas por virgula se houver mais de uma.
       - key: CORS_ORIGINS
         sync: false

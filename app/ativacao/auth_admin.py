@@ -28,9 +28,17 @@ class AuthAdmin(Protocol):
 
 
 class AuthAdminSupabase:
-    def __init__(self, url: str, chave: str, *, cliente: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        url: str,
+        chave: str,
+        *,
+        cliente: httpx.Client | None = None,
+        invite_redirect_to: str | None = None,
+    ) -> None:
         self._base = f"{url}/auth/v1/admin/users"
         self._cabecalhos = {"apikey": chave, "Authorization": f"Bearer {chave}"}
+        self._invite_redirect_to = invite_redirect_to
         self._proprio = cliente is None
         self._cliente = cliente or httpx.Client(timeout=TIMEOUT_SEGUNDOS)
 
@@ -61,7 +69,8 @@ class AuthAdminSupabase:
         raise AtivacaoIndisponivel
 
     def convidar_usuario(self, email: str, redirect_to: str | None = None) -> UUID:
-        parametros = {"redirect_to": redirect_to} if redirect_to else None
+        destino = redirect_to or self._invite_redirect_to
+        parametros = {"redirect_to": destino} if destino else None
         try:
             resposta = self._cliente.post(
                 f"{self._base.removesuffix('/admin/users')}/invite",
@@ -106,7 +115,11 @@ def get_auth_admin(settings: Annotated[Settings, Depends(get_settings)]) -> Iter
     chave = settings.supabase_service_role_key
     if not settings.supabase_url or chave is None:
         raise AtivacaoIndisponivel
-    admin = AuthAdminSupabase(settings.supabase_url, chave.get_secret_value())
+    admin = AuthAdminSupabase(
+        settings.supabase_url,
+        chave.get_secret_value(),
+        invite_redirect_to=f"{settings.frontend_url}/definir-senha",
+    )
     try:
         yield admin
     finally:

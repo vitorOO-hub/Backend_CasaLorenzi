@@ -207,6 +207,23 @@ def test_admin_convida_usuario_sem_definir_senha_e_com_redirect():
     assert visto["corpo"] == '{"email":"funcionario@example.com"}'
 
 
+def test_admin_usa_redirect_configurado_quando_nao_recebe_um_especifico():
+    visto = {}
+
+    def manipulador(req: httpx.Request) -> httpx.Response:
+        visto["url"] = str(req.url)
+        return httpx.Response(200, json={"id": str(ID_AUTH)})
+
+    admin = AuthAdminSupabase(
+        "https://proj.supabase.co",
+        "chave-de-teste",
+        cliente=httpx.Client(transport=httpx.MockTransport(manipulador)),
+        invite_redirect_to="https://loja.example.com/definir-senha",
+    )
+    assert admin.convidar_usuario("funcionario@example.com") == ID_AUTH
+    assert "redirect_to=https%3A%2F%2Floja.example.com%2Fdefinir-senha" in visto["url"]
+
+
 def test_admin_trata_email_existente_no_convite():
     admin = _admin(lambda _r: httpx.Response(422, json={"error_code": "email_exists"}))
     with pytest.raises(EmailJaNoAuth):
