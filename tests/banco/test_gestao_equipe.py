@@ -30,7 +30,11 @@ def sa_conn(sa_conn):
 
 
 def como(usuario, papel=Papel.ADMIN):
-    return UsuarioAtual(id_auth=usuario.auth, papel=papel)
+    return UsuarioAtual(
+        id_auth=usuario.auth,
+        papel=papel,
+        id_loja=usuario.loja if papel is Papel.GERENTE_LOJA else None,
+    )
 
 
 def muda(**campos):
@@ -50,7 +54,7 @@ def test_so_o_admin_ve_o_time_e_cliente_nunca_aparece(sa_conn, fab_sa):
     admin = fab_sa.usuario("diretor")
     ana = fab_sa.usuario("atendente", loja=loja)
     cliente = fab_sa.usuario("cliente")
-    for papel in (Papel.GERENTE_LOJA, Papel.ATENDENTE, Papel.OPERADOR_ESTOQUE):
+    for papel in (Papel.ATENDENTE, Papel.OPERADOR_ESTOQUE):
         with pytest.raises(SemPermissao):
             service.montar_equipe(sa_conn, como(ana, papel))
     equipe = service.montar_equipe(sa_conn, como(admin))
@@ -68,6 +72,24 @@ def test_so_o_admin_ve_o_time_e_cliente_nunca_aparece(sa_conn, fab_sa):
     }
     assert str(loja) in {str(x["id_loja"]) for x in equipe["opcoes"]["lojas"]}
     assert equipe["total"] == len(equipe["itens"])
+
+
+def test_gerente_ve_apenas_a_equipe_da_propria_loja(sa_conn, fab_sa):
+    loja_a, loja_b = fab_sa.loja(), fab_sa.loja()
+    gerente = fab_sa.usuario("gerente_loja", loja=loja_a)
+    membro_a = fab_sa.usuario("atendente", loja=loja_a)
+    fab_sa.usuario("vendedor", loja=loja_b)
+
+    equipe = service.montar_equipe(sa_conn, como(gerente, Papel.GERENTE_LOJA))
+
+    ids = {str(item["id_usuario"]) for item in equipe["itens"]}
+    assert ids == {str(gerente.id), str(membro_a.id)}
+    assert {cargo["codigo"] for cargo in equipe["opcoes"]["cargos"]} == {
+        "atendente",
+        "operador_estoque",
+        "vendedor",
+    }
+    assert equipe["opcoes"]["lojas"] == []
 
 
 def test_mudar_cargo_unidade_e_acesso(sa_conn, fab_sa):

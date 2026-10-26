@@ -4,18 +4,23 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 
+from app.ativacao.auth_admin import AuthAdmin
+from app.ativacao.erros import EmailJaNoAuth
 from app.core import vigencia
 from app.core.erros_auth import SemPermissao
 from app.core.papeis import Papel, UsuarioAtual
 from app.gestao import auditoria, repositorio
 from app.gestao.erros import (
+    CargoNaoPermitido,
+    EmailJaCadastrado,
     LojaDoUsuarioInvalida,
     NaoPodeMudarOProprioAcesso,
     UltimoAdministrador,
     UsuarioNaoEncontrado,
 )
-from app.gestao.schemas import MudancaDeUsuario
+from app.gestao.schemas import MudancaDeUsuario, NovoUsuarioDaEquipe
 
 
 def _so_admin(usuario: UsuarioAtual) -> None:
@@ -24,16 +29,91 @@ def _so_admin(usuario: UsuarioAtual) -> None:
 
 
 def montar_equipe(conexao: Connection, usuario: UsuarioAtual) -> dict[str, Any]:
-    _so_admin(usuario)
-    itens = repositorio.equipe(conexao)
+    if usuario.papel is Papel.ADMIN:
+        itens = repositorio.equipe(conexao)
+        cargos = repositorio.cargos(conexao)
+        lojas = repositorio.lojas_ativas(conexao)
+    elif usuario.papel is Papel.GERENTE_LOJA and usuario.id_loja is not None:
+        itens = repositorio.equipe(conexao, id_loja=usuario.id_loja)
+        cargos = repositorio.cargos(conexao, gerente=True)
+        lojas = []
+    else:
+        raise SemPermissao()
     return {
         "total": len(itens),
         "itens": itens,
         "opcoes": {
-            "cargos": repositorio.cargos(conexao),
-            "lojas": repositorio.lojas_ativas(conexao),
+            "cargos": cargos,
+            "lojas": lojas,
         },
     }
+
+
+def criar_usuario(
+    conexao: Connection,
+    auth_admin: AuthAdmin,
+    usuario: UsuarioAtual,
+    dados: NovoUsuarioDaEquipe,
+) -> dict[str, Any]:
+    """Cria o registro da equipe e envia um convite de definição de senha pelo Supabase Auth."""
+    id_loja = dados.id_loja
+    if usuario.papel is Papel.ADMIN:
+        if dados.cargo == "admin":
+            id_loja = None
+        elif id_loja is None or not repositorio.loja_ativa(conexao, id_loja):
+            raise LojaDoUsuarioInvalida()
+    elif usuario.papel is Papel.GERENTE_LOJA and usuario.id_loja is not None:
+        if dados.cargo not in {"atendente", "operador_estoque", "vendedor"}:
+            raise CargoNaoPermitido()
+        if id_loja is not None and id_loja != usuario.id_loja:
+            raise SemPermissao()
+        id_loja = usuario.id_loja
+    else:
+        raise SemPermissao()
+
+    email = str(dados.email).strip().lower()
+    if repositorio.email_em_uso(conexao, email):
+        raise EmailJaCadastrado()
+
+    id_auth: UUID | None = None
+    try:
+        id_usuario = repositorio.inserir_usuario(
+            conexao,
+            nome=dados.nome,
+            email=email,
+            cargo=dados.cargo,
+            id_loja=id_loja,
+        )
+        if id_usuario is None:
+            raise CargoNaoPermitido()
+        id_auth = auth_admin.convidar_usuario(email)
+        if not repositorio.ligar_auth(conexao, id_usuario, id_auth):
+            raise UsuarioNaoEncontrado()
+        auditoria.registrar(
+            conexao,
+            usuario,
+            "Convidou funcionario",
+            f"{dados.nome} · {dados.cargo}",
+        )
+        conexao.commit()
+    except EmailJaNoAuth as erro:
+        conexao.rollback()
+        raise EmailJaCadastrado() from erro
+    except Exception as erro:
+        conexao.rollback()
+        if id_auth is not None:
+            auth_admin.apagar_usuario(id_auth)
+        constraint = getattr(getattr(erro, "orig", None), "diag", None)
+        if isinstance(erro, IntegrityError) and getattr(
+            constraint, "constraint_name", None
+        ) == "uq_usuario_email":
+            raise EmailJaCadastrado() from erro
+        raise
+
+    novo = repositorio.um_da_equipe(conexao, id_usuario)
+    if novo is None:
+        raise UsuarioNaoEncontrado()
+    return novo
 
 
 def mudar_usuario(

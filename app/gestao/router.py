@@ -1,7 +1,7 @@
-"""Rotas da gestao do admin (`/api/v1/painel/gestao`): o time interno, com cargo, unidade e acesso.
+"""Rotas da gestao (`/api/v1/painel/gestao`): admin cuida da rede; gerente, da propria equipe.
 
-Sempre exigem token valido e papel de admin, independente de AUTENTICACAO_OBRIGATORIA. Cliente nunca
-aparece aqui. Mudancas valem para a pessoa quando o token dela renovar (o cargo vem do token).
+Sempre exigem token valido e papel permitido, independente de AUTENTICACAO_OBRIGATORIA. Cliente
+nunca aparece aqui. Mudancas valem para a pessoa quando o token dela renovar (o cargo vem do token).
 """
 
 from typing import Annotated, Literal
@@ -9,6 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 
+from app.ativacao.auth_admin import AuthAdminDep
 from app.core.db import ExecutarDep
 from app.core.papeis import Papel, UsuarioAtual
 from app.core.security import requer_papel
@@ -23,6 +24,7 @@ from app.gestao.schemas import (
     MapeamentoDeRegistro,
     MudancaDeUsuario,
     NovaPeca,
+    NovoUsuarioDaEquipe,
     PecaAlterada,
     PecaDoCatalogo,
     PecaExcluida,
@@ -36,11 +38,29 @@ from app.gestao.schemas import (
 router = APIRouter(prefix="/painel/gestao", tags=["painel-gestao"])
 
 AdminDep = Annotated[UsuarioAtual, Depends(requer_papel(Papel.ADMIN))]
+GestaoEquipeDep = Annotated[
+    UsuarioAtual, Depends(requer_papel(Papel.ADMIN, Papel.GERENTE_LOJA))
+]
 
 
 @router.get("/usuarios", response_model=Equipe, summary="Time interno: cargo, unidade e acesso")
-def usuarios(usuario: AdminDep, executar: ExecutarDep):
+def usuarios(usuario: GestaoEquipeDep, executar: ExecutarDep):
     return executar(lambda conexao: service.montar_equipe(conexao, usuario))
+
+
+@router.post(
+    "/usuarios",
+    response_model=UsuarioDaEquipe,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cadastrar funcionário e enviar convite para definir senha",
+)
+def criar_usuario(
+    dados: NovoUsuarioDaEquipe,
+    usuario: GestaoEquipeDep,
+    executar: ExecutarDep,
+    auth_admin: AuthAdminDep,
+):
+    return executar(lambda conexao: service.criar_usuario(conexao, auth_admin, usuario, dados))
 
 
 @router.patch(

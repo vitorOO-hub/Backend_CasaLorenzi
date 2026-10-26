@@ -186,6 +186,33 @@ def test_admin_cria_usuario_confirmado_com_a_chave_no_cabecalho():
     assert '"email_confirm":true' in visto["corpo"].replace(" ", "")
 
 
+def test_admin_convida_usuario_sem_definir_senha_e_com_redirect():
+    visto = {}
+
+    def manipulador(req: httpx.Request) -> httpx.Response:
+        visto["url"], visto["auth"] = str(req.url), req.headers["authorization"]
+        visto["corpo"] = req.content.decode()
+        return httpx.Response(200, json={"id": str(ID_AUTH)})
+
+    assert (
+        _admin(manipulador).convidar_usuario(
+            "funcionario@example.com", "https://loja.example.com/definir-senha"
+        )
+        == ID_AUTH
+    )
+    assert visto["url"] == (
+        "https://proj.supabase.co/auth/v1/invite?redirect_to=https%3A%2F%2Floja.example.com%2Fdefinir-senha"
+    )
+    assert visto["auth"] == "Bearer chave-de-teste"
+    assert visto["corpo"] == '{"email":"funcionario@example.com"}'
+
+
+def test_admin_trata_email_existente_no_convite():
+    admin = _admin(lambda _r: httpx.Response(422, json={"error_code": "email_exists"}))
+    with pytest.raises(EmailJaNoAuth):
+        admin.convidar_usuario("funcionario@example.com")
+
+
 @pytest.mark.parametrize(
     ("corpo", "esperado"),
     [

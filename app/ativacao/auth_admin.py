@@ -1,4 +1,4 @@
-"""Admin API do Supabase Auth, so o que a ativacao de conta precisa (criar e apagar usuario).
+"""Admin API do Supabase Auth (criar, convidar e apagar usuario).
 
 A service role key vem do ambiente do servidor e nunca vai para log, resposta ou front.
 """
@@ -21,6 +21,8 @@ CODIGOS_EMAIL_EXISTE = frozenset({"email_exists", "user_already_exists"})
 
 class AuthAdmin(Protocol):
     def criar_usuario(self, email: str, senha: str) -> UUID: ...
+
+    def convidar_usuario(self, email: str, redirect_to: str | None = None) -> UUID: ...
 
     def apagar_usuario(self, id_auth: UUID) -> None: ...
 
@@ -56,6 +58,30 @@ class AuthAdminSupabase:
             raise SenhaRecusada
         # Sem o corpo no log: ele pode ecoar o e-mail ou a senha enviados.
         registro.error("Auth recusou a criacao: status=%s codigo=%s", resposta.status_code, codigo)
+        raise AtivacaoIndisponivel
+
+    def convidar_usuario(self, email: str, redirect_to: str | None = None) -> UUID:
+        parametros = {"redirect_to": redirect_to} if redirect_to else None
+        try:
+            resposta = self._cliente.post(
+                f"{self._base.removesuffix('/admin/users')}/invite",
+                headers=self._cabecalhos,
+                params=parametros,
+                json={"email": email},
+            )
+        except httpx.HTTPError as erro:
+            registro.error("Auth indisponivel ao convidar usuario: %s", type(erro).__name__)
+            raise AtivacaoIndisponivel from erro
+        if resposta.is_success:
+            try:
+                return UUID(resposta.json()["id"])
+            except (KeyError, TypeError, ValueError):
+                registro.error("Auth respondeu sem um id valido ao convidar usuario")
+                raise AtivacaoIndisponivel from None
+        codigo = _codigo_do_erro(resposta)
+        if codigo in CODIGOS_EMAIL_EXISTE:
+            raise EmailJaNoAuth
+        registro.error("Auth recusou o convite: status=%s codigo=%s", resposta.status_code, codigo)
         raise AtivacaoIndisponivel
 
     def apagar_usuario(self, id_auth: UUID) -> None:
