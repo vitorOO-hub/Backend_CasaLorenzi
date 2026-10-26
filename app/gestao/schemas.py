@@ -10,8 +10,10 @@ from pydantic import (
     AfterValidator,
     BaseModel,
     ConfigDict,
+    EmailStr,
     Field,
     StringConstraints,
+    field_validator,
     model_validator,
 )
 
@@ -66,6 +68,25 @@ class MudancaDeUsuario(BaseModel):
     cargo: Cargo | None = None
     id_loja: UUID | None = None
     ativo: bool | None = None
+
+
+class NovoUsuarioDaEquipe(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nome: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=160)]
+    email: EmailStr
+    cargo: Cargo
+    id_loja: UUID | None = None
+
+    @field_validator("nome")
+    @classmethod
+    def _nome_padrao(cls, valor: str) -> str:
+        return texto_padrao(valor) or valor
+
+    @field_validator("email")
+    @classmethod
+    def _email_padrao(cls, valor: EmailStr) -> str:
+        return str(valor).strip().lower()
 
 
 # ---------------------------------------------------------------- catalogo

@@ -6,14 +6,17 @@ nova que esqueca a trava de papel faz este teste quebrar.
 """
 
 import re
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.ativacao.auth_admin import get_auth_admin
 from app.core.config import Settings
 from app.core.db import get_executar
-from app.core.papeis import Papel
+from app.core.papeis import Papel, UsuarioAtual
+from app.core.security import get_current_user
 from app.main import criar_app
 from tests.auth_util import SUPABASE_URL, ParDeChaves, provedor_para
 from tests.conftest import DATABASE_URL_TESTE
@@ -69,7 +72,16 @@ def chamar(cliente, metodo, caminho, headers):
         metodo,
         url,
         headers=headers,
-        json={} if metodo != "GET" else None,
+        json=(
+            {
+                "nome": "Funcionario Teste",
+                "email": "funcionario@example.com",
+                "cargo": "atendente",
+                "id_loja": str(LOJA),
+            }
+            if metodo == "POST" and caminho == "/api/v1/painel/gestao/usuarios"
+            else {} if metodo != "GET" else None
+        ),
         params={"inicio": "2026-09-01", "fim": "2026-09-30"},
     )
 
@@ -178,6 +190,7 @@ def test_a_rede_e_a_gestao_do_admin_nao_abrem_para_os_demais(cliente, par):
         for metodo, caminho in (
             ("GET", "/api/v1/painel/gerencia/rede"),
             ("GET", "/api/v1/painel/gestao/usuarios"),
+            ("POST", "/api/v1/painel/gestao/usuarios"),
             ("PATCH", "/api/v1/painel/gestao/usuarios/{id}"),
             ("GET", "/api/v1/painel/gestao/catalogo"),
             ("POST", "/api/v1/painel/gestao/catalogo"),
@@ -188,5 +201,82 @@ def test_a_rede_e_a_gestao_do_admin_nao_abrem_para_os_demais(cliente, par):
             ("GET", "/api/v1/painel/gestao/vendas-pendentes"),
             ("POST", "/api/v1/painel/gestao/integracoes/registros/{id}/mapear"),
         ):
+            if papel is Papel.GERENTE_LOJA and (
+                (metodo, caminho)
+                in {
+                    ("GET", "/api/v1/painel/gestao/usuarios"),
+                    ("POST", "/api/v1/painel/gestao/usuarios"),
+                }
+            ):
+                continue
             resposta = chamar(cliente, metodo, caminho, cabecalho(par, papel))
             assert resposta.status_code == 403, (papel, caminho)
+
+
+def test_somente_admin_e_gerente_acessam_rotas_de_equipe(cliente, par, monkeypatch):
+    monkeypatch.setitem(cliente.app.dependency_overrides, get_auth_admin, lambda: object())
+    for papel in (Papel.ADMIN, Papel.GERENTE_LOJA, Papel.ATENDENTE, Papel.OPERADOR_ESTOQUE):
+        for metodo in ("GET", "POST"):
+            resposta = chamar(
+                cliente,
+                metodo,
+                "/api/v1/painel/gestao/usuarios",
+                cabecalho(par, papel),
+            )
+            if papel in (Papel.ADMIN, Papel.GERENTE_LOJA):
+                assert resposta.status_code != 403, (papel, metodo, resposta.status_code)
+            else:
+                assert resposta.status_code == 403, (papel, metodo, resposta.status_code)
+
+
+def test_rotas_http_de_listagem_e_cadastro_da_equipe(cliente, monkeypatch):
+    gerente = UsuarioAtual(id_auth=uuid4(), papel=Papel.GERENTE_LOJA, id_loja=LOJA)
+    id_usuario = uuid4()
+    chamadas = []
+
+    class AuthFalso:
+        pass
+
+    monkeypatch.setattr("app.core.vigencia.ATIVA", False)
+    monkeypatch.setitem(cliente.app.dependency_overrides, get_current_user, lambda: gerente)
+    monkeypatch.setitem(cliente.app.dependency_overrides, get_auth_admin, lambda: AuthFalso())
+    monkeypatch.setitem(
+        cliente.app.dependency_overrides,
+        get_executar,
+        lambda: lambda operacao: operacao(object()),
+    )
+    monkeypatch.setattr(
+        "app.gestao.service.montar_equipe",
+        lambda _conn, _usuario: {
+            "total": 0,
+            "itens": [],
+            "opcoes": {"cargos": [], "lojas": []},
+        },
+    )
+
+    def criar(_conn, _auth, autor, dados):
+        chamadas.append((autor, dados.email, dados.id_loja))
+        return {
+            "id_usuario": id_usuario,
+            "nome": dados.nome,
+            "email": dados.email,
+            "cargo": dados.cargo,
+            "id_loja": LOJA,
+            "loja_nome": "Loja teste",
+            "ativo": True,
+            "com_acesso": True,
+            "criado_em": datetime.now(UTC),
+        }
+
+    monkeypatch.setattr("app.gestao.service.criar_usuario", criar)
+    listagem = cliente.get("/api/v1/painel/gestao/usuarios")
+    cadastro = cliente.post(
+        "/api/v1/painel/gestao/usuarios",
+        json={"nome": "Ana Souza", "email": "ana@example.com", "cargo": "atendente"},
+    )
+
+    assert listagem.status_code == 200
+    assert listagem.json()["total"] == 0
+    assert cadastro.status_code == 201
+    assert cadastro.json()["com_acesso"] is True
+    assert chamadas == [(gerente, "ana@example.com", None)]

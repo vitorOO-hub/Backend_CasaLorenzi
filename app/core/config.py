@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     database_url: SecretStr
     supabase_url: str | None = None
+    frontend_url: str = "https://projetocasalorenzi.vercel.app"
     # So para o Admin API do Auth (ativar a conta de cliente importado). Segredo do servidor.
     supabase_service_role_key: SecretStr | None = None
     cors_origins: Annotated[list[str], NoDecode] = []
@@ -41,6 +42,14 @@ class Settings(BaseSettings):
     @classmethod
     def _tirar_barra_final(cls, valor: str | None) -> str | None:
         return valor.strip().rstrip("/") if valor else None
+
+    @field_validator("frontend_url")
+    @classmethod
+    def _validar_frontend_url(cls, valor: str) -> str:
+        url = valor.strip().rstrip("/")
+        if not url.startswith(("http://", "https://")):
+            raise ValueError("FRONTEND_URL deve comecar com http:// ou https://")
+        return url
 
     @field_validator("cors_origins", mode="before")
     @classmethod

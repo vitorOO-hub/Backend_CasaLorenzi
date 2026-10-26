@@ -12,6 +12,16 @@ class UsuarioNaoEncontrado(ErroDeNegocio):
     detalhe = "Usuario nao encontrado"
 
 
+class EmailJaCadastrado(ErroDeNegocio):
+    status_code = status.HTTP_409_CONFLICT
+    detalhe = "Ja existe um funcionario com este e-mail"
+
+
+class CargoNaoPermitido(ErroDeNegocio):
+    status_code = status.HTTP_403_FORBIDDEN
+    detalhe = "Seu cargo nao pode cadastrar este tipo de usuario"
+
+
 class LojaDoUsuarioInvalida(ErroDeNegocio):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     detalhe = "Escolha uma loja ativa para este cargo"

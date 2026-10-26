@@ -90,6 +90,7 @@ Modelo em [`.env.example`](.env.example). Segredos nunca entram no Git.
 |---|---|---|---|
 | `DATABASE_URL` | sim | — | String de conexão do Postgres. No Render use a do *pooler* do Supabase |
 | `SUPABASE_URL` | sim em produção | — | `https://<projeto>.supabase.co`. Sem ela, as rotas protegidas respondem 503 |
+| `FRONTEND_URL` | não | `https://projetocasalorenzi.vercel.app` | URL base do frontend; convites redirecionam para `/definir-senha`. Em desenvolvimento local, use `http://localhost:5173` |
 | `CORS_ORIGINS` | sim em produção | `[]` | Origens do front, separadas por vírgula, **sem barra no fim** |
 | `SUPABASE_SERVICE_ROLE_KEY` | só para ativar conta | — | Chave `service_role` do Supabase, usada só no Admin API (ativação de conta do cliente importado). Segredo do servidor: nunca no front nem no Git. Sem ela, `POST /api/v1/ativacao-conta` responde 503 |
 | `DOCS_HABILITADAS` | não | `false` | Liga `/docs`, `/redoc` e `/openapi.json` (só em desenvolvimento) |

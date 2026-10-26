@@ -1,4 +1,4 @@
-"""Admin API do Supabase Auth, so o que a ativacao de conta precisa (criar e apagar usuario).
+"""Admin API do Supabase Auth (criar, convidar e apagar usuario).
 
 A service role key vem do ambiente do servidor e nunca vai para log, resposta ou front.
 """
@@ -22,13 +22,23 @@ CODIGOS_EMAIL_EXISTE = frozenset({"email_exists", "user_already_exists"})
 class AuthAdmin(Protocol):
     def criar_usuario(self, email: str, senha: str) -> UUID: ...
 
+    def convidar_usuario(self, email: str, redirect_to: str | None = None) -> UUID: ...
+
     def apagar_usuario(self, id_auth: UUID) -> None: ...
 
 
 class AuthAdminSupabase:
-    def __init__(self, url: str, chave: str, *, cliente: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        url: str,
+        chave: str,
+        *,
+        cliente: httpx.Client | None = None,
+        invite_redirect_to: str | None = None,
+    ) -> None:
         self._base = f"{url}/auth/v1/admin/users"
         self._cabecalhos = {"apikey": chave, "Authorization": f"Bearer {chave}"}
+        self._invite_redirect_to = invite_redirect_to
         self._proprio = cliente is None
         self._cliente = cliente or httpx.Client(timeout=TIMEOUT_SEGUNDOS)
 
@@ -58,6 +68,31 @@ class AuthAdminSupabase:
         registro.error("Auth recusou a criacao: status=%s codigo=%s", resposta.status_code, codigo)
         raise AtivacaoIndisponivel
 
+    def convidar_usuario(self, email: str, redirect_to: str | None = None) -> UUID:
+        destino = redirect_to or self._invite_redirect_to
+        parametros = {"redirect_to": destino} if destino else None
+        try:
+            resposta = self._cliente.post(
+                f"{self._base.removesuffix('/admin/users')}/invite",
+                headers=self._cabecalhos,
+                params=parametros,
+                json={"email": email},
+            )
+        except httpx.HTTPError as erro:
+            registro.error("Auth indisponivel ao convidar usuario: %s", type(erro).__name__)
+            raise AtivacaoIndisponivel from erro
+        if resposta.is_success:
+            try:
+                return UUID(resposta.json()["id"])
+            except (KeyError, TypeError, ValueError):
+                registro.error("Auth respondeu sem um id valido ao convidar usuario")
+                raise AtivacaoIndisponivel from None
+        codigo = _codigo_do_erro(resposta)
+        if codigo in CODIGOS_EMAIL_EXISTE:
+            raise EmailJaNoAuth
+        registro.error("Auth recusou o convite: status=%s codigo=%s", resposta.status_code, codigo)
+        raise AtivacaoIndisponivel
+
     def apagar_usuario(self, id_auth: UUID) -> None:
         try:
             resposta = self._cliente.delete(f"{self._base}/{id_auth}", headers=self._cabecalhos)
@@ -80,7 +115,11 @@ def get_auth_admin(settings: Annotated[Settings, Depends(get_settings)]) -> Iter
     chave = settings.supabase_service_role_key
     if not settings.supabase_url or chave is None:
         raise AtivacaoIndisponivel
-    admin = AuthAdminSupabase(settings.supabase_url, chave.get_secret_value())
+    admin = AuthAdminSupabase(
+        settings.supabase_url,
+        chave.get_secret_value(),
+        invite_redirect_to=f"{settings.frontend_url}/definir-senha",
+    )
     try:
         yield admin
     finally:

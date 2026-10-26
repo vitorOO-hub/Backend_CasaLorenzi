@@ -30,8 +30,12 @@ ORDER BY t.nome
 """
 
 
-def equipe(conexao: Connection) -> list[dict[str, Any]]:
-    linhas = conexao.execute(text(EQUIPE + " ORDER BY u.nome, u.email")).mappings()
+def equipe(conexao: Connection, *, id_loja: UUID | None = None) -> list[dict[str, Any]]:
+    filtro = " AND u.id_loja = CAST(:loja AS uuid)" if id_loja else ""
+    linhas = conexao.execute(
+        text(EQUIPE + filtro + " ORDER BY u.nome, u.email"),
+        {"loja": str(id_loja) if id_loja else None},
+    ).mappings()
     return [dict(linha) for linha in linhas]
 
 
@@ -46,8 +50,14 @@ def um_da_equipe(conexao: Connection, id_usuario: UUID) -> dict[str, Any] | None
     return dict(linha) if linha else None
 
 
-def cargos(conexao: Connection) -> list[dict[str, Any]]:
-    return [dict(linha) for linha in conexao.execute(text(CARGOS)).mappings()]
+def cargos(conexao: Connection, *, gerente: bool = False) -> list[dict[str, Any]]:
+    consulta = CARGOS
+    if gerente:
+        consulta = CARGOS.replace(
+            "ORDER BY t.nome",
+            "AND t.codigo IN ('atendente', 'operador_estoque', 'vendedor')\nORDER BY t.nome",
+        )
+    return [dict(linha) for linha in conexao.execute(text(consulta)).mappings()]
 
 
 def lojas_ativas(conexao: Connection) -> list[dict[str, Any]]:
@@ -55,6 +65,50 @@ def lojas_ativas(conexao: Connection) -> list[dict[str, Any]]:
         text("SELECT id_loja, nome FROM loja WHERE ativa ORDER BY nome")
     ).mappings()
     return [dict(linha) for linha in linhas]
+
+
+def email_em_uso(conexao: Connection, email: str) -> bool:
+    return bool(
+        conexao.execute(
+            text("SELECT 1 FROM usuario WHERE lower(email) = :email"), {"email": email}
+        ).scalar()
+    )
+
+
+def inserir_usuario(
+    conexao: Connection, *, nome: str, email: str, cargo: str, id_loja: UUID | None
+) -> UUID | None:
+    codigo = "diretor" if cargo == "admin" else cargo
+    linha = conexao.execute(
+        text(
+            """
+            INSERT INTO usuario (id_tipo_usuario, id_loja, nome, email, ativo)
+            SELECT id_tipo_usuario, CAST(:loja AS uuid), :nome, :email, TRUE
+            FROM tipo_usuario WHERE codigo = :codigo AND ativo
+            RETURNING id_usuario
+            """
+        ),
+        {
+            "loja": str(id_loja) if id_loja else None,
+            "nome": nome,
+            "email": email,
+            "codigo": codigo,
+        },
+    ).first()
+    return linha[0] if linha else None
+
+
+def ligar_auth(conexao: Connection, id_usuario: UUID, id_auth: UUID) -> bool:
+    resultado = conexao.execute(
+        text(
+            """
+            UPDATE usuario SET auth_user_id = CAST(:auth AS uuid), atualizado_em = now()
+            WHERE id_usuario = CAST(:id AS uuid) AND auth_user_id IS NULL
+            """
+        ),
+        {"auth": str(id_auth), "id": str(id_usuario)},
+    )
+    return resultado.rowcount == 1
 
 
 def travar(conexao: Connection, id_usuario: UUID) -> dict[str, Any] | None:
