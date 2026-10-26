@@ -1,9 +1,12 @@
 """Protecoes de borda: limite de requisicoes, cabecalhos, docs fechadas e erros sem vazamento."""
 
+import gzip
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.middleware.gzip import GZipMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.core.config import Settings
@@ -213,6 +216,60 @@ def test_app_aplica_limite_cabecalhos_e_cors_juntos():
         r.headers["access-control-allow-origin"] == "http://localhost:5173"
     )  # o 429 chega ao front
     assert r.headers["x-content-type-options"] == "nosniff"
+
+
+def test_app_comprime_respostas_grandes_quando_cliente_aceita_gzip():
+    app = criar_app(Settings(_env_file=None, database_url=DATABASE_URL_TESTE))
+    assert any(middleware.cls is GZipMiddleware for middleware in app.user_middleware)
+
+    corpo = b"x" * 1000
+    mensagens = []
+
+    async def aplicacao(scope, receive, send):
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"application/json")],
+            }
+        )
+        await send({"type": "http.response.body", "body": corpo, "more_body": False})
+
+    async def receber():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def enviar(mensagem):
+        mensagens.append(mensagem)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/resposta-grande",
+        "raw_path": b"/resposta-grande",
+        "query_string": b"",
+        "headers": [(b"accept-encoding", b"gzip")],
+        "server": ("testserver", 80),
+        "client": ("testclient", 50000),
+        "root_path": "",
+    }
+
+    # O caminho nao faz I/O; avancar a coroutine evita o socketpair do loop padrao do Windows.
+    chamada = GZipMiddleware(aplicacao, minimum_size=500)(scope, receber, enviar)
+    try:
+        chamada.send(None)
+    except StopIteration:
+        pass
+    else:
+        pytest.fail("O middleware de compressao aguardou uma operacao externa inesperada")
+
+    inicio = mensagens[0]
+    cabecalhos = dict(inicio["headers"])
+    assert inicio["status"] == 200
+    assert cabecalhos[b"content-encoding"] == b"gzip"
+    assert gzip.decompress(mensagens[-1]["body"]) == corpo
 
 
 @pytest.mark.parametrize("variavel", ["LIMITES_ATIVOS"])
