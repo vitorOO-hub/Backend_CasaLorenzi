@@ -11,6 +11,12 @@ As chaves e modelos sao configurados no `.env` local. Gemini e Gemma usam a mesm
 
 O segundo modo pode fazer mais de uma requisicao por caso (uma para solicitar a ferramenta e outra para responder com o resultado). Comece com uma repeticao; os custos de API, caso as chaves estejam configuradas, sao reais. As estimativas de custo so aparecem se as tarifas por milhao de tokens forem preenchidas e nao incluem eventuais diferencas de cobranca entre modelos.
 
+## Trava de uso
+
+Cada execucao tem um limite total de 20 requisicoes HTTP, compartilhado entre os provedores e incluindo cada rodada de ferramentas. A execucao para antes de enviar a proxima requisicao. Configure `BENCH_MAX_API_REQUESTS` no `.env` ou passe `--max-api-requests N` para alterar o limite. O padrao conservador pode interromper um benchmark completo; aumente-o conscientemente apenas quando necessario. As respostas tambem ficam limitadas a 256 tokens por chamada.
+
+Essa trava limita cada processo local; nao e um teto de gastos da conta nem soma execucoes em computadores diferentes. Ela nao consegue verificar se o projeto esta no nivel gratuito ou se o faturamento foi ativado. Para evitar cobranca, mantenha o Gemini sem faturamento vinculado e o Groq no nivel gratuito. O benchmark interrompe a rodada ao receber erro de quota/faturamento (402/429), mas essa resposta so protege chamadas feitas por estes scripts. Confira os limites e o faturamento diretamente nos paineis dos provedores: [Gemini](https://ai.google.dev/gemini-api/docs/billing) e [Groq](https://console.groq.com/docs/billing-faqs).
+
 ## Criterios de roteamento (piloto local)
 
 O modulo `classificacao_perguntas.py` separa capacidade do modelo da necessidade de consultar dados. Ele apenas classifica; nao chama provedores, nao executa ferramentas e nao autoriza acesso a dados.

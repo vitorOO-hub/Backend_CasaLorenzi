@@ -14,7 +14,8 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 from fixtures import TOOL_DECLARATIONS, run_tool, score_tool_calls
-from run import CASES_PATH, PROVIDERS, ROOT, estimate_cost, score
+from run import CASES_PATH, MAX_OUTPUT_TOKENS, PROVIDERS, ROOT, estimate_cost, score
+from usage_guard import RequestBudget, RequestLimitExceeded, resolve_max_requests
 
 MAX_TOOL_ROUNDS = 4
 TIMEOUT_SECONDS = 60.0
@@ -115,7 +116,7 @@ def call_gemini(
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "tools": tool_spec("gemini"),
-        "generationConfig": {"temperature": 0},
+        "generationConfig": {"temperature": 0, "maxOutputTokens": MAX_OUTPUT_TOKENS},
     }
     calls: list[dict[str, Any]] = []
     usage = {"input": 0, "output": 0}
@@ -174,6 +175,7 @@ def call_groq(
                 "tool_choice": "auto",
                 "parallel_tool_calls": False,
                 "temperature": 0,
+                "max_tokens": MAX_OUTPUT_TOKENS,
             },
         )
         add_usage(usage, data.get("usage", {}), "prompt_tokens", "completion_tokens")
@@ -226,7 +228,7 @@ def call_anthropic(
             headers,
             {
                 "model": model,
-                "max_tokens": 400,
+                "max_tokens": MAX_OUTPUT_TOKENS,
                 "temperature": 0,
                 "system": system,
                 "messages": messages,
@@ -275,6 +277,11 @@ def main() -> int:
     )
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument(
+        "--max-api-requests",
+        type=int,
+        help="Limite total de requisicoes HTTP nesta execucao (padrao: env ou 20).",
+    )
+    parser.add_argument(
         "--case",
         help="Executa apenas um caso (consulte os ids em casos.json).",
     )
@@ -290,6 +297,10 @@ def main() -> int:
         parser.error("--repetitions precisa ser pelo menos 1")
 
     load_dotenv(ROOT / ".env")
+    try:
+        max_api_requests = resolve_max_requests(args.max_api_requests)
+    except ValueError as exc:
+        parser.error(str(exc))
     settings = []
     missing = []
     for provider, key_name, model_name, _ in PROVIDERS:
@@ -333,7 +344,11 @@ def main() -> int:
         provider: {"latencies": [], "tools_passed": 0, "answers_passed": 0, "total": 0}
         for provider, _, _, _ in settings
     }
-    with httpx.Client(timeout=TIMEOUT_SECONDS) as client, output_path.open(
+    budget = RequestBudget(max_api_requests)
+    with httpx.Client(
+        timeout=TIMEOUT_SECONDS,
+        event_hooks={"request": [budget.before_request]},
+    ) as client, output_path.open(
         "w", newline="", encoding="utf-8-sig"
     ) as output_file:
         writer = csv.DictWriter(output_file, fieldnames=fields)
@@ -359,8 +374,12 @@ def main() -> int:
                         error = (
                             exc.label
                             if isinstance(exc, APIRequestError)
+                            else str(exc)
+                            if isinstance(exc, RequestLimitExceeded)
                             else type(exc).__name__
                         )
+                        if isinstance(exc, RequestLimitExceeded):
+                            stop_reason = str(exc)
                         if isinstance(exc, APIRequestError) and exc.stop_run:
                             stop_reason = exc.label
                     elapsed_ms = round((time.perf_counter() - started) * 1000)
@@ -417,6 +436,7 @@ def main() -> int:
             f"mediana {statistics.median(values['latencies']):.0f} ms"
         )
     print(f"\nResultados: {output_path}")
+    print(f"Chamadas API: {budget.used}/{budget.max_requests}")
     print("Cada caso pode exigir mais de uma requisicao HTTP por causa do ciclo de ferramentas.")
     return 1 if stop_reason else 0
 

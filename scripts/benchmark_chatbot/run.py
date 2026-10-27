@@ -14,10 +14,12 @@ from typing import Any
 
 import httpx
 from dotenv import load_dotenv
+from usage_guard import RequestBudget, RequestLimitExceeded, resolve_max_requests
 
 ROOT = Path(__file__).resolve().parents[2]
 CASES_PATH = Path(__file__).with_name("casos.json")
 TIMEOUT_SECONDS = 60.0
+MAX_OUTPUT_TOKENS = 256
 
 
 class APIRequestError(RuntimeError):
@@ -73,7 +75,7 @@ def ask_gemini(
     payload = {
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0},
+        "generationConfig": {"temperature": 0, "maxOutputTokens": MAX_OUTPUT_TOKENS},
     }
     data = request_json(client, f"{url}?key={key}", {}, payload)
     parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
@@ -92,6 +94,7 @@ def ask_groq(
             {"role": "user", "content": prompt},
         ],
         "temperature": 0,
+        "max_tokens": MAX_OUTPUT_TOKENS,
     }
     data = request_json(
         client,
@@ -109,7 +112,7 @@ def ask_anthropic(
 ) -> tuple[str, int | None, int | None]:
     payload = {
         "model": model,
-        "max_tokens": 300,
+        "max_tokens": MAX_OUTPUT_TOKENS,
         "temperature": 0,
         "system": system,
         "messages": [{"role": "user", "content": prompt}],
@@ -168,6 +171,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Compara APIs com casos ficticios.")
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument(
+        "--max-api-requests",
+        type=int,
+        help="Limite total de requisicoes HTTP nesta execucao (padrao: env ou 20).",
+    )
+    parser.add_argument(
         "--providers",
         nargs="+",
         choices=["gemini", "gemma", "groq", "anthropic"],
@@ -179,6 +187,10 @@ def main() -> int:
         parser.error("--repetitions precisa ser pelo menos 1")
 
     load_dotenv(ROOT / ".env")
+    try:
+        max_api_requests = resolve_max_requests(args.max_api_requests)
+    except ValueError as exc:
+        parser.error(str(exc))
     settings = []
     missing = []
     for provider, key_name, model_name, call in PROVIDERS:
@@ -223,7 +235,11 @@ def main() -> int:
         "error",
     ]
 
-    with httpx.Client(timeout=TIMEOUT_SECONDS) as client, output_path.open(
+    budget = RequestBudget(max_api_requests)
+    with httpx.Client(
+        timeout=TIMEOUT_SECONDS,
+        event_hooks={"request": [budget.before_request]},
+    ) as client, output_path.open(
         "w", newline="", encoding="utf-8-sig"
     ) as output_file:
         writer = csv.DictWriter(output_file, fieldnames=fields)
@@ -261,8 +277,12 @@ def main() -> int:
                         error = (
                             exc.label
                             if isinstance(exc, APIRequestError)
+                            else str(exc)
+                            if isinstance(exc, RequestLimitExceeded)
                             else type(exc).__name__
                         )
+                        if isinstance(exc, RequestLimitExceeded):
+                            stop_reason = str(exc)
                         if isinstance(exc, APIRequestError) and exc.stop_run:
                             stop_reason = exc.label
                     elapsed_ms = round((time.perf_counter() - started) * 1000)
@@ -330,6 +350,7 @@ def main() -> int:
             f"custo {cost}"
         )
     print(f"\nResultados: {output_path}")
+    print(f"Chamadas API: {budget.used}/{budget.max_requests}")
     print("A checagem automatica e indicativa; revisem as respostas antes de concluir.")
     return 1 if stop_reason else 0
 
