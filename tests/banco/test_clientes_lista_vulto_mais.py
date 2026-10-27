@@ -75,7 +75,7 @@ def test_opcoes_trazem_as_lojas_com_cliente_e_as_categorias(sa_conn, cena):
     o = service.opcoes(sa_conn)
     lojas = {x["id_loja"] for x in o["lojas_cadastro"]}
     assert {cena["loja_v"], cena["loja_c"]} <= lojas
-    assert [c["codigo"] for c in o["categorias"]] == ["ouro", "prata", "bronze", "sem_pontos"]
+    assert [c["codigo"] for c in o["categorias"]] == ["black", "ouro", "prata", "bronze", "sem_pontos"]
 
 
 def test_filtro_por_marca_do_cadastro(sa_conn, cena):

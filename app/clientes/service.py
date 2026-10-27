@@ -68,6 +68,7 @@ def opcoes(conexao: Connection) -> dict[str, Any]:
         "categorias": [
             {"codigo": c, "nome": n}
             for c, n in (
+                ("black", "Black"),
                 ("ouro", "Ouro"),
                 ("prata", "Prata"),
                 ("bronze", "Bronze"),

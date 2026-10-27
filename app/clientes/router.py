@@ -30,7 +30,7 @@ def listar(
     ] = None,
     secao: Literal["todos", "com_aberto", "meus"] = "todos",
     id_loja: IdLoja = None,
-    categoria: Literal["ouro", "prata", "bronze", "sem_pontos"] | None = None,
+    categoria: Literal["black", "ouro", "prata", "bronze", "sem_pontos"] | None = None,
     id_loja_cadastro: Annotated[UUID | None, Query(description="Loja de cadastro")] = None,
     marca: Literal["casa_lorenzi", "vulto"] | None = None,
     limit: int = Query(default=20, ge=1, le=100),

@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from app.cliente import resgate_pontos
+from app.cliente import beneficios, resgate_pontos
 from app.cliente.erros import (
     CadastroClienteNaoEncontrado,
     ChamadoClienteFinalizado,
@@ -1356,7 +1356,7 @@ def criar_checkout(
         # Pontos Lorenzi+ viram desconto nas pecas (nunca no frete).
         pontos = int(dados.get("pontos_resgatados") or 0)
         desconto = Decimal("0.00")
-        nota_resgate = ""
+        nota_lorenzi_mais = ""
         if pontos:
             desconto = resgate_pontos.resgatar(
                 conexao,
@@ -1367,13 +1367,20 @@ def criar_checkout(
                 pontos=pontos,
                 valor_das_pecas=subtotal,
             )
-            nota_resgate = f" Resgate Lorenzi+: {pontos} pontos (R$ {desconto})."
+            nota_lorenzi_mais = f" Resgate Lorenzi+: {pontos} pontos (R$ {desconto})."
+        # Frete grátis pela categoria Lorenzi+ (ou pela regra da loja): vale o que o back calcula.
+        if dados["entrega"] == "casa" and frete > 0:
+            categoria = categoria_do_cliente(conexao, id_cliente)
+            com_beneficio = beneficios.frete_com_beneficio(categoria, frete, subtotal)
+            if com_beneficio != frete:
+                frete = _dinheiro(com_beneficio)
+                nota_lorenzi_mais += f" Frete grátis Lorenzi+ ({categoria})."
         total = _dinheiro(subtotal - desconto + frete)
         executar_sql(
             conexao,
             "UPDATE pedido SET valor_total = %s, valor_frete = %s, canal_venda = 'online', "
             "observacao = observacao || %s, atualizado_em = now() WHERE id_pedido = %s",
-            (total, frete, nota_resgate, id_pedido),
+            (total, frete, nota_lorenzi_mais, id_pedido),
         )
         executar_sql(
             conexao,
@@ -1406,15 +1413,22 @@ def criar_checkout(
     return obter_pedido_cliente(conexao, id_cliente, id_pedido)
 
 
-# Categoria pelos pontos creditados no ano (regra do programa Vulto+).
-CATEGORIAS_VULTO_MAIS = (("ouro", 5000), ("prata", 2000), ("bronze", 0))
+# Categoria pelos pontos creditados no ano (regra do programa Lorenzi+, antigo Vulto+).
+CATEGORIAS_VULTO_MAIS = (("black", 10000), ("ouro", 5000), ("prata", 2000), ("bronze", 0))
 EXTRATO_VULTO_MAIS = 8
 
 
-def vulto_mais_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, object]:
-    """Saldo e categoria do programa de pontos. O saldo e a soma do extrato (ja com os
-    vencimentos lancados); a categoria vem dos creditos do ano corrente."""
-    resumo = (
+def categoria_do_ano(creditos: int) -> str:
+    return next(nome for nome, minimo in CATEGORIAS_VULTO_MAIS if creditos >= minimo)
+
+
+def categoria_do_cliente(conexao: Connection, id_cliente: UUID) -> str:
+    """Categoria do cliente agora (para o frete do checkout)."""
+    return categoria_do_ano(_resumo_de_pontos(conexao, id_cliente)["creditos_no_ano"])
+
+
+def _resumo_de_pontos(conexao: Connection, id_cliente: UUID):
+    return (
         conexao.execute(
             text(
                 """
@@ -1435,6 +1449,12 @@ def vulto_mais_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, objec
         .mappings()
         .one()
     )
+
+
+def vulto_mais_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, object]:
+    """Saldo, categoria e benefícios do programa de pontos. O saldo e a soma do extrato (ja com os
+    vencimentos lancados); a categoria vem dos creditos do ano corrente."""
+    resumo = _resumo_de_pontos(conexao, id_cliente)
     extrato = conexao.execute(
         text(
             """
@@ -1448,11 +1468,14 @@ def vulto_mais_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, objec
         {"cliente": str(id_cliente), "limite": EXTRATO_VULTO_MAIS},
     ).mappings()
     creditos = resumo["creditos_no_ano"]
-    categoria = next(nome for nome, minimo in CATEGORIAS_VULTO_MAIS if creditos >= minimo)
+    categoria = categoria_do_ano(creditos)
     acima = [(nome, minimo) for nome, minimo in CATEGORIAS_VULTO_MAIS if minimo > creditos]
     proxima = acima[-1] if acima else None
     return {
         "regras": resgate_pontos.regras(),
+        "beneficios": beneficios.beneficios(categoria),
+        "proximos_beneficios": beneficios.beneficios(proxima[0]) if proxima else [],
+        "frete_gratis_a_partir": beneficios.frete_gratis_a_partir(categoria),
         "saldo": resumo["saldo"],
         "categoria": categoria,
         "creditos_no_ano": creditos,
