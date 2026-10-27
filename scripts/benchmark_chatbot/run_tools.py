@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import statistics
 import time
 from datetime import datetime
@@ -31,6 +32,14 @@ class APIRequestError(RuntimeError):
         stop_terms = ("billing", "credit", "quota", "spend", "resource_exhausted")
         self.stop_run = status_code in (402, 429) or any(term in code for term in stop_terms)
         self.label = f"HTTP {status_code}"
+        error_type = details.get("status") or details.get("type") or details.get("code")
+        message = " ".join(str(details.get("message", "")).split())
+        message = re.sub(r"AIza[\w-]{20,}", "[REDACTED_API_KEY]", message)
+        message = re.sub(r"(?i)(key=)[^&\s\"']+", r"\1[REDACTED]", message)
+        if error_type:
+            self.label += f" {str(error_type)[:80]}"
+        if message:
+            self.label += f": {message[:240]}"
         if self.stop_run:
             self.label += " (billing/quota; interrompido)"
         super().__init__(self.label)
@@ -67,7 +76,7 @@ def post_json(
 
 
 def tool_spec(provider: str) -> list[dict[str, Any]]:
-    if provider == "gemini":
+    if provider in {"gemini", "gemma"}:
         declarations = []
         for item in TOOL_DECLARATIONS:
             schema = json.loads(json.dumps(item["parameters"]))
@@ -254,6 +263,7 @@ def call_anthropic(
 
 TOOL_CALLS = {
     "gemini": call_gemini,
+    "gemma": call_gemini,
     "groq": call_groq,
     "anthropic": call_anthropic,
 }
@@ -271,9 +281,9 @@ def main() -> int:
     parser.add_argument(
         "--providers",
         nargs="+",
-        choices=["gemini", "groq", "anthropic"],
-        default=["gemini", "groq"],
-        help="Provedores incluidos (padrao: Gemini e Groq).",
+        choices=["gemini", "gemma", "groq", "anthropic"],
+        default=["gemini", "gemma"],
+        help="Modelos incluidos (padrao: Gemini e Gemma).",
     )
     args = parser.parse_args()
     if args.repetitions < 1:

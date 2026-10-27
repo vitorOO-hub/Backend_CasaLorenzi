@@ -1,8 +1,8 @@
 # Benchmark isolado do chatbot
 
-Este piloto compara Gemini e Groq por padrao, com as mesmas perguntas e fixtures inteiramente ficticias. Anthropic continua disponivel como opcao explicita, mas nao faz parte da comparacao atual. O benchmark nao acessa o banco, nao chama endpoints da plataforma e nao altera o deploy.
+Este piloto compara Gemini e Gemma por padrao, com as mesmas perguntas e fixtures inteiramente ficticias. Groq e Anthropic continuam disponiveis como opcoes explicitas. O benchmark nao acessa o banco, nao chama endpoints da plataforma e nao altera o deploy.
 
-As chaves e modelos serao configurados depois no `.env` local. O resultado sera salvo fora do repositorio. Nenhum dos scripts acessa banco, endpoints da plataforma ou deploy.
+As chaves e modelos sao configurados no `.env` local. Gemini e Gemma usam a mesma `GEMINI_API_KEY`, mas identificadores de modelo distintos. Os resultados CSV ficam em `scripts/benchmark_chatbot/resultados/`. Nenhum dos scripts acessa banco, endpoints da plataforma ou deploy.
 
 ## Modos de teste
 
@@ -11,11 +11,26 @@ As chaves e modelos serao configurados depois no `.env` local. O resultado sera 
 
 O segundo modo pode fazer mais de uma requisicao por caso (uma para solicitar a ferramenta e outra para responder com o resultado). Comece com uma repeticao; os custos de API, caso as chaves estejam configuradas, sao reais. As estimativas de custo so aparecem se as tarifas por milhao de tokens forem preenchidas e nao incluem eventuais diferencas de cobranca entre modelos.
 
+## Criterios de roteamento (piloto local)
+
+O modulo `classificacao_perguntas.py` separa capacidade do modelo da necessidade de consultar dados. Ele apenas classifica; nao chama provedores, nao executa ferramentas e nao autoriza acesso a dados.
+
+| Decisao | Criterio | Exemplo |
+| --- | --- | --- |
+| `rapida` | Pergunta direta, de um passo, sem analise, ambiguidade ou dado pessoal/financeiro. Uma consulta simples pode usar ferramenta e continuar na rota rapida. | "Quantas unidades da CAM-001 temos na Savassi?" |
+| `precisa` | Pede comparacao, explicacao, estimativa ou raciocinio em varias etapas; envolve pontos, pedido/saldo pessoal ou metricas financeiras; ou tenta obter/inventar dado protegido. | "Compare as vendas dos meses e explique a diferenca." |
+| `esclarecer` | Falta identificar o produto/pedido ou a pergunta esta vazia. Pedir o detalhe faltante antes de gastar uma chamada de modelo. | "Tem essa peca na loja?" |
+
+`requer_ferramenta` e independente da rota: estoque, preco atual, pontos, pedido, horario e indicadores consultaveis sao marcados para ferramenta quando a pergunta inclui dados suficientes. A ferramenta deve aplicar autenticacao, autorizacao e escopo no backend. A classificacao nunca concede permissao. Casos incertos devem ir para `precisa` ou pedir esclarecimento, nao para a rota rapida.
+
+Este e um primeiro classificador heuristico, nao uma decisao final de producao. Ele deve ser avaliado com perguntas reais anonimizadas e exemplos de cada intencao. A rota rapida so deve ser mapeada para um provedor depois de confirmar que ele esta configurado, disponivel e passou nos testes; no momento o classificador ainda nao escolhe nomes de API/modelo.
+
 Para a comparacao atual, configure no `.env` local. A Groq tem limites de uso no plano gratuito; nao faca upgrade para o plano Developer se a ideia e evitar cobrancas.
 
     GEMINI_API_KEY=
-    GROQ_API_KEY=
     BENCH_GEMINI_MODEL=
+    BENCH_GEMMA_MODEL=gemma-4-26b-a4b-it
+    GROQ_API_KEY=
     BENCH_GROQ_MODEL=
 
 Para estimar custo, tambem podem ser informadas as tarifas atuais por milhao de tokens (entrada e saida por provedor):
@@ -33,7 +48,7 @@ Para comecar com apenas um caso nos dois provedores:
 
     python scripts/benchmark_chatbot/run_tools.py --case estoque_savassi --repetitions 1
 
-O argumento `--providers` pode limitar ou alterar os provedores. Por exemplo, `--providers gemini groq` e o padrao atual; incluir `anthropic` so deve ser feito se decidirem testa-lo e configurarem sua chave.
+O argumento `--providers` pode limitar ou alterar os modelos. Por exemplo, `--providers gemini` executa somente Gemini; `--providers gemini gemma` compara os dois pela API do Google. Groq usa `GROQ_API_KEY`; Anthropic usa `ANTHROPIC_API_KEY`.
 
 Para executar tres repeticoes do baseline:
 
