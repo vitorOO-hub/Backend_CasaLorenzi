@@ -12,6 +12,7 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    HttpUrl,
     StringConstraints,
     field_validator,
     model_validator,
@@ -124,10 +125,22 @@ class PecaAlterada(BaseModel):
     nome: NomeDaPeca | None = None
     categoria: Categoria | None = None
     preco: Annotated[Decimal, Field(ge=0, le=Decimal("9999999.99"), decimal_places=2)] | None = None
+    imagem_url: HttpUrl | None = None
+    imagem_alt: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=300)
+    ] | None = None
 
     @model_validator(mode="after")
     def _algo_para_mudar(self) -> "PecaAlterada":
-        if self.nome is None and self.categoria is None and self.preco is None:
+        if not any(
+            (
+                self.nome is not None,
+                self.categoria is not None,
+                self.preco is not None,
+                "imagem_url" in self.model_fields_set,
+                "imagem_alt" in self.model_fields_set,
+            )
+        ):
             raise ValueError("Informe o que mudar")
         return self
 
@@ -136,6 +149,8 @@ class PecaDoCatalogo(Saida):
     id_produto: UUID
     nome: str
     categoria: str | None
+    imagem_url: HttpUrl | None = None
+    imagem_alt: str | None = None
     preco: float
     skus: list[str]
     variacoes: int

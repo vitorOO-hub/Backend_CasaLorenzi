@@ -27,6 +27,8 @@ SELECT * FROM (
         p.id_produto,
         p.nome,
         p.categoria,
+        p.imagem_url,
+        p.imagem_alt,
         COALESCE(min(v.preco_venda) FILTER (WHERE v.ativa), p.preco_base) AS preco,
         COALESCE(array_agg(DISTINCT v.sku ORDER BY v.sku) FILTER (WHERE v.ativa), '{}') AS skus,
         count(DISTINCT v.id_variacao) FILTER (WHERE v.ativa) AS variacoes,
@@ -35,7 +37,7 @@ SELECT * FROM (
     LEFT JOIN variacao_produto v ON v.id_produto = p.id_produto
     LEFT JOIN estoque e ON e.id_variacao = v.id_variacao
     WHERE p.ativo
-    GROUP BY p.id_produto, p.nome, p.categoria, p.preco_base
+    GROUP BY p.id_produto, p.nome, p.categoria, p.imagem_url, p.imagem_alt, p.preco_base
 ) peca
 """
 
@@ -185,6 +187,10 @@ def alterar(
                 UPDATE produto
                 SET nome = COALESCE(:nome, nome),
                     categoria = COALESCE(:categoria, categoria),
+                    imagem_url = CASE
+                        WHEN :atualizar_imagem_url THEN :imagem_url ELSE imagem_url END,
+                    imagem_alt = CASE
+                        WHEN :atualizar_imagem_alt THEN :imagem_alt ELSE imagem_alt END,
                     preco_base = COALESCE(:preco, preco_base),
                     atualizado_em = now()
                 WHERE id_produto = CAST(:id AS uuid)
@@ -193,6 +199,10 @@ def alterar(
             {
                 "nome": dados.nome,
                 "categoria": dados.categoria,
+                "atualizar_imagem_url": "imagem_url" in dados.model_fields_set,
+                "imagem_url": str(dados.imagem_url) if dados.imagem_url is not None else None,
+                "atualizar_imagem_alt": "imagem_alt" in dados.model_fields_set,
+                "imagem_alt": dados.imagem_alt,
                 "preco": dados.preco,
                 "id": str(id_produto),
             },
@@ -209,11 +219,14 @@ def alterar(
             text("SELECT min(sku) FROM variacao_produto WHERE id_produto = CAST(:id AS uuid)"),
             {"id": str(id_produto)},
         ).scalar()
+        detalhe = f"{sku or '?'} · {dados.nome or atual[0]}"
+        if "imagem_url" in dados.model_fields_set or "imagem_alt" in dados.model_fields_set:
+            detalhe += " · foto atualizada"
         auditoria.registrar(
             conexao,
             usuario,
             "Editou produto do catálogo",
-            f"{sku or '?'} · {dados.nome or atual[0]}",
+            detalhe,
         )
         conexao.commit()
     except IntegrityError as erro:
