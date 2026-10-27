@@ -59,6 +59,7 @@ WITH ped AS (
         -- Mesma regra do cartao Vulto+ (app/cliente/repositorio.py): creditos do ano corrente.
         CASE
             WHEN pts.saldo IS NULL THEN NULL
+            WHEN pts.creditos_no_ano >= 10000 THEN 'black'
             WHEN pts.creditos_no_ano >= 5000 THEN 'ouro'
             WHEN pts.creditos_no_ano >= 2000 THEN 'prata'
             ELSE 'bronze'

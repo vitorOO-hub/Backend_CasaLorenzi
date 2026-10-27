@@ -137,6 +137,12 @@ class RegrasLorenziMais(BaseModel):
     pontos_por_real_online: int
 
 
+class Beneficio(BaseModel):
+    codigo: str
+    titulo: str
+    descricao: str
+
+
 class VultoMaisCliente(BaseModel):
     """Programa de pontos da casa: saldo, categoria do ano e as ultimas movimentacoes."""
 
@@ -150,6 +156,10 @@ class VultoMaisCliente(BaseModel):
     pontos_a_vencer: int = 0
     proximos_vencimentos: list[VencimentoProximo] = []
     regras: RegrasLorenziMais | None = None
+    # Benefícios da categoria atual e os da próxima (para mostrar o que o cliente ganha ao subir).
+    beneficios: list[Beneficio] = []
+    proximos_beneficios: list[Beneficio] = []
+    frete_gratis_a_partir: Decimal | None = None
 
 
 class ItemPedidoCliente(BaseModel):
