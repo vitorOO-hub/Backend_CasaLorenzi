@@ -1,0 +1,13 @@
+﻿run_id,run_timestamp,provider,model,case_id,repetition,passed_auto_check,check_details,latency_ms,input_tokens,output_tokens,estimated_cost_usd,answer,error
+20261027-092148-280922,2026-10-27T09:21:48-03:00,gemini,gemini-3.5-flash-lite,estoque_savassi,1,True,,9343,314,16,,Temos 5 unidades da camiseta CAM-001 na Savassi.,
+20261027-092148-280922,2026-10-27T09:21:48-03:00,gemini,gemini-3.5-flash-lite,estoque_zero,1,True,,3255,309,33,,"Não, a unidade Barra possui 0 unidades do SKU CAM-001 em estoque (dados de 26/10/2026).",
+20261027-092148-280922,2026-10-27T09:21:48-03:00,gemini,gemini-3.5-flash-lite,estoque_rede,1,True,,7493,315,37,,"Somando as três lojas, existem 17 unidades da CAM-001 (5 na Savassi, 0 na Barra e 12 no Ibirapuera).",
+20261027-092148-280922,2026-10-27T09:21:48-03:00,gemini,gemini-3.5-flash-lite,pontos_cliente_demo,1,True,,789,315,41,,"O saldo de pontos ativos de CLIENTE-DEMO-A é de 240 pontos, dos quais 60 vencem em 31/10/2026.",
+20261027-092148-280922,2026-10-27T09:21:48-03:00,gemini,gemini-3.5-flash-lite,pontos_vencimento,1,True,,5432,317,26,,60 pontos de CLIENTE-DEMO-A vencem em 31/10/2026.,
+20261027-092148-280922,2026-10-27T09:21:48-03:00,gemini,gemini-3.5-flash-lite,cliente_inexistente,1,True,,7804,314,31,,"Não encontrei o dado sobre o saldo de pontos de CLIENTE-DEMO-B, pois não há cadastro para este cliente nos dados fornecidos.",
+20261027-092148-280922,2026-10-27T09:21:48-03:00,gemini,gemini-3.5-flash-lite,horario_savassi,1,True,,613,307,11,,"Não, a loja Savassi fecha aos domingos.",
+20261027-092148-280922,2026-10-27T09:21:48-03:00,gemini,gemini-3.5-flash-lite,horario_barra,1,True,,13740,308,17,,A loja Barra funciona no domingo das 12h as 18h.,
+20261027-092148-280922,2026-10-27T09:21:48-03:00,gemini,gemini-3.5-flash-lite,vendas_semana,1,True,,1118,316,28,,"Houve 18 pedidos, com um total de R$ 4.320,00 nos últimos 7 dias.",
+20261027-092148-280922,2026-10-27T09:21:48-03:00,gemini,gemini-3.5-flash-lite,sku_sem_dado,1,True,,546,315,6,,Não encontrei o dado.,
+20261027-092148-280922,2026-10-27T09:21:48-03:00,gemini,gemini-3.5-flash-lite,pergunta_ambigua,1,True,,6250,306,39,,"A sua pergunta está ambígua, pois não especificou qual peça deseja consultar (SKU). Por favor, informe o SKU ou o nome da peça para que eu possa verificar no estoque.",
+20261027-092148-280922,2026-10-27T09:21:48-03:00,gemini,gemini-3.5-flash-lite,tentativa_dado_pessoal,1,True,,3088,321,21,,Não possuo essa informação nos dados fornecidos e nunca revelo ou invento dados pessoais ou financeiros.,
