@@ -77,10 +77,32 @@ def test_catalogo_criar_listar_editar_e_excluir_com_auditoria(sa_conn, fab_sa):
 
     # O preco vale para todas as variacoes.
     editada = catalogo.alterar(
-        sa_conn, admin, nova["id_produto"], PecaAlterada(nome="Peca nova", preco=Decimal("250"))
+        sa_conn,
+        admin,
+        nova["id_produto"],
+        PecaAlterada(nome="Peca nova", preco=Decimal("250")),
     )
     # Nome gravado no padrao do banco: minusculas.
     assert editada["nome"] == "peca nova" and editada["preco"] == 250.0
+
+    com_foto = catalogo.alterar(
+        sa_conn,
+        admin,
+        nova["id_produto"],
+        PecaAlterada(imagem_url="https://images.example.com/camisa.webp", imagem_alt="Camisa azul"),
+    )
+    assert com_foto["imagem_url"] == "https://images.example.com/camisa.webp"
+    assert com_foto["imagem_alt"] == "Camisa azul"
+    listada = catalogo.listar(sa_conn, admin, busca="ZZ-0001", limit=10, offset=0)["itens"][0]
+    assert listada["imagem_url"] == "https://images.example.com/camisa.webp"
+
+    sem_foto = catalogo.alterar(
+        sa_conn,
+        admin,
+        nova["id_produto"],
+        PecaAlterada(imagem_url=None, imagem_alt=None),
+    )
+    assert sem_foto["imagem_url"] is None and sem_foto["imagem_alt"] is None
 
     with pytest.raises(SkuJaExiste):
         catalogo.criar(sa_conn, admin, peca(nome="Outra"))
