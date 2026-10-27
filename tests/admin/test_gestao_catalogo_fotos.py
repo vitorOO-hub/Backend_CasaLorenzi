@@ -37,3 +37,17 @@ def test_resposta_do_catalogo_inclui_foto():
         estoque_rede=1,
     )
     assert str(peca.imagem_url).endswith("foto.webp")
+
+
+def test_resposta_do_catalogo_aceita_imagem_legada_relativa():
+    peca = PecaDoCatalogo(
+        id_produto="a3c37560-8c52-4b91-a4b4-cb71c43fd5e0",
+        nome="camisa azul",
+        categoria="camisaria",
+        imagem_url="/img/produtos/CL-0204.jpg",
+        preco=300,
+        skus=["CL-1"],
+        variacoes=1,
+        estoque_rede=1,
+    )
+    assert peca.imagem_url == "/img/produtos/CL-0204.jpg"

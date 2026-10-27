@@ -149,7 +149,8 @@ class PecaDoCatalogo(Saida):
     id_produto: UUID
     nome: str
     categoria: str | None
-    imagem_url: HttpUrl | None = None
+    # O catalogo legado tambem usa caminhos relativos servidos pelo proprio frontend.
+    imagem_url: str | None = None
     imagem_alt: str | None = None
     preco: float
     skus: list[str]
