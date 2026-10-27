@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.core.horario import HorarioFuncionamento
+
 
 class EntradaRestrita(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -88,6 +90,9 @@ class LojaCliente(BaseModel):
     cidade: str | None = None
     uf: str | None = None
     endereco: str | None = None
+    telefone: str | None = None
+    # Sem horario cadastrado, null: o site e o assistente dizem que nao sabem.
+    horario_funcionamento: HorarioFuncionamento | None = None
 
 
 class EstoqueVariacaoCliente(BaseModel):
@@ -116,6 +121,16 @@ class PerfilCliente(BaseModel):
     bairro: str | None = None
     numero_endereco: str | None = None
     complemento: str | None = None
+    # Aceita receber avisos (pontos a vencer) por e-mail e WhatsApp.
+    aceita_mensagens: bool = True
+
+
+class PreferenciasCliente(EntradaRestrita):
+    aceita_mensagens: bool
+
+
+class PreferenciasGravadas(BaseModel):
+    aceita_mensagens: bool
 
 
 class MovimentoPontosCliente(BaseModel):

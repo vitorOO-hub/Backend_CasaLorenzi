@@ -359,6 +359,8 @@ SELECT
     l.cidade,
     l.uf,
     l.endereco,
+    l.telefone,
+    l.horario_funcionamento,
     (SELECT u.nome FROM usuario u JOIN tipo_usuario t USING (id_tipo_usuario)
      WHERE u.id_loja = l.id_loja AND u.ativo AND t.codigo = 'gerente_loja'
      ORDER BY u.criado_em, u.id_usuario LIMIT 1) AS gerente,
@@ -405,6 +407,60 @@ def lojas_da_rede(conexao: Connection, id_loja: UUID | None) -> list[dict[str, A
     linhas = conexao.execute(
         text(LOJAS_DA_REDE),
         {"id_loja": str(id_loja) if id_loja else None, "status_de_venda": list(STATUS_DE_VENDA)},
+    ).mappings()
+    return [dict(linha) for linha in linhas]
+
+
+# Peca parada: saldo positivo na loja e nenhuma venda (pago, separado ou entregue) daquela variacao
+# naquela loja nos ultimos :dias dias. `ultima_venda` nula = nunca vendeu ali.
+ESTOQUE_PARADO = """
+WITH parado AS (
+    SELECT
+        v.id_variacao,
+        v.sku,
+        p.nome AS produto,
+        v.cor,
+        v.tamanho,
+        p.categoria,
+        l.id_loja,
+        l.nome AS loja,
+        e.quantidade AS saldo,
+        (e.quantidade * v.preco_venda) AS valor_parado,
+        ult.ultima_venda
+    FROM estoque e
+    JOIN loja l ON l.id_loja = e.id_loja AND l.ativa
+    JOIN variacao_produto v ON v.id_variacao = e.id_variacao AND v.ativa
+    JOIN produto p ON p.id_produto = v.id_produto AND p.ativo
+    LEFT JOIN LATERAL (
+        SELECT max(ped.criado_em) AS ultima_venda
+        FROM item_pedido i
+        JOIN pedido ped ON ped.id_pedido = i.id_pedido
+        JOIN status_pedido s ON s.id_status_pedido = ped.id_status_pedido
+        WHERE i.id_variacao = e.id_variacao
+          AND ped.id_loja = e.id_loja
+          AND s.codigo = ANY(CAST(:status_de_venda AS text[]))
+    ) ult ON TRUE
+    WHERE e.quantidade > 0
+      AND (ult.ultima_venda IS NULL OR ult.ultima_venda < now() - make_interval(days => :dias))
+      AND (CAST(:id_loja AS uuid) IS NULL OR e.id_loja = CAST(:id_loja AS uuid))
+      AND (CAST(:categoria AS text) IS NULL OR p.categoria = CAST(:categoria AS text))
+)
+SELECT *,
+       count(*) OVER () AS total_itens,
+       sum(saldo) OVER () AS total_unidades,
+       sum(valor_parado) OVER () AS total_valor
+FROM parado
+ORDER BY valor_parado DESC, sku, loja
+LIMIT :limite
+"""
+
+
+def estoque_parado(
+    conexao: Connection, filtro: Filtro, *, dias: int, limite: int
+) -> list[dict[str, Any]]:
+    linhas = conexao.execute(
+        text(ESTOQUE_PARADO),
+        {**filtro.parametros(), "dias": dias, "limite": limite},
     ).mappings()
     return [dict(linha) for linha in linhas]
 

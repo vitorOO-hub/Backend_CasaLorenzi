@@ -1,11 +1,12 @@
 """Validacao do JWT do Supabase e controle de acesso por papel (CLAUDE.md, secoes 3 e 12.7)."""
 
+import hmac
 from typing import Annotated
 from uuid import UUID
 
 import jwt
 from fastapi import Depends, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core import vigencia
 from app.core.db import ExecutarDep
@@ -114,6 +115,28 @@ def requer_papel(*papeis: Papel):
         return usuario
 
     return dependencia
+
+
+_cabecalho_automacao = APIKeyHeader(
+    name="X-Chave-Automacao", auto_error=False, description="Chave das automacoes (n8n)"
+)
+
+
+def requer_automacao(
+    request: Request, chave: Annotated[str | None, Depends(_cabecalho_automacao)]
+) -> None:
+    """Dependencia das rotas do n8n: a chave do cabecalho tem de bater com CHAVE_AUTOMACAO.
+
+    Sem cabecalho, 401 (como qualquer rota sem credencial); sem chave configurada no servidor, 503.
+    A comparacao e em tempo constante.
+    """
+    if not chave:
+        raise NaoAutenticado()
+    esperada = request.app.state.settings.chave_automacao
+    if esperada is None or not esperada.get_secret_value():
+        raise AutenticacaoIndisponivel()
+    if not hmac.compare_digest(chave.encode(), esperada.get_secret_value().encode()):
+        raise NaoAutenticado()
 
 
 def garantir_escopo_de_loja(usuario: UsuarioAtual, id_loja: UUID) -> None:

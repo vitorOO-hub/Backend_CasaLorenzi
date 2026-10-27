@@ -100,3 +100,8 @@ class PecaDaVendaInvalida(ErroDeNegocio):
 class PecaRepetidaNaVenda(ErroDeNegocio):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     detalhe = "A mesma peca aparece em duas linhas; junte as quantidades numa linha so"
+
+
+class LojaNaoEncontrada(ErroDeNegocio):
+    status_code = status.HTTP_404_NOT_FOUND
+    detalhe = "Loja nao encontrada"

@@ -19,8 +19,10 @@ from app.gerencia.repositorio import Filtro
 from app.gerencia.schemas import (
     DashboardGerente,
     DashboardRede,
+    EstoqueParado,
     LojasDaRede,
     Pendencias,
+    PontosAVencer,
     Reposicao,
 )
 
@@ -65,6 +67,21 @@ def reposicao(
     return executar(lambda conexao: service.montar_reposicao(conexao, filtro, limite=limit))
 
 
+@router.get("/estoque-parado", response_model=EstoqueParado, summary="Pecas sem venda ha X dias")
+def estoque_parado(
+    usuario: UsuarioDep,
+    executar: ExecutarDep,
+    dias: int = Query(default=60, ge=7, le=365),
+    id_loja: IdLoja = None,
+    categoria: Categoria = None,
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    filtro = Filtro(service.loja_do_escopo(usuario, id_loja), categoria)
+    return executar(
+        lambda conexao: service.montar_estoque_parado(conexao, filtro, dias=dias, limite=limit)
+    )
+
+
 @router.get("/lojas", response_model=LojasDaRede, summary="Cartao de cada loja")
 def lojas(usuario: UsuarioDep, executar: ExecutarDep, id_loja: IdLoja = None):
     filtro = Filtro(service.loja_do_escopo(usuario, id_loja))
@@ -84,6 +101,18 @@ def pendencias(usuario: UsuarioDep, executar: ExecutarDep, id_loja: IdLoja = Non
 
 
 AdminDep = Annotated[UsuarioAtual, Depends(requer_papel(Papel.ADMIN))]
+
+
+# Os pontos sao do grupo inteiro (o cliente nao pertence a uma loja): so o admin ve.
+@router.get(
+    "/pontos-a-vencer", response_model=PontosAVencer, summary="Pontos Lorenzi+ que vao vencer"
+)
+def pontos_a_vencer(
+    usuario: AdminDep, executar: ExecutarDep, dias: int = Query(default=30, ge=1, le=90)
+):
+    return executar(lambda conexao: service.montar_pontos_a_vencer(conexao, dias=dias))
+
+
 IdsLoja = Annotated[
     list[UUID] | None, Query(max_length=10, description="Lojas a comparar; vazio = a rede toda")
 ]

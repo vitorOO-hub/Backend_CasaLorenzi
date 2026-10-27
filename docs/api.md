@@ -40,8 +40,9 @@ Qualquer pessoa logada; todos os dados são os do dono do token.
 | Método | Rota | O que faz |
 |---|---|---|
 | GET | `/catalogo/estoque` | **público.** Disponibilidade das peças por loja |
-| GET | `/lojas` | lojas disponíveis para retirada e entrega |
-| GET | `/perfil` | dados e endereço de quem está logado |
+| GET | `/lojas` | lojas disponíveis para retirada e entrega, com telefone e horário de funcionamento |
+| GET | `/perfil` | dados e endereço de quem está logado, e se aceita receber avisos (`aceita_mensagens`) |
+| PATCH | `/preferencias` | aceita ou recusa avisos por e-mail e WhatsApp (vale sobre o padrão e a planilha da Vulto) |
 | GET | `/carrinho` | itens da sacola |
 | POST | `/carrinho/itens` | adiciona uma peça |
 | PATCH | `/carrinho/itens/{id_variacao}` | muda a quantidade |
@@ -135,7 +136,9 @@ admin aprova ou recusa. A tela só oferece o botão de pedir ao operador; a rota
 | GET | `/dashboard?inicio=&fim=&categoria=&canal=&id_loja=` | faturamento, pedidos, ticket médio e peças contra o período anterior; série diária; dia da semana; mais vendidas; mix loja × online |
 | GET | `/reposicao?categoria=&limit=` | peças que acabam primeiro (saldo contra o ritmo dos últimos 30 dias) |
 | GET | `/pendencias` | ajustes a aprovar, transferências aguardando a loja e chamados sem resposta |
-| GET | `/lojas` | cartão de cada loja |
+| GET | `/estoque-parado?dias=60&categoria=&limit=` | peças com saldo e sem venda naquela loja há `dias` dias, com o critério escrito na resposta |
+| GET | `/lojas` | cartão de cada loja (com telefone e horário) |
+| GET | `/pontos-a-vencer?dias=30` | **só D.** Clientes e pontos Lorenzi+ que vencem, por dia. Só totais, sem dado pessoal |
 | GET | `/rede` | **só D.** Início do admin: a rede e as lojas |
 
 Venda é pedido `pago`, `separado` ou `entregue`; o faturamento soma os itens, sem frete.
@@ -150,11 +153,24 @@ Venda é pedido `pago`, `separado` ou `entregue`; o faturamento soma os itens, s
 | POST | `/catalogo` | nova peça (SKU e nome não podem repetir: `409`) |
 | PATCH | `/catalogo/{id_produto}` | edita a peça |
 | DELETE | `/catalogo/{id_produto}` | exclui; `409` se a peça tiver estoque, pedidos ou histórico de estoque |
+| PATCH | `/lojas/{id_loja}/horario` | horário de funcionamento (`seg`..`dom` com `{abre, fecha}` ou `null`); `null` apaga |
 | GET | `/auditoria` | quem fez o quê e quando |
 | GET | `/integracoes` | lotes do ERP e registros a mapear |
 | POST | `/integracoes/registros/{id}/mapear` | liga um código do ERP a um SKU da Casa Lorenzi |
 
-Mudanças de usuário e de catálogo gravam um registro de auditoria.
+Mudanças de usuário, de catálogo e de horário de loja gravam um registro de auditoria.
+
+## Automações do n8n — `/api/v1/automacoes` (chave de automação)
+
+Sem login de pessoa: exigem o cabeçalho `X-Chave-Automacao` igual a `CHAVE_AUTOMACAO` do servidor
+(sem cabeçalho ou com chave errada, `401`; servidor sem chave configurada, `503`). Usam as mesmas
+contas do painel e do Lorenzi+.
+
+| Método | Rota | O que faz |
+|---|---|---|
+| GET | `/pontos-a-vencer?canal=email\|whatsapp&dias=30` | clientes ativos que aceitam mensagens, com contato no canal, pontos vencendo na janela e ainda não avisados sobre aquele lote; traz saldo, categoria e quanto falta para a próxima |
+| POST | `/avisos-pontos` | registra os avisos enviados (`{canal, avisos: [{id_cliente, vence_em, pontos}]}`); repetido não conta de novo |
+| GET | `/resumo-semanal` | vendas da última semana fechada (segunda a domingo) por loja contra a anterior, estoque parado (60 dias) e pontos a vencer (30 dias) |
 
 ## Dashboard de atendimento — `/dashboard/atendimento` (A, G, D)
 

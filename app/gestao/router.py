@@ -13,12 +13,14 @@ from app.ativacao.auth_admin import AuthAdminDep
 from app.core.db import ExecutarDep
 from app.core.papeis import Papel, UsuarioAtual
 from app.core.security import requer_papel
-from app.gestao import auditoria, catalogo, integracoes, service, vendas_pendentes
+from app.gestao import auditoria, catalogo, integracoes, lojas, service, vendas_pendentes
 from app.gestao.schemas import (
     Auditoria,
     Catalogo,
     DescarteDeVenda,
     Equipe,
+    HorarioDaLoja,
+    HorarioGravado,
     ImportacaoDeVenda,
     Integracoes,
     MapeamentoDeRegistro,
@@ -38,9 +40,7 @@ from app.gestao.schemas import (
 router = APIRouter(prefix="/painel/gestao", tags=["painel-gestao"])
 
 AdminDep = Annotated[UsuarioAtual, Depends(requer_papel(Papel.ADMIN))]
-GestaoEquipeDep = Annotated[
-    UsuarioAtual, Depends(requer_papel(Papel.ADMIN, Papel.GERENTE_LOJA))
-]
+GestaoEquipeDep = Annotated[UsuarioAtual, Depends(requer_papel(Papel.ADMIN, Papel.GERENTE_LOJA))]
 
 
 @router.get("/usuarios", response_model=Equipe, summary="Time interno: cargo, unidade e acesso")
@@ -108,6 +108,21 @@ def alterar_peca(id_produto: UUID, dados: PecaAlterada, usuario: AdminDep, execu
 @router.delete("/catalogo/{id_produto}", response_model=PecaExcluida, summary="Excluir uma peca")
 def excluir_peca(id_produto: UUID, usuario: AdminDep, executar: ExecutarDep):
     return executar(lambda conexao: catalogo.excluir(conexao, usuario, id_produto))
+
+
+@router.patch(
+    "/lojas/{id_loja}/horario",
+    response_model=HorarioGravado,
+    summary="Horario de funcionamento da loja",
+)
+def alterar_horario_da_loja(
+    id_loja: UUID, dados: HorarioDaLoja, usuario: AdminDep, executar: ExecutarDep
+):
+    return executar(
+        lambda conexao: lojas.alterar_horario(
+            conexao, usuario, id_loja, dados.horario_funcionamento
+        )
+    )
 
 
 @router.get("/auditoria", response_model=Auditoria, summary="Quem fez o que na rede")
