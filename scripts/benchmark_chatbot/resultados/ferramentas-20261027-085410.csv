@@ -1,0 +1,2 @@
+﻿provider,model,case_id,repetition,tool_calls_passed,tool_check_details,answer_passed_auto_check,answer_check_details,latency_ms,input_tokens,output_tokens,estimated_cost_usd,tool_calls,answer,error
+groq,openai/gpt-oss-20b,estoque_savassi,1,True,,True,,966,813,69,,"[{""nome"": ""get_stock"", ""argumentos"": {""loja"": ""Savassi"", ""sku"": ""CAM-001""}}]",Na loja Savassi temos 5 unidades da camiseta CAM‑001.,
