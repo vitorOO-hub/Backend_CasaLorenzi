@@ -154,15 +154,13 @@ def lancar_vencimentos(
     return aviso(lotes, agora)
 
 
-def aviso(lotes: Sequence[_Lote], agora: datetime) -> dict[str, Any]:
-    """Pontos que vencem nos proximos 30 dias, por data de vencimento."""
+def aviso(
+    lotes: Sequence[_Lote], agora: datetime, janela: timedelta = JANELA_DO_AVISO
+) -> dict[str, Any]:
+    """Pontos que vencem dentro da janela (30 dias por padrao), por data de vencimento."""
     proximos: dict[datetime, int] = {}
     for lote in lotes:
-        if (
-            lote.resta > 0
-            and lote.vence_em is not None
-            and agora < lote.vence_em <= agora + JANELA_DO_AVISO
-        ):
+        if lote.resta > 0 and lote.vence_em is not None and agora < lote.vence_em <= agora + janela:
             proximos[lote.vence_em] = proximos.get(lote.vence_em, 0) + lote.resta
     return {
         "pontos_a_vencer": sum(proximos.values()),
@@ -170,3 +168,43 @@ def aviso(lotes: Sequence[_Lote], agora: datetime) -> dict[str, Any]:
             {"vence_em": data, "pontos": pontos} for data, pontos in sorted(proximos.items())
         ],
     }
+
+
+def a_vencer_por_cliente(
+    movimentos: Sequence[Any], agora: datetime, janela: timedelta
+) -> dict[Any, dict[str, Any]]:
+    """Mesma conta do Lorenzi+, para varios clientes de uma vez. `movimentos` traz `id_usuario`
+    e vem ordenado por cliente e data. So entram clientes com pontos a vencer na janela."""
+    por_cliente: dict[Any, list[Any]] = {}
+    for m in movimentos:
+        por_cliente.setdefault(m.id_usuario, []).append(m)
+    resultado = {}
+    for id_usuario, dele in por_cliente.items():
+        _, lotes = calcular(dele, agora)
+        resumo = aviso(lotes, agora, janela)
+        if resumo["pontos_a_vencer"] > 0:
+            resultado[id_usuario] = resumo
+    return resultado
+
+
+def pontos_a_vencer_da_base(
+    conexao: Connection, janela: timedelta, agora: datetime | None = None
+) -> dict[Any, dict[str, Any]]:
+    """Clientes com pontos vencendo em (agora, agora + janela]. So le: os vencimentos ja passados
+    sao descontados na conta (o lancamento e do pg_cron e da leitura do Lorenzi+)."""
+    agora = agora or datetime.now(UTC)
+    movimentos = conexao.execute(
+        text(
+            """
+            SELECT m.id_usuario, m.tipo, m.pontos, m.ocorrido_em, m.vence_em, m.id_pedido
+            FROM movimento_pontos m
+            WHERE m.id_usuario IN (
+                SELECT id_usuario FROM movimento_pontos
+                WHERE pontos > 0 AND vence_em > :agora AND vence_em <= :limite
+            )
+            ORDER BY m.id_usuario, m.ocorrido_em, m.criado_em, m.id_movimento
+            """
+        ),
+        {"agora": agora, "limite": agora + janela},
+    ).all()
+    return a_vencer_por_cliente(movimentos, agora, janela)

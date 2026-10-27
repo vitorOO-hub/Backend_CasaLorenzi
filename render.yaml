@@ -32,3 +32,12 @@ services:
       # Sem ela a ativacao de conta responde 503 "indisponivel"; o resto da API funciona.
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      # Chave das automacoes do n8n (cabecalho X-Chave-Automacao). Segredo; sem ela essas rotas
+      # respondem 503 e o resto da API funciona.
+      - key: CHAVE_AUTOMACAO
+        sync: false
+      # Provedores de LLM dos assistentes. Segredos; opcionais.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false

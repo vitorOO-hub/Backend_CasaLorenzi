@@ -1,11 +1,12 @@
 """Regras do inicio do gerente: escopo de loja, periodos e montagem das respostas."""
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy.engine import Connection
 
+from app.cliente.vencimento_pontos import SP, pontos_a_vencer_da_base
 from app.core.erros_auth import SemPermissao
 from app.core.papeis import Papel, UsuarioAtual
 from app.dashboard import repositorio as repositorio_de_chamados
@@ -177,6 +178,60 @@ def montar_lojas(conexao: Connection, filtro: Filtro) -> dict[str, Any]:
             }
             for linha in repositorio.lojas_da_rede(conexao, filtro.id_loja)
         ]
+    }
+
+
+CRITERIO_PARADO = (
+    "Pecas com saldo na loja e nenhuma venda (pago, separado ou entregue) dessa cor e tamanho "
+    "nessa loja nos ultimos {dias} dias. Valor = saldo x preco de venda."
+)
+CRITERIO_PONTOS = (
+    "Pontos Lorenzi+ que vencem nos proximos {dias} dias, pela regra do programa: cada credito "
+    "vale 365 dias e o resgate consome primeiro os pontos mais antigos."
+)
+
+
+def montar_estoque_parado(
+    conexao: Connection, filtro: Filtro, *, dias: int, limite: int
+) -> dict[str, Any]:
+    linhas = repositorio.estoque_parado(conexao, filtro, dias=dias, limite=limite)
+    primeira = linhas[0] if linhas else {}
+    return {
+        "dias": dias,
+        "criterio": CRITERIO_PARADO.format(dias=dias),
+        "total_itens": int(primeira.get("total_itens") or 0),
+        "total_unidades": int(primeira.get("total_unidades") or 0),
+        "total_valor": _dinheiro(primeira.get("total_valor") or 0),
+        "itens": [
+            {
+                **{k: v for k, v in linha.items() if not k.startswith("total_")},
+                "saldo": int(linha["saldo"]),
+                "valor_parado": _dinheiro(linha["valor_parado"]),
+            }
+            for linha in linhas
+        ],
+    }
+
+
+def montar_pontos_a_vencer(conexao: Connection, *, dias: int) -> dict[str, Any]:
+    """So totais (clientes e pontos por dia): a lista nominal fica com as automacoes."""
+    por_cliente = pontos_a_vencer_da_base(conexao, timedelta(days=dias))
+    clientes_no_dia: dict[date, set[Any]] = {}
+    pontos_no_dia: dict[date, int] = {}
+    for id_cliente, resumo in por_cliente.items():
+        for vencimento in resumo["proximos_vencimentos"]:
+            dia = vencimento["vence_em"].astimezone(SP).date()
+            clientes_no_dia.setdefault(dia, set()).add(id_cliente)
+            pontos_no_dia[dia] = pontos_no_dia.get(dia, 0) + vencimento["pontos"]
+    return {
+        "dias": dias,
+        "criterio": CRITERIO_PONTOS.format(dias=dias),
+        "clientes": len(por_cliente),
+        "pontos": sum(r["pontos_a_vencer"] for r in por_cliente.values()),
+        "por_data": [
+            {"data": dia, "clientes": len(clientes_no_dia[dia]), "pontos": pontos_no_dia[dia]}
+            for dia in sorted(pontos_no_dia)
+        ],
     }
 
 

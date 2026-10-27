@@ -1,9 +1,11 @@
 """Respostas do inicio do gerente. Nunca expoem dados pessoais de cliente (so totais e produtos)."""
 
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
+
+from app.core.horario import HorarioFuncionamento
 
 
 class Saida(BaseModel):
@@ -134,6 +136,8 @@ class LojaDaRede(Saida):
     cidade: str | None
     uf: str | None
     endereco: str | None
+    telefone: str | None = None
+    horario_funcionamento: HorarioFuncionamento | None = None
     # Nome do gerente da loja (o mais antigo ativo), se houver.
     gerente: str | None
     equipe: int
@@ -146,6 +150,47 @@ class LojaDaRede(Saida):
 
 class LojasDaRede(Saida):
     itens: list[LojaDaRede]
+
+
+class PecaParada(Saida):
+    id_variacao: UUID
+    sku: str
+    produto: str
+    cor: str
+    tamanho: str
+    categoria: str | None
+    id_loja: UUID
+    loja: str
+    saldo: int
+    # Saldo x preco de venda: quanto esta parado na prateleira.
+    valor_parado: float
+    # Nula: a variacao nunca vendeu nesta loja.
+    ultima_venda: datetime | None
+
+
+class EstoqueParado(Saida):
+    dias: int
+    # O que entrou na conta, para a resposta poder citar o criterio.
+    criterio: str
+    total_itens: int
+    total_unidades: int
+    total_valor: float
+    itens: list[PecaParada]
+
+
+class VencimentoNaData(Saida):
+    data: date
+    clientes: int
+    pontos: int
+
+
+class PontosAVencer(Saida):
+    dias: int
+    criterio: str
+    clientes: int
+    pontos: int
+    # Por dia de vencimento (fuso de Sao Paulo). So totais: nenhum dado pessoal de cliente.
+    por_data: list[VencimentoNaData]
 
 
 class Pendencias(Saida):
