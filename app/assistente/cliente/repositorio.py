@@ -169,7 +169,9 @@ def buscar_produtos(conexao: Connection, termos: list[str], limite: int) -> list
         text(
             f"""
             SELECT p.nome, p.categoria, p.marca, p.preco_base,
-                   json_agg(json_build_object('sku', v.sku, 'cor', v.cor, 'tamanho', v.tamanho,
+                   p.imagem_url, p.imagem_alt, p.tecido,
+                   json_agg(json_build_object('id_variacao', v.id_variacao, 'sku', v.sku,
+                                              'cor', v.cor, 'tamanho', v.tamanho,
                                               'preco', v.preco_venda) ORDER BY v.sku) AS variacoes
             FROM produto p
             JOIN variacao_produto v ON v.id_produto = p.id_produto AND v.ativa
@@ -178,7 +180,8 @@ def buscar_produtos(conexao: Connection, termos: list[str], limite: int) -> list
                   SELECT 1 FROM estoque e JOIN loja l ON l.id_loja = e.id_loja AND l.ativa
                   WHERE e.id_variacao = v.id_variacao AND e.quantidade > 0
               )
-            GROUP BY p.id_produto, p.nome, p.categoria, p.marca, p.preco_base
+            GROUP BY p.id_produto, p.nome, p.categoria, p.marca, p.preco_base,
+                     p.imagem_url, p.imagem_alt, p.tecido
             ORDER BY p.nome
             LIMIT :limite
             """  # nosec B608
@@ -228,7 +231,9 @@ def buscar_produtos_semelhantes(
                 LIMIT :limite
             )
             SELECT p.nome, p.categoria, p.marca, p.preco_base, px.distancia,
-                   json_agg(json_build_object('sku', v.sku, 'cor', v.cor, 'tamanho', v.tamanho,
+                   p.imagem_url, p.imagem_alt, p.tecido,
+                   json_agg(json_build_object('id_variacao', v.id_variacao, 'sku', v.sku,
+                                              'cor', v.cor, 'tamanho', v.tamanho,
                                               'preco', v.preco_venda) ORDER BY v.sku) AS variacoes
             FROM proximos px
             JOIN produto p ON p.id_produto = px.id_produto
@@ -238,7 +243,8 @@ def buscar_produtos_semelhantes(
                   SELECT 1 FROM estoque e JOIN loja l ON l.id_loja = e.id_loja AND l.ativa
                   WHERE e.id_variacao = v.id_variacao AND e.quantidade > 0
               )
-            GROUP BY p.id_produto, p.nome, p.categoria, p.marca, p.preco_base, px.distancia
+            GROUP BY p.id_produto, p.nome, p.categoria, p.marca, p.preco_base, px.distancia,
+                     p.imagem_url, p.imagem_alt, p.tecido
             ORDER BY px.distancia
             """
         ),

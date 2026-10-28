@@ -192,6 +192,10 @@ def test_busca_e_estoque_reais_com_ferramentas_registradas(cena):
     assert [v["sku"] for v in busca["pecas"][0]["variacoes"]] == [ids["sku"]]
     assert estoque["total"] == 4
     assert loja["lojas"][0]["horario_funcionamento"] is None
+    # Sem peca exata oferecida, a busca vira cartao de opcao com a variacao em estoque.
+    (opcao,) = corpo["ofertas"]
+    assert [v["sku"] for v in opcao["variacoes"]] == [ids["sku"]]
+    assert opcao["variacoes"][0]["id_variacao"] == str(ids["variacao"])
     autores = [(a, f) for a, _, f, *_ in _registros(pg, conversa)]
     assert autores == [
         ("usuario", None),

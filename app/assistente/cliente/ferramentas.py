@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 LIMITE_PRODUTOS = 5
 LIMITE_PEDIDOS = 5
 LIMITE_OFERTAS = 3
+MAX_VARIACOES = 12  # por peca, na resposta ao modelo e no seletor do cartao
 # Busca semantica (distancia de cosseno, 0 = identica). Com o gemini-embedding-001 as distancias
 # ficam proximas (o que tem a ver ~0,25-0,33; o resto ~0,35-0,43), mas a ordem e boa: entram so
 # as pecas perto da melhor, com um teto absoluto.
@@ -248,6 +249,8 @@ class Ferramentas:
         self.id_loja_chamado: UUID | None = None
         # Cartoes que o chat mostra com o botao "Adicionar a sacola" (o cliente decide).
         self.ofertas: list[dict[str, Any]] = []
+        # Pecas achadas nas buscas desta resposta: viram opcoes se nenhuma exata for oferecida.
+        self.pecas_encontradas: list[dict[str, Any]] = []
 
     def executar(self, nome: str, argumentos: dict[str, Any]) -> dict[str, Any]:
         metodo = getattr(self, f"_{nome}", None) if nome in {d.nome for d in DECLARACOES} else None
@@ -277,7 +280,57 @@ class Ferramentas:
                 break
             if all(peca["nome"] != p["nome"] for p in pecas):
                 pecas.append(peca)
-        return {"pecas": [{**p, "variacoes": p["variacoes"][:12]} for p in pecas]}
+        for peca in pecas:
+            if all(peca["nome"] != p["nome"] for p in self.pecas_encontradas):
+                self.pecas_encontradas.append(peca)
+        # O modelo recebe o essencial; foto e ids ficam para os cartoes do chat.
+        return {
+            "pecas": [
+                {
+                    "nome": p["nome"],
+                    "categoria": p["categoria"],
+                    "marca": p["marca"],
+                    "preco_base": p["preco_base"],
+                    "tecido": p.get("tecido"),
+                    "variacoes": [
+                        {k: v for k, v in variacao.items() if k != "id_variacao"}
+                        for variacao in p["variacoes"][:MAX_VARIACOES]
+                    ],
+                }
+                for p in pecas
+            ]
+        }
+
+    def opcoes_da_busca(self) -> list[dict[str, Any]]:
+        """Cartoes de opcao (ate 3) com as pecas encontradas, quando nenhuma peca exata foi
+        oferecida: o cliente escolhe cor e tamanho no proprio cartao."""
+        opcoes = []
+        for peca in self.pecas_encontradas[:LIMITE_OFERTAS]:
+            variacoes = [
+                {
+                    "id_variacao": v["id_variacao"],
+                    "sku": v["sku"],
+                    "cor": v["cor"],
+                    "tamanho": v["tamanho"],
+                    "preco": v["preco"],
+                }
+                for v in peca["variacoes"][:MAX_VARIACOES]
+            ]
+            if not variacoes:
+                continue
+            primeira = variacoes[0]
+            opcoes.append(
+                {
+                    **primeira,
+                    "produto": peca["nome"],
+                    "imagem_url": peca.get("imagem_url"),
+                    "imagem_alt": peca.get("imagem_alt"),
+                    "tecido": peca.get("tecido"),
+                    "quantidade": 1,
+                    "variacoes": variacoes,
+                }
+            )
+        return opcoes
 
     def _semelhantes(self, descricao: str) -> list[dict[str, Any]]:
         if self.vetorizar is None:
@@ -427,6 +480,16 @@ class Ferramentas:
                     "imagem_alt": peca["imagem_alt"],
                     "tecido": peca["tecido"],
                     "quantidade": dados.quantidade,
+                    # Peca exata: uma variacao so (o cartao nao pede cor nem tamanho).
+                    "variacoes": [
+                        {
+                            "id_variacao": peca["id_variacao"],
+                            "sku": peca["sku"],
+                            "cor": peca["cor"],
+                            "tamanho": peca["tamanho"],
+                            "preco": peca["preco"],
+                        }
+                    ],
                 }
             )
         # O texto diz ao cliente que e so tocar no botao; nada foi para a sacola ainda.

@@ -14,6 +14,14 @@ class MensagemCriacao(BaseModel):
     texto: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
+class VariacaoOferta(BaseModel):
+    id_variacao: UUID
+    sku: str
+    cor: str
+    tamanho: str
+    preco: Decimal
+
+
 class Oferta(BaseModel):
     """Cartao da peca no chat: o botao "Adicionar a sacola" usa `id_variacao` e `quantidade`."""
 
@@ -27,6 +35,8 @@ class Oferta(BaseModel):
     imagem_alt: str | None = None
     tecido: str | None = None
     quantidade: int = 1
+    # Cor e tamanho em estoque para escolher no cartao (peca exata: uma so).
+    variacoes: list[VariacaoOferta] = []
 
 
 class MensagemConversa(BaseModel):
