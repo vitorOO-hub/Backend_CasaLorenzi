@@ -308,6 +308,8 @@ CROSS JOIN LATERAL (
     SELECT CASE WHEN giro.giro_diario > 0 THEN saldo.saldo / giro.giro_diario END AS dias
 ) cobertura
 WHERE (CAST(:categoria AS text) IS NULL OR produto.categoria = CAST(:categoria AS text))
+  AND (cardinality(CAST(:ids_produto AS uuid[])) = 0
+       OR produto.id_produto = ANY(CAST(:ids_produto AS uuid[])))
   AND (
       saldo.saldo <= saldo.minimo
       OR cobertura.dias < {COBERTURA_CURTA_EM_DIAS}
@@ -316,9 +318,16 @@ WHERE (CAST(:categoria AS text) IS NULL OR produto.categoria = CAST(:categoria A
 
 
 def reposicao(
-    conexao: Connection, filtro: Filtro, *, limite: int
+    conexao: Connection,
+    filtro: Filtro,
+    *,
+    limite: int,
+    ids_produto: tuple[UUID, ...] | None = None,
 ) -> tuple[int, list[dict[str, Any]]]:
-    parametros = filtro.parametros()
+    parametros = {
+        **filtro.parametros(),
+        "ids_produto": [str(id_produto) for id_produto in ids_produto or ()],
+    }
     total = conexao.execute(text("SELECT count(*) " + REPOSICAO_DE), parametros).scalar_one()
     linhas = conexao.execute(
         text(
@@ -349,6 +358,81 @@ def reposicao(
         {**parametros, "limite": limite},
     ).mappings()
     return int(total), [dict(linha) for linha in linhas]
+
+
+def produtos_da_unidade_por_texto(
+    conexao: Connection,
+    id_loja: UUID,
+    busca: str,
+    *,
+    categoria: str | None = None,
+    limite: int = 20,
+) -> list[UUID]:
+    linhas = conexao.execute(
+        text(
+            """
+            SELECT DISTINCT produto.id_produto
+            FROM public.produto produto
+            JOIN variacao_produto v ON v.id_produto = produto.id_produto AND v.ativa
+            JOIN estoque e ON e.id_variacao = v.id_variacao
+            WHERE produto.ativo AND e.id_loja = CAST(:id_loja AS uuid)
+              AND (CAST(:categoria AS text) IS NULL OR produto.categoria = :categoria)
+              AND strpos(
+                  lower(concat_ws(' ', produto.nome, produto.categoria, produto.marca,
+                                  produto.colecao, produto.tipo, produto.tecido,
+                                  produto.tecelagem, produto.nota,
+                                  produto.cores::text)),
+                  lower(CAST(:busca AS text))
+              ) > 0
+            ORDER BY produto.id_produto
+            LIMIT :limite
+            """
+        ),
+        {
+            "id_loja": str(id_loja),
+            "categoria": categoria,
+            "busca": busca,
+            "limite": limite,
+        },
+    ).scalars()
+    return list(linhas)
+
+
+def produtos_semanticos_da_unidade(
+    conexao: Connection,
+    id_loja: UUID,
+    vetor: str,
+    *,
+    categoria: str | None = None,
+    limite: int = 20,
+) -> list[UUID]:
+    linhas = conexao.execute(
+        text(
+            """
+            SELECT produto.id_produto
+            FROM public.produto produto
+            WHERE produto.ativo AND produto.embedding IS NOT NULL
+              AND (CAST(:categoria AS text) IS NULL OR produto.categoria = :categoria)
+              AND EXISTS (
+                  SELECT 1
+                  FROM variacao_produto v
+                  JOIN estoque e ON e.id_variacao = v.id_variacao
+                  WHERE v.id_produto = produto.id_produto AND v.ativa
+                    AND e.id_loja = CAST(:id_loja AS uuid)
+              )
+            ORDER BY produto.embedding OPERATOR(extensions.<=>)
+                     CAST(:embedding AS extensions.vector)
+            LIMIT :limite
+            """
+        ),
+        {
+            "id_loja": str(id_loja),
+            "categoria": categoria,
+            "embedding": vetor,
+            "limite": limite,
+        },
+    ).scalars()
+    return list(linhas)
 
 
 LOJAS_DA_REDE = """
@@ -444,6 +528,8 @@ WITH parado AS (
       AND (ult.ultima_venda IS NULL OR ult.ultima_venda < now() - make_interval(days => :dias))
       AND (CAST(:id_loja AS uuid) IS NULL OR e.id_loja = CAST(:id_loja AS uuid))
       AND (CAST(:categoria AS text) IS NULL OR p.categoria = CAST(:categoria AS text))
+      AND (cardinality(CAST(:ids_produto AS uuid[])) = 0
+           OR p.id_produto = ANY(CAST(:ids_produto AS uuid[])))
 )
 SELECT *,
        count(*) OVER () AS total_itens,
@@ -456,11 +542,21 @@ LIMIT :limite
 
 
 def estoque_parado(
-    conexao: Connection, filtro: Filtro, *, dias: int, limite: int
+    conexao: Connection,
+    filtro: Filtro,
+    *,
+    dias: int,
+    limite: int,
+    ids_produto: tuple[UUID, ...] | None = None,
 ) -> list[dict[str, Any]]:
     linhas = conexao.execute(
         text(ESTOQUE_PARADO),
-        {**filtro.parametros(), "dias": dias, "limite": limite},
+        {
+            **filtro.parametros(),
+            "dias": dias,
+            "limite": limite,
+            "ids_produto": [str(id_produto) for id_produto in ids_produto or ()],
+        },
     ).mappings()
     return [dict(linha) for linha in linhas]
 
