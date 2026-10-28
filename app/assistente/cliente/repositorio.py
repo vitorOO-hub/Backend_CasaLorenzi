@@ -56,8 +56,10 @@ def mensagens_visiveis(conexao: Connection, id_conversa: UUID, limite: int) -> l
     linhas = conexao.execute(
         text(
             """
-            SELECT autor, texto, criada_em FROM (
-                SELECT autor, texto, criada_em, id_mensagem FROM mensagem_assistente
+            SELECT autor, texto, criada_em,
+                   COALESCE(dados->'ofertas', '[]'::jsonb) AS ofertas
+            FROM (
+                SELECT autor, texto, criada_em, dados, id_mensagem FROM mensagem_assistente
                 WHERE id_conversa = CAST(:c AS uuid) AND autor IN ('usuario', 'assistente')
                 ORDER BY criada_em DESC, id_mensagem DESC
                 LIMIT :limite
@@ -167,7 +169,9 @@ def buscar_produtos(conexao: Connection, termos: list[str], limite: int) -> list
         text(
             f"""
             SELECT p.nome, p.categoria, p.marca, p.preco_base,
-                   json_agg(json_build_object('sku', v.sku, 'cor', v.cor, 'tamanho', v.tamanho,
+                   p.imagem_url, p.imagem_alt, p.tecido,
+                   json_agg(json_build_object('id_variacao', v.id_variacao, 'sku', v.sku,
+                                              'cor', v.cor, 'tamanho', v.tamanho,
                                               'preco', v.preco_venda) ORDER BY v.sku) AS variacoes
             FROM produto p
             JOIN variacao_produto v ON v.id_produto = p.id_produto AND v.ativa
@@ -176,7 +180,8 @@ def buscar_produtos(conexao: Connection, termos: list[str], limite: int) -> list
                   SELECT 1 FROM estoque e JOIN loja l ON l.id_loja = e.id_loja AND l.ativa
                   WHERE e.id_variacao = v.id_variacao AND e.quantidade > 0
               )
-            GROUP BY p.id_produto, p.nome, p.categoria, p.marca, p.preco_base
+            GROUP BY p.id_produto, p.nome, p.categoria, p.marca, p.preco_base,
+                     p.imagem_url, p.imagem_alt, p.tecido
             ORDER BY p.nome
             LIMIT :limite
             """  # nosec B608
@@ -197,3 +202,79 @@ def variacao_ativa_pelo_sku(conexao: Connection, sku: str) -> UUID | None:
         ),
         {"sku": sku},
     ).scalar()
+
+
+def buscar_produtos_semelhantes(
+    conexao: Connection, vetor: str, limite: int, distancia_maxima: float
+) -> list[dict[str, Any]]:
+    """Pecas ativas com estoque mais perto do vetor da pergunta (cosseno), mais proximas primeiro.
+
+    So entram pecas que ja tem embedding (scripts/gerar_embeddings_produtos.py). `vetor` e o
+    literal de `embeddings.vetor_sql`.
+    """
+    linhas = conexao.execute(
+        text(
+            """
+            WITH proximos AS (
+                SELECT p.id_produto,
+                       p.embedding OPERATOR(extensions.<=>) CAST(:vetor AS extensions.vector)
+                           AS distancia
+                FROM produto p
+                WHERE p.ativo AND p.embedding IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1 FROM variacao_produto v
+                      JOIN estoque e ON e.id_variacao = v.id_variacao AND e.quantidade > 0
+                      JOIN loja l ON l.id_loja = e.id_loja AND l.ativa
+                      WHERE v.id_produto = p.id_produto AND v.ativa
+                  )
+                ORDER BY distancia
+                LIMIT :limite
+            )
+            SELECT p.nome, p.categoria, p.marca, p.preco_base, px.distancia,
+                   p.imagem_url, p.imagem_alt, p.tecido,
+                   json_agg(json_build_object('id_variacao', v.id_variacao, 'sku', v.sku,
+                                              'cor', v.cor, 'tamanho', v.tamanho,
+                                              'preco', v.preco_venda) ORDER BY v.sku) AS variacoes
+            FROM proximos px
+            JOIN produto p ON p.id_produto = px.id_produto
+            JOIN variacao_produto v ON v.id_produto = p.id_produto AND v.ativa
+            WHERE px.distancia <= :distancia_maxima
+              AND EXISTS (
+                  SELECT 1 FROM estoque e JOIN loja l ON l.id_loja = e.id_loja AND l.ativa
+                  WHERE e.id_variacao = v.id_variacao AND e.quantidade > 0
+              )
+            GROUP BY p.id_produto, p.nome, p.categoria, p.marca, p.preco_base, px.distancia,
+                     p.imagem_url, p.imagem_alt, p.tecido
+            ORDER BY px.distancia
+            """
+        ),
+        {"vetor": vetor, "limite": limite, "distancia_maxima": distancia_maxima},
+    ).mappings()
+    return [dict(linha) for linha in linhas]
+
+
+def peca_para_oferta(conexao: Connection, sku: str) -> dict[str, Any] | None:
+    """O cartao que o chat mostra: peca ativa, a variacao (cor, tamanho, preco), a foto e quanto
+    ha em estoque nas lojas ativas. None se o SKU nao existe ou a peca saiu do catalogo."""
+    linha = (
+        conexao.execute(
+            text(
+                """
+                SELECT v.id_variacao, v.sku, p.nome AS produto, p.marca, v.cor, v.tamanho,
+                       v.preco_venda AS preco, p.imagem_url, p.imagem_alt, p.tecido,
+                       COALESCE((
+                           SELECT sum(GREATEST(e.quantidade, 0))
+                           FROM estoque e JOIN loja l ON l.id_loja = e.id_loja AND l.ativa
+                           WHERE e.id_variacao = v.id_variacao
+                       ), 0)::int AS estoque
+                FROM variacao_produto v
+                JOIN produto p ON p.id_produto = v.id_produto
+                WHERE upper(v.sku) = upper(:sku) AND v.ativa AND p.ativo
+                """
+            ),
+            {"sku": sku},
+        )
+        .mappings()
+        .first()
+    )
+    return dict(linha) if linha else None
