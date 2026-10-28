@@ -14,7 +14,7 @@ class ConversaNaoEncontrada(ErroDeNegocio):
 
 class ConversaComAtendente(ErroDeNegocio):
     status_code = status.HTTP_409_CONFLICT
-    detalhe = "Esta conversa foi passada para a nossa equipe; continue pelo Atendimento."
+    detalhe = "Esta conversa foi passada para a nossa equipe; continue com o atendente."
 
 
 class LimiteDiarioDoAssistente(ErroDeNegocio):

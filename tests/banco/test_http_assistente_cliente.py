@@ -295,8 +295,20 @@ def test_erro_do_provedor_passa_para_a_equipe_que_le_a_conversa(cena):
         "Cliente: pedido PD-77, costura aberta na manga",
     ):
         assert trecho in primeira
-    # A conversa travou: o cliente continua pelo chamado.
+    # O assistente sai de cena; o painel do site passa a usar as mensagens do chamado.
     assert _enviar(http, como("cliente"), conversa, "e ai?").status_code == 409
+    chamado = f"/api/v1/cliente/chamados/{id_}/mensagens"
+    r = http.post(chamado, json={"texto": "Estou aguardando"}, headers=como("cliente"))
+    assert r.status_code in (200, 201), r.text
+    r = http.post(
+        f"/api/v1/painel/chat/conversas/{id_}/mensagens",
+        json={"texto": "Oi! Ja vi o resumo, vamos trocar a peca."},
+        headers=como("atendente"),
+    )
+    assert r.status_code in (200, 201), r.text
+    do_cliente = http.get(chamado, headers=como("cliente")).json()
+    assert [m["autor"] for m in do_cliente][-2:] == ["cliente", "atendente"]
+    assert do_cliente[-1]["texto"] == "Oi! Ja vi o resumo, vamos trocar a peca."
 
 
 def test_limite_diario_por_cliente(cena, monkeypatch):
