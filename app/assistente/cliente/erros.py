@@ -20,3 +20,13 @@ class ConversaComAtendente(ErroDeNegocio):
 class LimiteDiarioDoAssistente(ErroDeNegocio):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     detalhe = "Você atingiu o limite de mensagens do assistente por hoje. Tente de novo amanhã."
+
+
+class ConversaArquivada(ErroDeNegocio):
+    status_code = status.HTTP_409_CONFLICT
+    detalhe = "Esta conversa foi arquivada. Comece um novo chat."
+
+
+class RespostaNaoEncontrada(ErroDeNegocio):
+    status_code = status.HTTP_404_NOT_FOUND
+    detalhe = "Resposta não encontrada"

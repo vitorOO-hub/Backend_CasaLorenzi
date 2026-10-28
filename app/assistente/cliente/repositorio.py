@@ -56,8 +56,9 @@ def mensagens_visiveis(conexao: Connection, id_conversa: UUID, limite: int) -> l
     linhas = conexao.execute(
         text(
             """
-            SELECT autor, texto, criada_em,
-                   COALESCE(dados->'ofertas', '[]'::jsonb) AS ofertas
+            SELECT id_mensagem, autor, texto, criada_em,
+                   COALESCE(dados->'ofertas', '[]'::jsonb) AS ofertas,
+                   dados->>'avaliacao' AS avaliacao
             FROM (
                 SELECT autor, texto, criada_em, dados, id_mensagem FROM mensagem_assistente
                 WHERE id_conversa = CAST(:c AS uuid) AND autor IN ('usuario', 'assistente')
@@ -132,6 +133,80 @@ def mensagens_do_usuario_hoje(conexao: Connection, id_usuario: UUID) -> int:
             ),
             {"u": str(id_usuario)},
         ).scalar_one()
+    )
+
+
+TAMANHO_DO_TITULO = 60
+
+
+def listar_conversas(
+    conexao: Connection, id_usuario: UUID, tipo: str, limite: int
+) -> list[dict[str, Any]]:
+    """Conversas nao arquivadas, mais recentes primeiro. Titulo = comeco da primeira pergunta
+    (como no assistente do vendedor, sem coluna nova)."""
+    linhas = conexao.execute(
+        text(
+            """
+            SELECT c.id_conversa, c.status, c.id_atendimento, c.criada_em, c.atualizada_em,
+                   COALESCE(
+                       (SELECT left(m.texto, :titulo) FROM mensagem_assistente m
+                        WHERE m.id_conversa = c.id_conversa AND m.autor = 'usuario'
+                        ORDER BY m.criada_em, m.id_mensagem LIMIT 1),
+                       'Nova conversa'
+                   ) AS titulo
+            FROM conversa_assistente c
+            WHERE c.id_usuario = CAST(:u AS uuid) AND c.tipo = :tipo AND c.status <> 'encerrada'
+            ORDER BY c.atualizada_em DESC, c.id_conversa
+            LIMIT :limite
+            """
+        ),
+        {"u": str(id_usuario), "tipo": tipo, "limite": limite, "titulo": TAMANHO_DO_TITULO},
+    ).mappings()
+    return [dict(linha) for linha in linhas]
+
+
+def arquivar(conexao: Connection, id_conversa: UUID, arquivada: bool) -> None:
+    """Arquivar = status 'encerrada' (como no vendedor). Ao desarquivar, volta ao que era: com a
+    equipe se ja tinha chamado, senao ativa."""
+    conexao.execute(
+        text(
+            """
+            UPDATE conversa_assistente
+            SET status = CASE
+                    WHEN :arquivada THEN 'encerrada'
+                    WHEN id_atendimento IS NOT NULL THEN 'com_atendente'
+                    ELSE 'ativa'
+                END,
+                atualizada_em = now()
+            WHERE id_conversa = CAST(:c AS uuid)
+            """
+        ),
+        {"c": str(id_conversa), "arquivada": arquivada},
+    )
+
+
+def avaliar_resposta(
+    conexao: Connection, id_conversa: UUID, id_mensagem: UUID, avaliacao: str | None
+) -> bool:
+    """util / nao_util numa resposta do assistente, em `dados` (como no vendedor). False se a
+    mensagem nao e uma resposta desta conversa."""
+    return (
+        conexao.execute(
+            text(
+                """
+                UPDATE mensagem_assistente
+                SET dados = CASE
+                    WHEN CAST(:a AS text) IS NULL THEN COALESCE(dados, '{}'::jsonb) - 'avaliacao'
+                    ELSE COALESCE(dados, '{}'::jsonb)
+                         || jsonb_build_object('avaliacao', CAST(:a AS text))
+                END
+                WHERE id_mensagem = CAST(:m AS uuid) AND id_conversa = CAST(:c AS uuid)
+                  AND autor = 'assistente'
+                """
+            ),
+            {"m": str(id_mensagem), "c": str(id_conversa), "a": avaliacao},
+        ).rowcount
+        == 1
     )
 
 
