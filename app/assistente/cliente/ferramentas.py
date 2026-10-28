@@ -20,6 +20,7 @@ from sqlalchemy.engine import Connection
 
 from app.assistente.cliente import passagem, repositorio
 from app.assistente.cliente.provedor import Ferramenta
+from app.cliente import repositorio as cliente_repositorio
 from app.cliente import service as cliente
 from app.core.papeis import UsuarioAtual
 
@@ -183,7 +184,7 @@ class Ferramentas:
     (chamado aberto, sacola alterada)."""
 
     def __init__(
-        self, conexao: Connection, usuario: UsuarioAtual, id_conversa: UUID | None = None
+        self, conexao: Connection, usuario: UsuarioAtual | None, id_conversa: UUID | None = None
     ) -> None:
         self.conexao, self.usuario, self.id_conversa = conexao, usuario, id_conversa
         self.id_atendimento: UUID | None = None
@@ -232,9 +233,12 @@ class Ferramentas:
             "total": sum(r["quantidade"] for r in linhas),
         }
 
+    def _lojas(self) -> list[dict[str, Any]]:
+        return cliente.listar_lojas(self.conexao, self.usuario)
+
     def _info_loja(self, argumentos: dict[str, Any]) -> dict[str, Any]:
         dados = InfoLoja.model_validate(argumentos)
-        lojas = cliente.listar_lojas(self.conexao, self.usuario)
+        lojas = self._lojas()
         if dados.loja:
             alvo = _normalizar(dados.loja)
             lojas = [lj for lj in lojas if alvo in _normalizar(str(lj["nome"]))]
@@ -315,3 +319,30 @@ class Ferramentas:
         )
         self.id_atendimento = UUID(str(chamado["id_atendimento"]))
         return {"transferido": True, "protocolo": chamado.get("protocolo")}
+
+
+# ---------------------------------------------------------------- visitante (sem login)
+
+
+class FerramentasVisitante(Ferramentas):
+    """Quem navega sem login: so busca de peca, estoque e lojas (dados publicos do catalogo).
+
+    Pontos, pedidos, sacola e equipe dependem de saber quem e o cliente: a ferramenta nao roda e
+    devolve `precisa_login`, e o site mostra o login ali mesmo no chat.
+    """
+
+    def __init__(self, conexao: Connection) -> None:
+        # Sem usuario: nenhuma ferramenta daqui chega a um service que dependa do cliente.
+        super().__init__(conexao, None)
+        self.precisa_login = False
+
+    def _lojas(self) -> list[dict[str, Any]]:
+        # Mesma lista publica do site (endereco, telefone, horario), sem exigir cliente.
+        return cliente_repositorio.listar_lojas(self.conexao)
+
+    def _pedir_login(self, argumentos: dict[str, Any]) -> dict[str, Any]:
+        self.precisa_login = True
+        return {"erro": "precisa_login", "orientacao": "o cliente precisa entrar na conta"}
+
+    _consultar_pontos = _consultar_pedidos = _montar_carrinho = _pedir_login
+    _transferir_para_atendente = _pedir_login
