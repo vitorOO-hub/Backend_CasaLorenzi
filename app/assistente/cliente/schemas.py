@@ -61,6 +61,7 @@ class Conversa(BaseModel):
 
 class RespostaAssistente(BaseModel):
     id_conversa: UUID
+    id_mensagem: UUID | None = None
     status: Literal["ativa", "com_atendente"]
     resposta: str
     # True quando nao houve resposta confiavel (fica marcada para a equipe revisar).

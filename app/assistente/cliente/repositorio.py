@@ -85,14 +85,15 @@ def gravar_mensagem(
     modelo: str | None = None,
     tokens_entrada: int | None = None,
     tokens_saida: int | None = None,
-) -> None:
-    conexao.execute(
+) -> UUID:
+    id_mensagem = conexao.execute(
         text(
             """
             INSERT INTO mensagem_assistente (id_conversa, autor, texto, ferramenta, dados,
                 sem_resposta, modelo, tokens_entrada, tokens_saida, criada_em)
             VALUES (CAST(:c AS uuid), :autor, :texto, :ferramenta, CAST(:dados AS jsonb),
                 :sem_resposta, :modelo, :te, :ts, clock_timestamp())
+            RETURNING id_mensagem
             """
         ),
         {
@@ -108,7 +109,7 @@ def gravar_mensagem(
             "te": tokens_entrada,
             "ts": tokens_saida,
         },
-    )
+    ).scalar_one()
     conexao.execute(
         text(
             "UPDATE conversa_assistente SET atualizada_em = now() "
@@ -116,6 +117,7 @@ def gravar_mensagem(
         ),
         {"c": str(id_conversa)},
     )
+    return id_mensagem
 
 
 def mensagens_do_usuario_hoje(conexao: Connection, id_usuario: UUID) -> int:

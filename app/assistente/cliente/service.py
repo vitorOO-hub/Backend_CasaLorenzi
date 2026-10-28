@@ -451,7 +451,7 @@ def _responder(
         loja = id_loja_chamado or (ferramentas.id_loja_chamado if ferramentas else None)
         if aviso := _aviso_de_horario(conexao, loja):
             texto = f"{texto}\n\n{aviso}"
-    repositorio.gravar_mensagem(
+    id_mensagem = repositorio.gravar_mensagem(
         conexao,
         id_conversa,
         "assistente",
@@ -471,6 +471,8 @@ def _responder(
     conexao.commit()
     return {
         "id_conversa": id_conversa,
+        # Para avaliar a resposta na hora (como no chat do vendedor).
+        "id_mensagem": id_mensagem,
         "status": "com_atendente" if id_atendimento else "ativa",
         "resposta": texto,
         "sem_resposta": sem_resposta,

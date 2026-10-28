@@ -420,8 +420,10 @@ def test_arquivar_some_do_historico_e_bloqueia_novas_mensagens(cena):
 def test_avaliar_resposta_do_assistente(cena):
     http, como, provedor, pg, _ = cena
     conversa = _nova(http, como("cliente"))
-    _enviar(http, como("cliente"), conversa, "oi, tudo bem?")
+    enviada = _enviar(http, como("cliente"), conversa, "oi, tudo bem?").json()
     pergunta, resposta = http.get(f"{BASE}/{conversa}", headers=como("cliente")).json()["mensagens"]
+    # O id da resposta ja vem no envio, para avaliar sem recarregar.
+    assert enviada["id_mensagem"] == resposta["id_mensagem"]
     url = f"{BASE}/{conversa}/mensagens/{resposta['id_mensagem']}/avaliacao"
     assert http.put(url, json={"avaliacao": "util"}, headers=como("cliente")).status_code == 200
     assert (
