@@ -14,9 +14,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.assistente.vendedor import consulta_cliente  # noqa: E402
+from app.assistente.vendedor import (
+    consulta_cliente,  # noqa: E402
+    service,  # noqa: E402
+)
 from app.assistente.vendedor import ferramentas as f  # noqa: E402
-from app.assistente.vendedor import service  # noqa: E402
 
 # Resultado tipico de uma ferramenta devolvido ao modelo (estimado pelos formatos reais).
 RESULTADO_ANTIGO = 180  # buscar_clientes / buscar_vendas / detalhe_venda
