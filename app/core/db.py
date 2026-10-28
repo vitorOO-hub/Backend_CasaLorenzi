@@ -30,7 +30,15 @@ def _url_sqlalchemy(database_url: str) -> str:
 
 @lru_cache
 def criar_engine(database_url: str) -> Engine:
-    return create_engine(_url_sqlalchemy(database_url), pool_pre_ping=True)
+    # O pooler do Supabase (modo transacao) reveza as conexoes do servidor entre transacoes. O
+    # psycopg prepara no servidor a consulta repetida 5 vezes com um nome fixo ("_pg3_0") e, em
+    # outra conexao, o nome colide: DuplicatePreparedStatement. Sem preparo, isso nao acontece
+    # (o mesmo que scripts/importar_funcionarios_vulto.py ja faz).
+    return create_engine(
+        _url_sqlalchemy(database_url),
+        pool_pre_ping=True,
+        connect_args={"prepare_threshold": None},
+    )
 
 
 def get_engine(settings: Settings) -> Engine:

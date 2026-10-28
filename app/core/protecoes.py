@@ -7,6 +7,7 @@ Redis (CLAUDE.md, secao 12.5).
 
 import ipaddress
 import json
+import re
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable, MutableMapping
@@ -28,8 +29,12 @@ ESCRITAS_SENSIVEIS = frozenset(
         # Rotas publicas que acham o cadastro so pelo CPF: o limite barra a tentativa em massa.
         "/api/v1/ativacao-conta",
         "/api/v1/ativacao-conta/consultar",
+        # Login por CPF: cada chamada e uma tentativa de senha.
+        "/api/v1/acesso/entrar-cpf",
     }
 )
+# Cada mensagem ao assistente chama um LLM pago; o caminho tem o id da conversa, por isso o padrao.
+MENSAGEM_DO_ASSISTENTE = re.compile(r"^/api/v1/assistente/cliente/conversas/[^/]+/mensagens$")
 MENSAGEM_429 = "Muitas requisicoes em pouco tempo. Aguarde um instante e tente de novo."
 
 
@@ -73,7 +78,10 @@ class LimitadorDeRequisicoes:
     def _tipo(self, metodo: str, caminho: str) -> str:
         if metodo in ("GET", "HEAD"):
             return "leitura"
-        if metodo == "POST" and caminho.rstrip("/") in ESCRITAS_SENSIVEIS:
+        if metodo == "POST" and (
+            caminho.rstrip("/") in ESCRITAS_SENSIVEIS
+            or MENSAGEM_DO_ASSISTENTE.match(caminho.rstrip("/"))
+        ):
             return "sensivel"
         return "escrita"
 

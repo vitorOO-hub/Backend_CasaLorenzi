@@ -221,6 +221,39 @@ def nome_da_loja(conexao: Connection, id_loja: UUID) -> str | None:
     return linha["nome"] if linha else None
 
 
+def clientes_que_mais_compram(
+    conexao: Connection,
+    id_loja: UUID,
+    status_de_venda: tuple[str, ...],
+    inicio: Any,
+    fim: Any,
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Ranking dos clientes da loja pelo valor comprado nela no periodo (sem frete), no mesmo
+    criterio de venda do painel. So pedidos desta loja: nada de compra em outra unidade."""
+    return buscar_todos(
+        conexao,
+        """
+        SELECT c.nome, c.documento AS cpf,
+               count(*)::int AS pedidos,
+               sum(p.valor_total - p.valor_frete) AS total,
+               max(p.criado_em) AS ultima_compra
+        FROM pedido p
+        JOIN status_pedido s ON s.id_status_pedido = p.id_status_pedido
+        JOIN usuario c ON c.id_usuario = p.id_cliente
+        WHERE p.id_loja = %s
+          AND s.codigo = ANY(%s)
+          AND p.criado_em >= (%s::date)::timestamp AT TIME ZONE 'America/Sao_Paulo'
+          AND p.criado_em < (%s::date + 1)::timestamp AT TIME ZONE 'America/Sao_Paulo'
+        GROUP BY c.id_usuario, c.nome, c.documento
+        ORDER BY total DESC, pedidos DESC, c.nome
+        LIMIT %s
+        """,
+        (id_loja, list(status_de_venda), inicio, fim, limit),
+    )
+
+
 def pecas_da_loja(
     conexao: Connection, id_loja: UUID, busca: str | None, *, limit: int
 ) -> list[dict[str, Any]]:

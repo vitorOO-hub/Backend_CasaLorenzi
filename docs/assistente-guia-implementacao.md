@@ -19,6 +19,7 @@ Desenho completo: `docs/superpowers/specs/2026-10-27-assistente-base-design.md`.
 | Classificador e plano de roteamento | `app/assistente/roteamento.py` | implementado e testado; ainda não chama provedores |
 | Benchmark de modelos | `scripts/benchmark_chatbot/` | piloto isolado, importa o classificador compartilhado |
 | Chatbot administrativo (backend) | `app/assistente/` | conversas privadas de admin, roteamento Groq/Gemini e ferramentas de consulta; sem frontend |
+| Assistente do cliente (backend e site) | `app/assistente/cliente/` | rotas em `/api/v1/assistente/cliente/conversas`; ferramentas de busca, estoque, loja, pontos, pedidos, sacola e transferência; quando não consegue responder, abre chamado com resumo e conversa (`passagem.py`) |
 
 ## 2. Onde colocar o código
 
@@ -44,6 +45,25 @@ Rotas sugeridas:
 | POST | `/assistente/conversas` | cliente logado, gerente ou admin; o tipo (`cliente`/`interno`) vem do token |
 | GET | `/assistente/conversas/{id}` | só o dono da conversa |
 | POST | `/assistente/conversas/{id}/mensagens` | só o dono; devolve a resposta do assistente |
+
+Como ficou: o chatbot administrativo usa `/assistente/conversas` (só admin) e o do cliente usa
+`/assistente/cliente/conversas` (só cliente), cada um com o próprio contrato. O do cliente tem limite
+de 40 mensagens por cliente por dia e conta como escrita sensível no limite por IP. Busca de produto
+ainda é por texto (nome, categoria, cor, tecido, marca) enquanto os embeddings não forem gerados.
+Sem modelo configurado, ele só avisa que está indisponível; nos demais casos em que não consegue
+responder com segurança, passa a conversa para a equipe com o resumo.
+
+Atualizações do assistente do cliente:
+
+- Só para cliente logado (o visitante não vê o assistente). Login do site aceita e-mail ou CPF
+  (`/api/v1/acesso/entrar-cpf`).
+- Políticas oficiais (trocas, devolução, frete, pagamento, retirada, ajustes, Lorenzi+) ficam em
+  `app/assistente/cliente/politicas.md`, lidas pela ferramenta `consultar_politica`. Tema marcado
+  como `PENDENTE` faz o assistente passar para a equipe. Um teste confere os números do documento
+  contra o código (frete, pontos, categorias).
+- Ao passar para a equipe, o chamado vai para a loja que o cliente citou na conversa
+  (`app/assistente/cliente/lojas.py`); sem loja clara, fila geral. Fora do horário cadastrado das
+  lojas (`loja.horario_funcionamento`), a resposta diz quando a equipe volta.
 
 ## 3. Ferramentas: o que cada uma chama
 
