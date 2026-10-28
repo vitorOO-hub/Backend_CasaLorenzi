@@ -73,17 +73,19 @@ def _lotes_no_corte(movimentos: Sequence[Any]) -> list[_Lote]:
     return lotes
 
 
-def _consumir(lotes: list[_Lote], pontos: int, quando: datetime, id_pedido: Any = None) -> None:
+def _consumir(lotes: list[_Lote], pontos: int, quando: datetime, id_pedido: Any = None) -> int:
+    """Tira os pontos dos lotes e devolve o que o saldo nao cobria (vira divida)."""
     # Estorno de compra sai primeiro do credito da propria compra; o resto, dos mais antigos.
     da_compra = [lote for lote in lotes if id_pedido is not None and lote.id_pedido == id_pedido]
     for lote in [*da_compra, *lotes]:
         if pontos <= 0:
-            return
+            return 0
         if lote.resta <= 0 or (lote.vence_em is not None and lote.vence_em <= quando):
             continue
         usado = min(lote.resta, pontos)
         lote.resta -= usado
         pontos -= usado
+    return pontos
 
 
 def calcular(
@@ -94,7 +96,8 @@ def calcular(
     lancados: dict[datetime, int] = {}
     depois = []
     for m in movimentos:
-        if m.ocorrido_em <= CORTE_DA_CARGA:
+        # So o que aconteceu ate "agora": movimentacao datada depois nao adianta vencimento.
+        if m.ocorrido_em <= CORTE_DA_CARGA or m.ocorrido_em > agora:
             continue
         if m.tipo == "vencimento":
             lancados[m.ocorrido_em] = lancados.get(m.ocorrido_em, 0) - m.pontos
@@ -130,12 +133,17 @@ def calcular(
             for lote in do_dia:
                 lote.resta = 0
 
+    # O saldo nunca fica negativo: saida que o saldo nao cobria vira divida, e o credito seguinte
+    # (por exemplo, o ajuste que zera o saldo) paga a divida antes de virar lote.
+    divida = max(-sum(m.pontos for m in movimentos if m.ocorrido_em <= CORTE_DA_CARGA), 0)
     for m in depois:
         vencer_ate(m.ocorrido_em, inclusive=False)
         if m.pontos > 0:
-            lotes.append(_Lote(m.ocorrido_em, m.pontos, m.vence_em, m.id_pedido))
+            pago = min(m.pontos, divida)
+            divida -= pago
+            lotes.append(_Lote(m.ocorrido_em, m.pontos - pago, m.vence_em, m.id_pedido))
         else:
-            _consumir(lotes, -m.pontos, m.ocorrido_em, m.id_pedido)
+            divida += _consumir(lotes, -m.pontos, m.ocorrido_em, m.id_pedido)
     vencer_ate(agora, inclusive=True)
     return faltam, lotes
 
