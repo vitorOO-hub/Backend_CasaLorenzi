@@ -587,6 +587,8 @@ def test_pedido_vago_vira_ate_tres_cartoes_de_opcao(repo, chamados, catalogo):
         azul["imagem_url"] == "/img/blazer azul.jpg"
         and azul["id_variacao"] == azul["variacoes"][0]["id_variacao"]
     )
+    # A marca vai junto: sem foto, o cartao mostra o quadro da marca (como o catalogo).
+    assert azul["marca"] == "Casa Lorenzi"
     # Os cartoes voltam com a conversa.
     assert _assistente(repo)["dados"]["ofertas"] == opcoes
     # O modelo nao recebe foto nem ids (so o que precisa para responder).

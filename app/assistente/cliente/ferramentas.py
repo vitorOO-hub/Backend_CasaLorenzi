@@ -323,6 +323,7 @@ class Ferramentas:
                 {
                     **primeira,
                     "produto": peca["nome"],
+                    "marca": peca.get("marca"),
                     "imagem_url": peca.get("imagem_url"),
                     "imagem_alt": peca.get("imagem_alt"),
                     "tecido": peca.get("tecido"),
@@ -473,6 +474,7 @@ class Ferramentas:
                     "id_variacao": peca["id_variacao"],
                     "sku": peca["sku"],
                     "produto": peca["produto"],
+                    "marca": peca.get("marca"),
                     "cor": peca["cor"],
                     "tamanho": peca["tamanho"],
                     "preco": peca["preco"],
