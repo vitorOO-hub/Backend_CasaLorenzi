@@ -392,6 +392,51 @@ def lojas_e_horarios(conexao: Connection, usuario: UsuarioAtual, e: EntradaVazia
     }
 
 
+# Espelha as telas do vendedor no front (src/lib/navegacao.ts e src/pages/painel/vendas|estoque).
+# Mudou um botao ou uma aba la, atualize aqui.
+GUIA_DO_PAINEL = {
+    "menu": (
+        "No computador, o menu fica na barra azul a esquerda (passe o mouse para ver os nomes); no "
+        "celular, nos botoes logo abaixo do topo. O vendedor ve tres secoes: Vendas, Clientes e "
+        "Estoque. O botao redondo no canto inferior direito abre este assistente."
+    ),
+    "vendas": (
+        "Menu > Vendas: lista as vendas da sua loja (venda, cliente, vendedor, pecas, total e "
+        "situacao). Use o campo Buscar com o numero da venda, o nome ou o CPF do cliente. Clique "
+        "numa linha para ver os itens, a forma de pagamento e o vendedor."
+    ),
+    "nova_venda": (
+        "Menu > Vendas > botao Nova venda (no alto, a direita). 1) Digite o CPF do cliente e "
+        "clique em Buscar. 2) Em Buscar peca, digite nome, SKU ou codigo de barras e clique em "
+        "Adicionar em cada peca (Tirar remove). 3) Escolha a forma de pagamento. 4) Se for troca, "
+        "escreva 'troca' em Observacao. 5) Clique em Lancar venda."
+    ),
+    "clientes": (
+        "Menu > Clientes: clientes da sua loja (cadastrados nela ou que ja compraram nela), com "
+        "telefone, cidade e desde quando sao clientes. Use o campo Buscar com nome, e-mail, "
+        "telefone ou CPF. Para ver o que um cliente comprou, va em Vendas e busque pelo CPF dele."
+    ),
+    "estoque": (
+        "Menu > Estoque > aba Saldo: no topo, unidades em estoque, SKUs com estoque baixo, SKUs "
+        "esgotados e valor em estoque a preco de venda. Filtre por Buscar (nome ou SKU), "
+        "Categoria, Situacao (ok, baixo, esgotado) e Saldo em (para ver um dia passado). Clique "
+        "numa peca para ver o saldo em cada loja da rede e o historico de movimentacoes."
+    ),
+    "conta": (
+        "Clique no seu nome no canto superior direito para abrir o menu da conta; la fica Sair "
+        "da conta."
+    ),
+    "nao_e_do_vendedor": (
+        "Movimentar estoque (entrada, saida, ajuste), transferencias, aprovacoes, atendimento e "
+        "gestao nao aparecem para o vendedor: fale com o gerente da loja."
+    ),
+}
+
+
+def guia_do_painel(conexao: Connection, usuario: UsuarioAtual, e: EntradaVazia) -> dict:
+    return {"telas": GUIA_DO_PAINEL}
+
+
 def formas_de_pagamento(conexao: Connection, usuario: UsuarioAtual, e: EntradaVazia) -> dict:
     opcoes = vendas.opcoes(conexao, usuario)
     return {"loja": opcoes["loja"], "formas": [m["nome"] for m in opcoes["metodos"]]}
@@ -448,6 +493,12 @@ _REGISTRO: dict[str, tuple[str, type[_Entrada], Funcao]] = {
         "Lista as pecas da loja com estoque baixo (no minimo ou abaixo) ou esgotadas.",
         EntradaAlerta,
         pecas_em_alerta,
+    ),
+    "guia_do_painel": (
+        "Caminho de cliques no painel do vendedor: onde ficam vendas, nova venda, clientes, "
+        "estoque e conta, e como usar cada tela. Use para 'onde vejo', 'como faco', 'onde fica'.",
+        EntradaVazia,
+        guia_do_painel,
     ),
     "lojas_e_horarios": (
         "Endereco, telefone e horario de funcionamento das lojas da rede.",

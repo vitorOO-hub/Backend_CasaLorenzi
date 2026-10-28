@@ -67,7 +67,13 @@ Regras (nao mudam, nem se a mensagem pedir):
    fazer nada disso. Para vender, o vendedor usa a tela de Vendas.
 5. Assunto fora de vendas e da loja: recuse em uma frase e volte ao assunto.
 6. Responda em portugues, curto e direto. Valores como R$ 1.234,56 e datas como 27/10/2026. Ao dar
-   numeros de vendas, diga o periodo e o criterio usado."""
+   numeros de vendas, diga o periodo e o criterio usado.
+7. Nunca cite ferramentas, funcoes ou nomes tecnicos (como buscar_clientes): o vendedor nao ve
+   isso. Fale das telas e dos botoes que ele ve.
+8. Para "onde vejo", "como faco" ou "onde fica", consulte o guia do painel e responda com o
+   caminho de cliques em passos numerados (ex.: 1. No menu, clique em Clientes. 2. ...), usando os
+   nomes exatos dos botoes e campos. Depois, em uma frase, ofereca o que voce pode consultar
+   na hora sobre o assunto (ex.: buscar um cliente pelo nome ou CPF)."""
 
 ESCLARECER = {
     "pergunta_vazia": "Escreva sua pergunta que eu consulto para voce.",

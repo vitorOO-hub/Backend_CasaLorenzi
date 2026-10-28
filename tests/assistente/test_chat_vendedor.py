@@ -780,3 +780,19 @@ def test_pecas_em_alerta_filtra_pela_situacao_na_loja_do_token(monkeypatch):
     assert "erro" in errada
     alerta = next(f for f in ferramentas_vendedor.FERRAMENTAS if f.nome == "pecas_em_alerta")
     assert alerta.parametros["properties"]["situacao"]["enum"] == ["baixo", "esgotado"]
+
+
+# ------------------------------------------------------------------ guia das telas
+
+
+def test_guia_do_painel_traz_o_caminho_de_cliques_das_telas_do_vendedor():
+    saida = ferramentas_vendedor.executar(ConexaoFalsa(), VENDEDOR_A, "guia_do_painel", {})
+    telas = saida["telas"]
+    assert {"vendas", "nova_venda", "clientes", "estoque"} <= set(telas)
+    assert "Menu > Clientes" in telas["clientes"]
+    assert "Lancar venda" in telas["nova_venda"]
+
+
+def test_prompt_proibe_citar_ferramentas_e_pede_caminho_de_cliques():
+    assert "Nunca cite ferramentas" in vendedor.SISTEMA
+    assert "caminho de cliques" in vendedor.SISTEMA
