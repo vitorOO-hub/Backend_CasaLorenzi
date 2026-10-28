@@ -95,3 +95,39 @@ def test_gerar_em_lotes_sem_aplicar_nao_grava(sa_conn):
     assert sa_conn.execute(
         text("SELECT embedding IS NULL FROM produto WHERE id_produto = :p"), {"p": peca}
     ).scalar_one()
+
+
+class GeradorComLimite(GeradorFalso):
+    """Recusa a primeira chamada com 429, como o plano gratuito do Gemini."""
+
+    def __init__(self):
+        super().__init__()
+        self.recusou = False
+
+    def documentos(self, textos):
+        if not self.recusou:
+            self.recusou = True
+            raise embeddings.ErroEmbedding("HTTP 429", 429)
+        return super().documentos(textos)
+
+
+def test_gerar_em_lotes_pequenos_espera_o_limite_e_grava(sa_conn):
+    ids = [_peca(sa_conn, f"Lote {i} {uuid4().hex[:6]}") for i in range(3)]
+    pecas = [p for p in embeddings.pecas_pendentes(sa_conn) if p["id_produto"] in ids]
+    esperas = []
+    feitas = embeddings.gerar(
+        sa_conn,
+        GeradorComLimite(),
+        pecas,
+        aplicar=True,
+        tamanho_do_lote=2,
+        pausa=5,
+        dormir=esperas.append,
+    )
+    assert feitas == 3
+    assert esperas == [60, 5]  # o limite do primeiro lote, depois a pausa antes do segundo
+    gravadas = sa_conn.execute(
+        text("SELECT count(*) FROM produto WHERE id_produto = ANY(:ids) AND embedding IS NOT NULL"),
+        {"ids": ids},
+    ).scalar_one()
+    assert gravadas == 3

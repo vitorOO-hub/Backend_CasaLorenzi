@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -32,7 +33,9 @@ Vetorizar = Callable[[str], list[float]]
 
 
 class ErroEmbedding(RuntimeError):
-    pass
+    def __init__(self, motivo: str, status: int | None = None) -> None:
+        super().__init__(motivo)
+        self.status = status
 
 
 class EmbeddingsGemini:
@@ -51,7 +54,7 @@ class EmbeddingsGemini:
         except httpx.HTTPError as erro:
             raise ErroEmbedding(f"falha de conexao ({type(erro).__name__})") from erro
         if resposta.is_error:
-            raise ErroEmbedding(f"HTTP {resposta.status_code}")
+            raise ErroEmbedding(f"HTTP {resposta.status_code}", resposta.status_code)
         try:
             return resposta.json()
         except ValueError as erro:
@@ -172,13 +175,36 @@ def gravar_embeddings(conexao: Any, vetores: list[tuple[Any, list[float]]]) -> N
 
 
 def gerar(
-    conexao: Any, gerador: EmbeddingsGemini, pecas: list[dict[str, Any]], *, aplicar: bool
+    conexao: Any,
+    gerador: EmbeddingsGemini,
+    pecas: list[dict[str, Any]],
+    *,
+    aplicar: bool,
+    tamanho_do_lote: int = TAMANHO_DO_LOTE,
+    pausa: float = 0.0,
+    dormir: Callable[[float], None] | None = None,
+    tentativas: int = 5,
 ) -> int:
-    """Vetoriza em lotes e grava cada lote (com commit) quando `aplicar`. Devolve quantas."""
+    """Vetoriza em lotes e grava cada lote (com commit) quando `aplicar`. Devolve quantas.
+
+    O plano gratuito do Gemini conta cada peca do lote como uma requisicao: lotes pequenos, uma
+    `pausa` entre eles e, no limite (HTTP 429), espera um minuto e tenta de novo.
+    """
+    dormir = dormir or time.sleep
     feitas = 0
-    for inicio in range(0, len(pecas), TAMANHO_DO_LOTE):
-        lote = pecas[inicio : inicio + TAMANHO_DO_LOTE]
-        vetores = gerador.documentos([texto_do_produto(p) for p in lote])
+    for inicio in range(0, len(pecas), tamanho_do_lote):
+        lote = pecas[inicio : inicio + tamanho_do_lote]
+        if inicio and pausa:
+            dormir(pausa)
+        for tentativa in range(tentativas):
+            try:
+                vetores = gerador.documentos([texto_do_produto(p) for p in lote])
+                break
+            except ErroEmbedding as erro:
+                if erro.status != 429 or tentativa == tentativas - 1:
+                    raise
+                log.warning("limite do Gemini; esperando 60 s (tentativa %s)", tentativa + 1)
+                dormir(60)
         if aplicar:
             gravar_embeddings(
                 conexao, [(p["id_produto"], v) for p, v in zip(lote, vetores, strict=True)]

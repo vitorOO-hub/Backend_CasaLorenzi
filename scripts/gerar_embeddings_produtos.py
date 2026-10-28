@@ -23,6 +23,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--aplicar", action="store_true", help="vetoriza e grava")
     parser.add_argument("--todas", action="store_true", help="refaz tambem as que ja tem embedding")
+    parser.add_argument("--lote", type=int, default=20, help="pecas por chamada (padrao 20)")
+    parser.add_argument("--pausa", type=float, default=15, help="segundos entre lotes (padrao 15)")
     args = parser.parse_args()
 
     configuracoes = Settings()
@@ -36,7 +38,14 @@ def main() -> None:
         chave = configuracoes.gemini_api_key
         if not chave or not chave.get_secret_value().strip():
             sys.exit("GEMINI_API_KEY nao configurada")
-        feitas = gerar(conexao, EmbeddingsGemini(chave.get_secret_value()), pecas, aplicar=True)
+        feitas = gerar(
+            conexao,
+            EmbeddingsGemini(chave.get_secret_value()),
+            pecas,
+            aplicar=True,
+            tamanho_do_lote=args.lote,
+            pausa=args.pausa,
+        )
         print(f"embeddings gravados: {feitas}")
 
 
