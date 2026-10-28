@@ -18,6 +18,9 @@ BEGIN
 END
 $$;
 
+-- Schema onde o Supabase instala as extensoes (pgvector, por exemplo).
+CREATE SCHEMA IF NOT EXISTS extensions;
+
 CREATE SCHEMA IF NOT EXISTS auth;
 
 -- Imita o minimo de auth.users que o cadastro de cliente usa (o trigger nasce em cima dela).

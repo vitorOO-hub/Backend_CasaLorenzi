@@ -150,21 +150,38 @@ M = namedtuple("M", "tipo pontos ocorrido_em vence_em id_pedido")
 
 
 def _cenario(rnd):
-    """Movimentos aleatorios em volta do corte da carga (creditos, resgates, ajustes, estornos)."""
-    eventos, pedidos = [], []
-    for _ in range(rnd.randint(1, 12)):
-        quando = CORTE_DA_CARGA + timedelta(
-            days=rnd.randint(-500, 200), minutes=rnd.randint(0, 999)
-        )
+    """Movimentos aleatorios em volta do corte da carga (creditos, ajustes e resgates).
+
+    Realistas: o resgate nunca passa dos pontos que ainda valem naquele momento (a plataforma
+    limita a saida ao saldo; os casos de divida tem testes proprios).
+    """
+    momentos = sorted(
+        CORTE_DA_CARGA + timedelta(days=rnd.randint(-500, 200), minutes=rnd.randint(0, 999))
+        for _ in range(rnd.randint(1, 12))
+    )
+    eventos, lotes = [], []  # lotes: [vence_em, resta]
+    for quando in momentos:
         sorteio = rnd.random()
         if sorteio < 0.5:
             pontos = rnd.randint(1, 900)
             eventos.append(("credito", pontos, quando, quando + ANO, None))
+            lotes.append([quando + ANO, pontos])
         elif sorteio < 0.6:
-            eventos.append(("ajuste", rnd.randint(1, 300), quando, None, None))
+            pontos = rnd.randint(1, 300)
+            eventos.append(("ajuste", pontos, quando, None, None))
+            lotes.append([None, pontos])
         else:
-            eventos.append(("resgate", -rnd.randint(1, 600), quando, None, None))
-    return eventos, pedidos
+            validos = [lote for lote in lotes if lote[0] is None or lote[0] > quando]
+            falta = min(rnd.randint(1, 600), sum(lote[1] for lote in validos))
+            if falta <= 0:
+                continue
+            eventos.append(("resgate", -falta, quando, None, None))
+            for lote in validos:
+                usado = min(lote[1], falta)
+                lote[1] -= usado
+                falta -= usado
+    rnd.shuffle(eventos)  # gravados fora de ordem, como pode acontecer na carga
+    return eventos, []
 
 
 @pytest.mark.parametrize("semente", range(25))
@@ -175,13 +192,16 @@ def test_vencimentos_do_banco_batem_com_o_python(fab_sa, sa_conn, semente):
     c = fab_sa.conn
     cliente = fab_sa.usuario("cliente")
     eventos, _ = _cenario(rnd)
+    # Gravadas como a carga grava (origem da carga, fora de ordem): a trava de saldo da plataforma
+    # nao entra aqui; o teste confere so a regra de vencimento.
     for tipo, pontos, quando, vence, _ped in eventos:
         c.execute(
             "INSERT INTO movimento_pontos (id_usuario, tipo, pontos, ocorrido_em, vence_em, "
-            "descricao) VALUES (%s, %s, %s, %s, %s, 'teste')",
+            "descricao, origem) VALUES (%s, %s, %s, %s, %s, 'teste', 'vulto+')",
             (cliente.id, tipo, pontos, quando, vence),
         )
-    agora = CORTE_DA_CARGA + timedelta(days=rnd.randint(1, 250))
+    # "Agora" pode cair antes de movimentacoes ja gravadas: elas nao adiantam vencimento.
+    agora = CORTE_DA_CARGA + timedelta(days=rnd.randint(1, 450))
     movimentos = [
         M(*r)
         for r in c.execute(
