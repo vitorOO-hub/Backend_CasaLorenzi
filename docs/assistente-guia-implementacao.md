@@ -48,7 +48,7 @@ Rotas sugeridas:
 
 Como ficou: o chatbot administrativo usa `/assistente/conversas` (só admin) e o do cliente usa
 `/assistente/cliente/conversas` (só cliente), cada um com o próprio contrato. O do cliente tem limite
-de 40 mensagens por cliente por dia e conta como escrita sensível no limite por IP. A busca de produto
+de 30 mensagens por cliente por dia e conta como escrita sensível no limite por IP. A busca de produto
 junta palavras (nome, categoria, cor, tecido, marca) e semelhança por embeddings (ver abaixo).
 Sem modelo configurado, ele só avisa que está indisponível; nos demais casos em que não consegue
 responder com segurança, passa a conversa para a equipe com o resumo.

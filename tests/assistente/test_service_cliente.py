@@ -634,3 +634,13 @@ def test_conversa_passada_para_a_equipe_nao_mostra_cartoes(repo, chamados, catal
     )
     resposta, _, _ = _enviar(repo, "quero trocar meu blazer", provedor)
     assert resposta["status"] == "com_atendente" and resposta["ofertas"] == []
+
+
+def test_limite_diario_e_de_30_mensagens_por_cliente(repo):
+    # Decisao de 28/10/2026: a cota gratuita do Groq e dividida com os outros chatbots.
+    assert service.LIMITE_DIARIO_POR_CLIENTE == 30
+    repo.hoje = 29
+    _enviar(repo, "oi")  # a 30a do dia passa
+    repo.hoje = 30
+    with pytest.raises(LimiteDiarioDoAssistente):
+        _enviar(repo, "mais uma")
