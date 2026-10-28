@@ -7,7 +7,14 @@ from fastapi import APIRouter, Depends, status
 
 from app.assistente.cliente import service
 from app.assistente.cliente.provedor import criar_provedor
-from app.assistente.cliente.schemas import Conversa, MensagemCriacao, RespostaAssistente
+from app.assistente.cliente.schemas import (
+    AlteracaoDaConversa,
+    AvaliacaoDaResposta,
+    Conversa,
+    ConversaResumo,
+    MensagemCriacao,
+    RespostaAssistente,
+)
 from app.core.config import Settings, get_settings
 from app.core.db import ExecutarDep
 from app.core.papeis import UsuarioAtual
@@ -36,6 +43,42 @@ FabricaDep = Annotated[service.FabricaProvedor, Depends(get_fabrica_provedor)]
 )
 def iniciar_conversa(usuario: UsuarioDep, executar: ExecutarDep):
     return executar(lambda conexao: service.iniciar_conversa(conexao, usuario))
+
+
+@router.get("/conversas", response_model=list[ConversaResumo], summary="Historico de conversas")
+def listar_conversas(usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(lambda conexao: service.listar_conversas(conexao, usuario))
+
+
+@router.patch(
+    "/conversas/{id_conversa}", response_model=Conversa, summary="Arquivar ou desarquivar"
+)
+def alterar_conversa(
+    id_conversa: UUID, dados: AlteracaoDaConversa, usuario: UsuarioDep, executar: ExecutarDep
+):
+    return executar(
+        lambda conexao: service.arquivar_conversa(conexao, usuario, id_conversa, dados.arquivada)
+    )
+
+
+@router.put(
+    "/conversas/{id_conversa}/mensagens/{id_mensagem}/avaliacao",
+    response_model=AvaliacaoDaResposta,
+    summary="Avaliar uma resposta (util ou nao)",
+)
+def avaliar_resposta(
+    id_conversa: UUID,
+    id_mensagem: UUID,
+    dados: AvaliacaoDaResposta,
+    usuario: UsuarioDep,
+    executar: ExecutarDep,
+):
+    executar(
+        lambda conexao: service.avaliar_resposta(
+            conexao, usuario, id_conversa, id_mensagem, dados.avaliacao
+        )
+    )
+    return dados
 
 
 @router.get("/conversas/{id_conversa}", response_model=Conversa, summary="Conversa e mensagens")

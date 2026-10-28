@@ -39,7 +39,12 @@ class Oferta(BaseModel):
     variacoes: list[VariacaoOferta] = []
 
 
+Avaliacao = Literal["util", "nao_util"]
+
+
 class MensagemConversa(BaseModel):
+    id_mensagem: UUID | None = None
+    avaliacao: Avaliacao | None = None
     autor: Literal["usuario", "assistente"]
     texto: str
     criada_em: datetime
@@ -56,6 +61,7 @@ class Conversa(BaseModel):
 
 class RespostaAssistente(BaseModel):
     id_conversa: UUID
+    id_mensagem: UUID | None = None
     status: Literal["ativa", "com_atendente"]
     resposta: str
     # True quando nao houve resposta confiavel (fica marcada para a equipe revisar).
@@ -66,3 +72,27 @@ class RespostaAssistente(BaseModel):
     ofertas: list[Oferta] = []
     # Chamado aberto pela transferencia para atendente.
     id_atendimento: UUID | None = None
+
+
+class ConversaResumo(BaseModel):
+    """Item do historico lateral do chat."""
+
+    id_conversa: UUID
+    status: Literal["ativa", "com_atendente", "encerrada"]
+    id_atendimento: UUID | None = None
+    titulo: str
+    criada_em: datetime
+    atualizada_em: datetime
+
+
+class AlteracaoDaConversa(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    arquivada: bool
+
+
+class AvaliacaoDaResposta(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # null tira a avaliacao.
+    avaliacao: Avaliacao | None

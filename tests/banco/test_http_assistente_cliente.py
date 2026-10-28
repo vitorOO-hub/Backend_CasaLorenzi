@@ -379,3 +379,67 @@ def test_chamado_vai_para_a_loja_que_o_cliente_citou(cena):
         headers=como("atendente"),
     ).json()
     assert "(citada pelo cliente)" in lidas["mensagens"][0]["texto"]
+
+
+# ------------------------------------------------------------------ historico, arquivar e avaliar
+
+
+def test_historico_lista_so_as_conversas_do_cliente_com_titulo(cena):
+    http, como, provedor, pg, _ = cena
+    primeira = _nova(http, como("cliente"))
+    _enviar(http, como("cliente"), primeira, "qual o prazo de troca?")
+    vazia = _nova(http, como("cliente"))
+    alheia = _nova(http, como("outro"))
+    lista = http.get(BASE, headers=como("cliente")).json()
+    por_id = {c["id_conversa"]: c for c in lista}
+    assert por_id[primeira]["titulo"] == "qual o prazo de troca?"
+    assert por_id[vazia]["titulo"] == "Nova conversa"
+    assert alheia not in por_id
+
+
+def test_arquivar_some_do_historico_e_bloqueia_novas_mensagens(cena):
+    http, como, provedor, pg, _ = cena
+    conversa = _nova(http, como("cliente"))
+    r = http.patch(f"{BASE}/{conversa}", json={"arquivada": True}, headers=como("cliente"))
+    assert r.status_code == 200 and r.json()["status"] == "encerrada"
+    assert conversa not in {
+        c["id_conversa"] for c in http.get(BASE, headers=como("cliente")).json()
+    }
+    assert _enviar(http, como("cliente"), conversa, "oi").status_code == 409
+    # Outro cliente nao arquiva o que nao e dele.
+    assert (
+        http.patch(
+            f"{BASE}/{conversa}", json={"arquivada": False}, headers=como("outro")
+        ).status_code
+        == 404
+    )
+    r = http.patch(f"{BASE}/{conversa}", json={"arquivada": False}, headers=como("cliente"))
+    assert r.json()["status"] == "ativa"
+
+
+def test_avaliar_resposta_do_assistente(cena):
+    http, como, provedor, pg, _ = cena
+    conversa = _nova(http, como("cliente"))
+    enviada = _enviar(http, como("cliente"), conversa, "oi, tudo bem?").json()
+    pergunta, resposta = http.get(f"{BASE}/{conversa}", headers=como("cliente")).json()["mensagens"]
+    # O id da resposta ja vem no envio, para avaliar sem recarregar.
+    assert enviada["id_mensagem"] == resposta["id_mensagem"]
+    url = f"{BASE}/{conversa}/mensagens/{resposta['id_mensagem']}/avaliacao"
+    assert http.put(url, json={"avaliacao": "util"}, headers=como("cliente")).status_code == 200
+    assert (
+        http.get(f"{BASE}/{conversa}", headers=como("cliente")).json()["mensagens"][1]["avaliacao"]
+        == "util"
+    )
+    assert http.put(url, json={"avaliacao": None}, headers=como("cliente")).status_code == 200
+    assert (
+        http.get(f"{BASE}/{conversa}", headers=como("cliente")).json()["mensagens"][1]["avaliacao"]
+        is None
+    )
+    # So resposta do assistente, e so na conversa do proprio cliente.
+    da_pergunta = f"{BASE}/{conversa}/mensagens/{pergunta['id_mensagem']}/avaliacao"
+    assert (
+        http.put(da_pergunta, json={"avaliacao": "util"}, headers=como("cliente")).status_code
+        == 404
+    )
+    assert http.put(url, json={"avaliacao": "util"}, headers=como("outro")).status_code == 404
+    assert http.put(url, json={"avaliacao": "otima"}, headers=como("cliente")).status_code == 422
