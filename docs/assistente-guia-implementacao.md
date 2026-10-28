@@ -93,6 +93,13 @@ sempre do token** (`UsuarioAtual`), nunca de argumento do modelo. Nenhuma ferram
 | `reposicao()` | `app.gerencia.service.montar_reposicao` | idem ao de vendas |
 | `lojas()` | `app.gerencia.service.montar_lojas` | idem |
 
+O chatbot do gerente reutiliza `produto.embedding` nas consultas de reposição e estoque parado:
+primeiro tenta localizar o texto nos atributos do catálogo e, sem correspondência, usa similaridade
+semântica. Os candidatos e as consultas de estoque são sempre restritos a produtos com registro de
+estoque na loja do token; não há acesso do gerente à ferramenta de catálogo global do admin. A chave
+`GEMINI_API_KEY` é usada somente no servidor para gerar o vetor da consulta; os embeddings dos produtos
+são compartilhados com o chatbot admin e não precisam ser gerados novamente.
+
 O chatbot administrativo foi separado das consultas de gerente e só aceita `Papel.ADMIN`. Ele pode
 consultar vendas, estoque/saldo, movimentações, ajustes, transferências, mínimos, reposição, estoque
 parado, lojas, pendências, chamados e mensagens, equipe, catálogo, clientes/fichas, auditoria, integrações,
