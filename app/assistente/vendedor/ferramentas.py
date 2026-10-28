@@ -12,7 +12,7 @@ import logging
 import unicodedata
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
-from typing import Annotated, Any, get_args
+from typing import Annotated, Any, Literal, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 from sqlalchemy.engine import Connection
@@ -26,6 +26,9 @@ from app.core.horario import DIAS
 from app.core.papeis import UsuarioAtual
 from app.gerencia import repositorio as vendas_da_loja
 from app.gerencia.repositorio import STATUS_DE_VENDA, Filtro
+from app.painel_estoque import repositorio as estoque_repositorio
+from app.painel_estoque import service as estoque
+from app.painel_estoque.repositorio import FiltroSaldo
 from app.vendas import repositorio as vendas_repositorio
 from app.vendas import service as vendas
 
@@ -305,6 +308,57 @@ def consultar_pecas(conexao: Connection, usuario: UsuarioAtual, e: EntradaPecas)
     }
 
 
+class EntradaResumoEstoque(_Entrada):
+    dia: date | None = Field(
+        default=None, description="Saldo no fim deste dia, formato AAAA-MM-DD (padrao: agora)"
+    )
+
+
+def resumo_do_estoque(conexao: Connection, usuario: UsuarioAtual, e: EntradaResumoEstoque) -> dict:
+    """Os mesmos totais do topo da tela Saldo de estoque, na loja do token."""
+    if e.dia is not None and e.dia > _hoje():
+        return {"erro": "O dia nao pode ser depois de hoje."}
+    id_loja = estoque.loja_do_escopo(usuario, None)
+    resumo = estoque_repositorio.resumo_do_saldo(conexao, id_loja, e.dia)
+    return {
+        "dia": (e.dia or _hoje()).isoformat(),
+        "criterio": "Saldo da sua loja; o valor usa o preco de venda de hoje.",
+        "unidades_em_estoque": int(resumo["unidades"]),
+        "produtos": int(resumo["produtos"]),
+        "skus": int(resumo["pecas"]),
+        "skus_com_estoque_baixo": int(resumo["estoque_baixo"]),
+        "skus_esgotados": int(resumo["esgotadas"]),
+        "valor_em_estoque_a_preco_de_venda": _dinheiro(resumo["valor_em_estoque"]),
+    }
+
+
+class EntradaAlerta(_Entrada):
+    situacao: Literal["baixo", "esgotado"] = Field(
+        description="baixo = no minimo ou abaixo; esgotado = sem nenhuma unidade"
+    )
+    limite: int = Field(default=10, ge=1, le=LIMITE_PECAS)
+
+
+def pecas_em_alerta(conexao: Connection, usuario: UsuarioAtual, e: EntradaAlerta) -> dict:
+    filtro = FiltroSaldo(id_loja=estoque.loja_do_escopo(usuario, None), situacao=e.situacao)
+    total, itens = estoque_repositorio.itens_do_saldo(conexao, filtro, limit=e.limite, offset=0)
+    return {
+        "situacao": e.situacao,
+        "total": total,
+        "pecas": [
+            {
+                "sku": i["sku"],
+                "produto": i["produto"],
+                "cor": i["cor"],
+                "tamanho": i["tamanho"],
+                "quantidade": int(i["total"]),
+                "minimo": int(i["minimo_total"]),
+            }
+            for i in itens
+        ],
+    }
+
+
 class EntradaVazia(_Entrada):
     pass
 
@@ -383,6 +437,18 @@ _REGISTRO: dict[str, tuple[str, type[_Entrada], Funcao]] = {
         EntradaPecas,
         consultar_pecas,
     ),
+    "resumo_do_estoque": (
+        "Totais do estoque da loja: unidades em estoque, produtos, SKUs, SKUs com estoque baixo, "
+        "SKUs esgotados e valor em estoque a preco de venda (agora ou no fim de um dia). Use para "
+        "'quantas unidades temos no total' e 'quanto vale o estoque'.",
+        EntradaResumoEstoque,
+        resumo_do_estoque,
+    ),
+    "pecas_em_alerta": (
+        "Lista as pecas da loja com estoque baixo (no minimo ou abaixo) ou esgotadas.",
+        EntradaAlerta,
+        pecas_em_alerta,
+    ),
     "lojas_e_horarios": (
         "Endereco, telefone e horario de funcionamento das lojas da rede.",
         EntradaVazia,
@@ -438,6 +504,8 @@ def _parametros(modelo: type[_Entrada]) -> dict[str, Any]:
         propriedade: dict[str, Any] = {"type": "integer" if tipo is int else "string"}
         if campo.description:
             propriedade["description"] = campo.description
+        if get_origin(campo.annotation) is Literal:
+            propriedade["enum"] = list(get_args(campo.annotation))
         minimo, maximo = _limites(campo)
         if tipo is int and minimo is not None:
             propriedade["minimum"] = minimo

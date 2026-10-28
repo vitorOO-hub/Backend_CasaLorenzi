@@ -718,3 +718,65 @@ def test_limite_do_provedor_vira_mensagem_com_o_tempo_de_espera(par, banco):
     a = token(par, sub=uuid4())
     resposta = perguntar(cliente, a, nova_conversa(cliente, a), "oi, tudo bem?")
     assert "Aguarde cerca de 42 segundos" in resposta.json()["resposta"]["texto"]
+
+
+# ------------------------------------------------------------------ estoque da loja
+
+
+def test_resumo_do_estoque_traz_os_totais_da_tela_na_loja_do_token(monkeypatch):
+    recebido = {}
+
+    def resumo(conexao, id_loja, em):
+        recebido.update(id_loja=id_loja, em=em)
+        return {
+            "unidades": 1520,
+            "pecas": 300,
+            "produtos": 80,
+            "estoque_baixo": 12,
+            "esgotadas": 4,
+            "valor_em_estoque": "245780.456",
+        }
+
+    monkeypatch.setattr(ferramentas_vendedor.estoque_repositorio, "resumo_do_saldo", resumo)
+    saida = ferramentas_vendedor.executar(ConexaoFalsa(), VENDEDOR_A, "resumo_do_estoque", {})
+    assert recebido == {"id_loja": LOJA_A, "em": None}
+    assert saida["unidades_em_estoque"] == 1520
+    assert saida["valor_em_estoque_a_preco_de_venda"] == 245780.46
+    assert saida["skus_esgotados"] == 4
+
+
+def test_resumo_do_estoque_recusa_dia_no_futuro():
+    saida = ferramentas_vendedor.executar(
+        ConexaoFalsa(), VENDEDOR_A, "resumo_do_estoque", {"dia": "2999-01-01"}
+    )
+    assert "erro" in saida
+
+
+def test_pecas_em_alerta_filtra_pela_situacao_na_loja_do_token(monkeypatch):
+    recebido = {}
+
+    def itens(conexao, filtro, *, limit, offset):
+        recebido.update(filtro=filtro, limit=limit)
+        linha = {"sku": "S1", "produto": "Camisa", "cor": "azul", "tamanho": "M"}
+        return 1, [{**linha, "total": 0, "minimo_total": 2}]
+
+    monkeypatch.setattr(ferramentas_vendedor.estoque_repositorio, "itens_do_saldo", itens)
+    saida = ferramentas_vendedor.executar(
+        ConexaoFalsa(), VENDEDOR_A, "pecas_em_alerta", {"situacao": "esgotado"}
+    )
+    assert recebido["filtro"].id_loja == LOJA_A
+    assert recebido["filtro"].situacao == "esgotado"
+    assert saida["pecas"][0] == {
+        "sku": "S1",
+        "produto": "Camisa",
+        "cor": "azul",
+        "tamanho": "M",
+        "quantidade": 0,
+        "minimo": 2,
+    }
+    errada = ferramentas_vendedor.executar(
+        ConexaoFalsa(), VENDEDOR_A, "pecas_em_alerta", {"situacao": "qualquer"}
+    )
+    assert "erro" in errada
+    alerta = next(f for f in ferramentas_vendedor.FERRAMENTAS if f.nome == "pecas_em_alerta")
+    assert alerta.parametros["properties"]["situacao"]["enum"] == ["baixo", "esgotado"]
