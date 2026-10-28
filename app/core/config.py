@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Provedores de LLM dos assistentes (Entrega 4). Opcionais: sem chave, o assistente nao liga.
     gemini_api_key: SecretStr | None = None
     groq_api_key: SecretStr | None = None
+    # Destinos validados no benchmark; variaveis de ambiente podem substitui-los.
+    assistente_modelo_rapido: str | None = "groq:openai/gpt-oss-20b"
+    assistente_modelo_preciso: str | None = "gemini:gemini-3.5-flash-lite"
     cors_origins: Annotated[list[str], NoDecode] = []
     # /docs, /redoc e /openapi.json mostram o mapa inteiro da API: so ligam de proposito (dev).
     docs_habilitadas: bool = False
@@ -63,6 +66,16 @@ class Settings(BaseSettings):
         if isinstance(valor, str):
             return [origem.strip().rstrip("/") for origem in valor.split(",") if origem.strip()]
         return valor
+
+    @field_validator("assistente_modelo_rapido", "assistente_modelo_preciso")
+    @classmethod
+    def _validar_destino_assistente(cls, valor: str | None) -> str | None:
+        if valor is None or not valor.strip():
+            return None
+        provedor, separador, modelo = valor.strip().partition(":")
+        if not separador or provedor not in {"gemini", "groq"} or not modelo.strip():
+            raise ValueError("destino deve estar no formato gemini:modelo ou groq:modelo")
+        return f"{provedor}:{modelo.strip()}"
 
 
 def get_settings(request: Request) -> Settings:
