@@ -122,7 +122,13 @@ def test_adaptador_converte_chamada_de_ferramenta_sem_rede(provedor_nome, monkey
         def post(self, *_args, **_kwargs):
             return RespostaFalsa()
 
-    monkeypatch.setattr(provedor.httpx, "Client", lambda **_kwargs: ClienteFalso())
+    timeout_recebido = {}
+
+    def criar_cliente(**kwargs):
+        timeout_recebido.update(kwargs)
+        return ClienteFalso()
+
+    monkeypatch.setattr(provedor.httpx, "Client", criar_cliente)
     settings = Settings(
         _env_file=None,
         database_url="postgresql://localhost/teste",
@@ -139,6 +145,12 @@ def test_adaptador_converte_chamada_de_ferramenta_sem_rede(provedor_nome, monkey
 
     assert turno["chamadas"][0]["name"] == "consultar_equipe"
     assert turno["chamadas"][0]["arguments"] == {}
+    timeout_esperado = (
+        provedor.TIMEOUT_GEMINI_SEGUNDOS
+        if provedor_nome == "gemini"
+        else provedor.TIMEOUT_GROQ_SEGUNDOS
+    )
+    assert timeout_recebido["timeout"] == timeout_esperado
     if provedor_nome == "gemini":
         assert turno["chamadas"][0]["thought_signature"] == "assinatura-teste"
     assert turno["tokens_entrada"] > 0

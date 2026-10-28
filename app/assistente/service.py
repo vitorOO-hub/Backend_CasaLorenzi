@@ -79,8 +79,10 @@ def _resultado_sem_registros(resultado: Any) -> bool:
     )
 
 
-def _id_usuario(conexao: Connection, usuario: UsuarioAtual) -> UUID:
-    if usuario.papel is not Papel.ADMIN:
+def _id_usuario(
+    conexao: Connection, usuario: UsuarioAtual, papel: Papel = Papel.ADMIN
+) -> UUID:
+    if usuario.papel is not papel:
         raise AcessoNegado()
     id_usuario = repositorio.id_usuario_ativo(conexao, usuario.id_auth)
     if id_usuario is None:
@@ -88,16 +90,42 @@ def _id_usuario(conexao: Connection, usuario: UsuarioAtual) -> UUID:
     return id_usuario
 
 
-def criar_conversa(conexao: Connection, usuario: UsuarioAtual, titulo: str | None):
-    return repositorio.criar_conversa(conexao, _id_usuario(conexao, usuario), titulo)
+def criar_conversa(
+    conexao: Connection,
+    usuario: UsuarioAtual,
+    titulo: str | None,
+    *,
+    papel: Papel = Papel.ADMIN,
+    tipo_conversa: str = "interno",
+):
+    return repositorio.criar_conversa(
+        conexao, _id_usuario(conexao, usuario, papel), titulo, tipo_conversa
+    )
 
 
-def listar_conversas(conexao: Connection, usuario: UsuarioAtual):
-    return repositorio.listar_conversas(conexao, _id_usuario(conexao, usuario))
+def listar_conversas(
+    conexao: Connection,
+    usuario: UsuarioAtual,
+    *,
+    papel: Papel = Papel.ADMIN,
+    tipo_conversa: str = "interno",
+):
+    return repositorio.listar_conversas(
+        conexao, _id_usuario(conexao, usuario, papel), tipo_conversa
+    )
 
 
-def obter_conversa(conexao: Connection, usuario: UsuarioAtual, id_conversa: UUID):
-    conversa = repositorio.carregar_conversa(conexao, id_conversa, _id_usuario(conexao, usuario))
+def obter_conversa(
+    conexao: Connection,
+    usuario: UsuarioAtual,
+    id_conversa: UUID,
+    *,
+    papel: Papel = Papel.ADMIN,
+    tipo_conversa: str = "interno",
+):
+    conversa = repositorio.carregar_conversa(
+        conexao, id_conversa, _id_usuario(conexao, usuario, papel), tipo_conversa
+    )
     if conversa is None:
         raise repositorio.ConversaNaoEncontrada()
     return conversa
@@ -150,11 +178,39 @@ def enviar_mensagem(
     configuracoes: Settings,
     id_conversa: UUID,
     pergunta: str,
+    *,
+    papel: Papel = Papel.ADMIN,
+    tipo_conversa: str = "interno",
+    instrucoes: str = INSTRUCOES,
+    ferramentas_disponiveis: list[dict[str, Any]] | None = None,
+    executar_ferramenta=None,
+    escopo_permitido=None,
+    esclarecer=None,
+    forcar_ferramenta: bool = False,
 ) -> dict[str, Any]:
-    id_usuario = executar_db(lambda c: _id_usuario(c, usuario))
+    id_usuario = executar_db(lambda c: _id_usuario(c, usuario, papel))
     historico = executar_db(
-        lambda c: repositorio.gravar_pergunta(c, id_conversa, id_usuario, pergunta)
+        lambda c: repositorio.gravar_pergunta(
+            c, id_conversa, id_usuario, pergunta, tipo_conversa
+        )
     )
+    if escopo_permitido is not None and not escopo_permitido(pergunta):
+        resposta = (
+            "Este assistente responde somente sobre vendas e indicadores da sua unidade, "
+            "reposições, estoque parado e pendências do gerente. Para outros assuntos, "
+            "procure a área responsável."
+        )
+        executar_db(lambda c: repositorio.gravar_resposta(c, id_conversa, resposta, "", 0, 0))
+        return {"id_conversa": id_conversa, "resposta": resposta}
+    esclarecimento = esclarecer(pergunta) if esclarecer is not None else None
+    if esclarecimento:
+        executar_db(
+            lambda c: repositorio.gravar_resposta(c, id_conversa, esclarecimento, "", 0, 0)
+        )
+        return {"id_conversa": id_conversa, "resposta": esclarecimento}
+
+    ferramentas_ativas = ferramentas_disponiveis or ferramentas.FERRAMENTAS
+    executar_chamada = executar_ferramenta or ferramentas.executar
     plano = planejar_pergunta(pergunta, configuracoes)
     if plano.estado == "esclarecer":
         resposta = "Pode me dizer o produto, pedido ou loja a que você está se referindo?"
@@ -168,6 +224,7 @@ def enviar_mensagem(
         executar_db(lambda c: repositorio.gravar_resposta(c, id_conversa, resposta, "", 0, 0))
         return {"id_conversa": id_conversa, "resposta": resposta}
 
+    precisa_de_ferramenta = forcar_ferramenta or plano.classificacao.requer_ferramenta
     tokens_entrada = tokens_saida = chamadas_totais = 0
     resposta_final = ""
     falha_consulta = False
@@ -178,15 +235,15 @@ def enviar_mensagem(
         turno = provedor.completar(
             plano.destino,
             configuracoes,
-            INSTRUCOES,
+            instrucoes,
             _limitar_historico(historico),
-            ferramentas.FERRAMENTAS,
+            ferramentas_ativas,
         )
         tokens_entrada += turno["tokens_entrada"]
         tokens_saida += turno["tokens_saida"]
         chamadas = turno["chamadas"]
         if not chamadas:
-            if plano.classificacao.requer_ferramenta and chamadas_totais == 0:
+            if precisa_de_ferramenta and chamadas_totais == 0:
                 resposta_final = mensagem_sem_confirmacao(
                     pergunta,
                     "nenhuma consulta ao sistema foi concluída para respaldar a resposta.",
@@ -211,7 +268,7 @@ def enviar_mensagem(
             nome, argumentos = chamada["name"], chamada["arguments"]
             try:
                 resultado = executar_db(
-                    lambda c, n=nome, a=argumentos: ferramentas.executar(c, usuario, n, a)
+                    lambda c, n=nome, a=argumentos: executar_chamada(c, usuario, n, a)
                 )
                 resultado, conteudo = _json_para_modelo(resultado)
                 if isinstance(resultado, dict) and "aviso" in resultado:
@@ -276,7 +333,7 @@ def enviar_mensagem(
             c, id_conversa, resposta_final, modelo, tokens_entrada, tokens_saida
         )
     )
-    if plano.classificacao.requer_ferramenta and chamadas_totais == 0:
+    if precisa_de_ferramenta and chamadas_totais == 0:
         executar_db(lambda c: repositorio.marcar_pergunta_sem_resposta(c, id_conversa))
     return {
         "id_conversa": id_conversa,

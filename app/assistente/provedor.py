@@ -11,7 +11,8 @@ import httpx
 from app.assistente.roteamento import DestinoModelo
 from app.core.config import Settings
 
-TIMEOUT_SEGUNDOS = 25.0
+TIMEOUT_GROQ_SEGUNDOS = 25.0
+TIMEOUT_GEMINI_SEGUNDOS = 60.0
 MAX_TOKENS_SAIDA = 500
 logger = logging.getLogger(__name__)
 
@@ -161,7 +162,8 @@ def completar(
     if not chave:
         raise FalhaDoProvedor("Provedor sem chave configurada")
     try:
-        with httpx.Client(timeout=TIMEOUT_SEGUNDOS) as cliente:
+        timeout = TIMEOUT_GROQ_SEGUNDOS if provedor == "groq" else TIMEOUT_GEMINI_SEGUNDOS
+        with httpx.Client(timeout=timeout) as cliente:
             if provedor == "groq":
                 resposta = cliente.post(
                     "https://api.groq.com/openai/v1/chat/completions",

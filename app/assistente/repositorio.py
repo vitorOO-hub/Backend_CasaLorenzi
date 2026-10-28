@@ -26,17 +26,22 @@ def id_usuario_ativo(conexao: Connection, id_auth: UUID) -> UUID | None:
     ).scalar_one_or_none()
 
 
-def criar_conversa(conexao: Connection, id_usuario: UUID, titulo: str | None) -> dict[str, Any]:
+def criar_conversa(
+    conexao: Connection,
+    id_usuario: UUID,
+    titulo: str | None,
+    tipo: str = "interno",
+) -> dict[str, Any]:
     linha = (
         conexao.execute(
             text(
                 """
                 INSERT INTO conversa_assistente (id_usuario, tipo, status, resumo)
-                VALUES (CAST(:usuario AS uuid), 'interno', 'ativa', :titulo)
+                VALUES (CAST(:usuario AS uuid), :tipo, 'ativa', :titulo)
                 RETURNING id_conversa, resumo AS titulo, criada_em, atualizada_em
                 """
             ),
-            {"usuario": str(id_usuario), "titulo": titulo},
+            {"usuario": str(id_usuario), "titulo": titulo, "tipo": tipo},
         )
         .mappings()
         .one()
@@ -46,24 +51,26 @@ def criar_conversa(conexao: Connection, id_usuario: UUID, titulo: str | None) ->
     return dict(linha)
 
 
-def listar_conversas(conexao: Connection, id_usuario: UUID) -> list[dict[str, Any]]:
+def listar_conversas(
+    conexao: Connection, id_usuario: UUID, tipo: str = "interno"
+) -> list[dict[str, Any]]:
     linhas = conexao.execute(
         text(
             """
             SELECT id_conversa, resumo AS titulo, criada_em, atualizada_em
             FROM conversa_assistente
-            WHERE id_usuario = CAST(:usuario AS uuid) AND tipo = 'interno'
+            WHERE id_usuario = CAST(:usuario AS uuid) AND tipo = :tipo
             ORDER BY atualizada_em DESC
             LIMIT 50
             """
         ),
-        {"usuario": str(id_usuario)},
+        {"usuario": str(id_usuario), "tipo": tipo},
     ).mappings()
     return [dict(linha) for linha in linhas]
 
 
 def carregar_conversa(
-    conexao: Connection, id_conversa: UUID, id_usuario: UUID
+    conexao: Connection, id_conversa: UUID, id_usuario: UUID, tipo: str = "interno"
 ) -> dict[str, Any] | None:
     conversa = (
         conexao.execute(
@@ -72,10 +79,10 @@ def carregar_conversa(
                 SELECT id_conversa, resumo AS titulo, criada_em, atualizada_em
                 FROM conversa_assistente
                 WHERE id_conversa = CAST(:conversa AS uuid)
-                  AND id_usuario = CAST(:usuario AS uuid) AND tipo = 'interno'
+                  AND id_usuario = CAST(:usuario AS uuid) AND tipo = :tipo
                 """
             ),
-            {"conversa": str(id_conversa), "usuario": str(id_usuario)},
+            {"conversa": str(id_conversa), "usuario": str(id_usuario), "tipo": tipo},
         )
         .mappings()
         .first()
@@ -164,7 +171,11 @@ def _gravar(
 
 
 def gravar_pergunta(
-    conexao: Connection, id_conversa: UUID, id_usuario: UUID, texto: str
+    conexao: Connection,
+    id_conversa: UUID,
+    id_usuario: UUID,
+    texto: str,
+    tipo: str = "interno",
 ) -> list[dict[str, str]]:
     # Serializa a verificação para que chamadas simultâneas não passem juntas pelo limite diário.
     conexao.execute(
@@ -176,11 +187,11 @@ def gravar_pergunta(
             """
             SELECT 1 FROM conversa_assistente
             WHERE id_conversa = CAST(:conversa AS uuid)
-              AND id_usuario = CAST(:usuario AS uuid) AND tipo = 'interno' AND status = 'ativa'
+              AND id_usuario = CAST(:usuario AS uuid) AND tipo = :tipo AND status = 'ativa'
             FOR UPDATE
             """
         ),
-        {"conversa": str(id_conversa), "usuario": str(id_usuario)},
+        {"conversa": str(id_conversa), "usuario": str(id_usuario), "tipo": tipo},
     ).first()
     if pertence is None:
         conexao.rollback()
@@ -198,11 +209,11 @@ def gravar_pergunta(
             """
             SELECT count(*) FROM mensagem_assistente m
             JOIN conversa_assistente c USING (id_conversa)
-            WHERE c.id_usuario = CAST(:usuario AS uuid) AND c.tipo = 'interno'
+            WHERE c.id_usuario = CAST(:usuario AS uuid) AND c.tipo = :tipo
               AND m.autor = 'usuario' AND m.criada_em >= :inicio
             """
         ),
-        {"usuario": str(id_usuario), "inicio": inicio_dia},
+        {"usuario": str(id_usuario), "inicio": inicio_dia, "tipo": tipo},
     ).scalar_one()
     if contagem >= LIMITE_DIARIO:
         conexao.rollback()
