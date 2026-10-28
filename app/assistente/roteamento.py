@@ -50,6 +50,7 @@ def _normalizar(texto: str) -> str:
 
 
 _PADROES_FERRAMENTA = (
+    re.compile(r"\b(catalogo|produtos?|pecas?|sku|cores?|tecidos?|colecao)\b"),
     re.compile(r"\b(estoque|disponibilidade|quantas unidades|quantidade de)\b"),
     re.compile(r"\b(pontos?|saldo de pontos)\b"),
     re.compile(r"\b(meu|minha)\s+(pedido|compra|entrega|saldo)\b"),

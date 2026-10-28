@@ -101,6 +101,70 @@ def listar(
     return {"total": int(total), "itens": [_peca(dict(linha)) for linha in linhas]}
 
 
+def listar_para_assistente(
+    conexao: Connection, usuario: UsuarioAtual, *, busca: str | None, limit: int, offset: int
+) -> dict[str, Any]:
+    """Busca textual do admin com atributos necessarios para confirmar caracteristicas."""
+    _so_admin(usuario)
+    base = "(" + PECAS + ") peca JOIN public.produto produto USING (id_produto)"
+    filtro = """
+    WHERE (CAST(:busca AS text) IS NULL
+       OR strpos(lower(peca.nome || ' ' || array_to_string(peca.skus, ' ') || ' '
+                       || COALESCE(peca.categoria, '')), lower(CAST(:busca AS text))) > 0)
+    """
+    parametros = {"busca": busca}
+    total = conexao.execute(
+        text("SELECT count(*) FROM " + base + filtro), parametros
+    ).scalar_one()
+    linhas = conexao.execute(
+        text(
+            "SELECT peca.*, produto.tipo, produto.colecao, produto.cores, produto.tecido, "
+            "produto.tecelagem, produto.costurado_em, produto.nota "
+            "FROM "
+            + base
+            + filtro
+            + " ORDER BY peca.nome, peca.id_produto LIMIT :limite OFFSET :deslocamento"
+        ),
+        {**parametros, "limite": limit, "deslocamento": offset},
+    ).mappings()
+    return {"total": int(total), "itens": [_peca(dict(linha)) for linha in linhas]}
+
+
+def buscar_semantico(
+    conexao: Connection, usuario: UsuarioAtual, vetor: list[float], *, limite: int = 5
+) -> dict[str, Any]:
+    """Retorna as pecas ativas mais proximas do vetor de busca do admin."""
+    _so_admin(usuario)
+    vetor_sql = "[" + ",".join(str(valor) for valor in vetor) + "]"
+    linhas = conexao.execute(
+        text(
+            "SELECT peca.*, produto.tipo, produto.colecao, produto.cores, produto.tecido, "
+            "produto.tecelagem, produto.costurado_em, produto.nota "
+            "FROM (" + PECAS + ") peca "
+            "JOIN public.produto produto USING (id_produto) "
+            "WHERE produto.embedding IS NOT NULL "
+            "ORDER BY produto.embedding OPERATOR(extensions.<=>) "
+            "CAST(:embedding AS extensions.vector) "
+            "LIMIT :limite"
+        ),
+        {"embedding": vetor_sql, "limite": limite},
+    ).mappings()
+    itens = [_peca(dict(linha)) for linha in linhas]
+    return {"total": len(itens), "itens": itens}
+
+
+def tem_embeddings(conexao: Connection, usuario: UsuarioAtual) -> bool:
+    _so_admin(usuario)
+    return bool(
+        conexao.execute(
+            text(
+                "SELECT EXISTS (SELECT 1 FROM public.produto "
+                "WHERE ativo AND embedding IS NOT NULL)"
+            )
+        ).scalar_one()
+    )
+
+
 def criar(conexao: Connection, usuario: UsuarioAtual, dados: NovaPeca) -> dict[str, Any]:
     """Peca nova = produto + a primeira variacao (cor e tamanho unicos) com o SKU informado."""
     _so_admin(usuario)
