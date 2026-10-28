@@ -346,7 +346,16 @@ class Ferramentas:
         if codigo is None:
             return {"erro": "tema_desconhecido", "temas_validos": list(TEMAS_DE_POLITICA)}
         politica = politicas.todas()[codigo]
-        resultado = {"tema": politica.codigo, "titulo": politica.titulo, "texto": politica.texto}
+        resultado = {
+            # Antes do texto: o modelo menor tende a repetir a secao inteira.
+            "como_responder": (
+                "Responda em 1 ou 2 frases curtas so o que o cliente perguntou, com base neste "
+                "texto. Nao repita o texto inteiro."
+            ),
+            "tema": politica.codigo,
+            "titulo": politica.titulo,
+            "texto": politica.texto,
+        }
         if politica.pendente:
             resultado["orientacao"] = (
                 "ha ponto sem definicao oficial: nao informe esse ponto; ofereca transferir para a "
