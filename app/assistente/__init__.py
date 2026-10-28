@@ -1,0 +1,1 @@
+"""Logica compartilhada dos assistentes."""

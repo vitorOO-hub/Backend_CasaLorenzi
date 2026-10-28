@@ -32,4 +32,15 @@ Se uma pergunta exige ferramenta e nenhum provedor/ferramenta compativel estiver
 
 ## Estado do piloto
 
-Implementacao inicial: `scripts/benchmark_chatbot/classificacao_perguntas.py`. Os testes nao fazem chamadas externas. As regras devem ser avaliadas com exemplos representativos e perguntas reais anonimizadas antes de integra-las a um chatbot de producao. O classificador nao escolhe provedor/modelo; essa associacao depende de quais APIs foram aprovadas e estao configuradas.
+O mecanismo compartilhado esta em `app/assistente/roteamento.py`; o benchmark importa esse mesmo classificador. A decisao e heuristica, nao chama provedores e nao executa ferramentas. `requer_ferramenta` indica apenas que a resposta depende de dados atuais; autenticacao, autorizacao e escopo continuam no backend.
+
+O destino de cada rota e configurado no servidor, nunca pela pergunta nem pelo usuario:
+
+| Variavel | Exemplo de formato | Uso |
+| --- | --- | --- |
+| `ASSISTENTE_MODELO_RAPIDO` | `groq:openai/gpt-oss-20b` | perguntas diretas; modelo testado no benchmark |
+| `ASSISTENTE_MODELO_PRECISO` | `gemini:gemini-3.5-flash-lite` | analise e dados sensiveis; modelo testado no benchmark |
+
+Esses sao os destinos padrao e podem ser sobrescritos por variaveis de ambiente. Se a pergunta exigir esclarecimento, nenhum modelo e escolhido. Se faltar destino ou chave do provedor, o plano informa a indisponibilidade e nao faz fallback silencioso para uma rota de menor capacidade. O modulo ainda nao chama APIs; sera consumido pelo servico do chatbot.
+
+Antes de integrar em producao, avaliar a classificacao com exemplos representativos e perguntas reais anonimizadas. Em caso de duvida, manter a rota `precisa` ou pedir esclarecimento.

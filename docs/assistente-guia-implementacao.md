@@ -15,8 +15,9 @@ Desenho completo: `docs/superpowers/specs/2026-10-27-assistente-base-design.md`.
 | `aviso_pontos` | idem | o n8n registra aqui o que já avisou |
 | Rotas do n8n | `app/automacoes/` | prontas (seção 5) |
 | Consultas da diretoria | `app/gerencia/` | vendas, reposição, lojas, estoque parado, pontos a vencer |
-| Chaves de LLM | `Settings.gemini_api_key`, `Settings.groq_api_key` | lidas do `.env`; ninguém usa ainda |
-| Benchmark de modelos e classificador de rota | branch `feat/benchmark-chatbot-modelos` | `scripts/benchmark_chatbot/` |
+| Chaves e destinos de LLM | `Settings.gemini_api_key`, `Settings.groq_api_key`, `assistente_modelo_rapido`, `assistente_modelo_preciso` | opcionais; destinos no formato `provedor:modelo` |
+| Classificador e plano de roteamento | `app/assistente/roteamento.py` | implementado e testado; ainda não chama provedores |
+| Benchmark de modelos | `scripts/benchmark_chatbot/` | piloto isolado, importa o classificador compartilhado |
 
 ## 2. Onde colocar o código
 
@@ -136,6 +137,7 @@ Base: a URL do backend no Render. Cabeçalho em todas as chamadas: `X-Chave-Auto
 |---|---|---|
 | `CHAVE_AUTOMACAO` | Render e n8n | rotas `/automacoes`; sem ela respondem 503 |
 | `GEMINI_API_KEY`, `GROQ_API_KEY` | Render | provedores do assistente |
+| `ASSISTENTE_MODELO_RAPIDO`, `ASSISTENTE_MODELO_PRECISO` | Render | opcionais; padrao Groq `openai/gpt-oss-20b` para rapida e Gemini `gemini-3.5-flash-lite` para precisa |
 
 Horários de referência: `PYTHONPATH=. python scripts/semear_horario_lojas.py --aplicar` (só preenche
 loja sem horário). Os oficiais se ajustam em Gestão → Lojas.
