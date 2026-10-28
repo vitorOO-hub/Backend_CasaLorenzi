@@ -298,13 +298,16 @@ def test_pergunta_incompleta_pede_esclarecimento_sem_chamar_modelo(repo):
         (_settings(groq_api_key="   "), "provedor_sem_chave"),
     ],
 )
-def test_configuracao_quebrada_passa_para_a_equipe_sem_fallback(
+def test_configuracao_quebrada_so_avisa_sem_fallback_e_sem_chamado(
     repo, chamados, configuracoes, estado
 ):
     # A chave do Gemini existe, mas a rota rapida nao pode cair nele em silencio.
     resposta, fabricados, _ = _enviar(repo, "oi, tudo bem?", configuracoes=configuracoes)
     assert fabricados == []
-    _passou_para_equipe(resposta, repo, chamados)
+    assert resposta["resposta"] == service.TEXTO_INDISPONIVEL
+    assert resposta["status"] == "ativa" and resposta["sem_resposta"] is True
+    # Assistente desligado nao enche a fila da equipe.
+    assert chamados.abertos == []
     assert _assistente(repo)["dados"]["estado"] == estado
 
 
@@ -319,7 +322,7 @@ def test_erro_do_provedor_passa_para_a_equipe_sem_trocar_de_modelo(repo, chamado
     assert [m["autor"] for m in repo.mensagens] == ["usuario", "assistente"]
 
 
-def test_chave_ausente_na_fabrica_tambem_passa_para_a_equipe(repo, chamados):
+def test_chave_ausente_na_fabrica_tambem_so_avisa(repo, chamados):
     conexao = ConexaoFalsa()
     conversa = service.iniciar_conversa(conexao, CLIENTE)["id_conversa"]
 
@@ -329,7 +332,8 @@ def test_chave_ausente_na_fabrica_tambem_passa_para_a_equipe(repo, chamados):
     resposta = service.enviar_mensagem(
         conexao, CLIENTE, conversa, "oi", configuracoes=_settings(), fabrica=fabrica
     )
-    _passou_para_equipe(resposta, repo, chamados)
+    assert resposta["resposta"] == service.TEXTO_INDISPONIVEL
+    assert chamados.abertos == []
 
 
 def test_se_nem_o_chamado_abre_o_cliente_e_orientado(repo, chamados):

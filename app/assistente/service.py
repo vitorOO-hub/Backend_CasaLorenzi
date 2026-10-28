@@ -5,7 +5,7 @@
 3. Pede o plano a `planejar_pergunta` (fonte unica da classificacao e do modelo):
    - esclarecer: pede o que falta, sem chamar modelo;
    - modelo_nao_configurado / configuracao_invalida / provedor_sem_chave: sem trocar de modelo,
-     passa a conversa para a equipe;
+     avisa que o assistente esta indisponivel (configuracao nao vira chamado na fila da equipe);
    - pronto: chama o provedor e o modelo escolhidos, com as ferramentas do cliente.
 4. Quando o assistente nao consegue responder com seguranca (erro do provedor, resposta vazia ou
    interrompida, dado atual sem consulta, consulta que falhou), a conversa vai para um atendente
@@ -72,6 +72,9 @@ TEXTO_PASSADO_PARA_EQUIPE = (
     "Não consegui resolver isso por aqui, então passei sua conversa para a nossa equipe, com o "
     "resumo do que falamos. Você não precisa repetir nada: a resposta chega pela área Atendimento."
 )
+TEXTO_INDISPONIVEL = (
+    "O assistente está indisponível no momento. Se precisar, abra um chamado na área Atendimento."
+)
 TEXTO_FALHA = (
     "Não consegui responder agora. Tente de novo em instantes ou abra um chamado na área "
     "Atendimento."
@@ -131,11 +134,10 @@ def enviar_mensagem(
     if plano.estado == "esclarecer":
         return _responder(conexao, id_conversa, plano, TEXTO_ESCLARECER)
     if plano.estado != "pronto" or plano.destino is None:
-        # Configuracao do servidor: nada de fallback silencioso para outro modelo; vai para pessoa.
+        # Configuracao do servidor: nada de fallback silencioso para outro modelo. Tambem nao abre
+        # chamado: assistente desligado nao pode encher a fila da equipe.
         log.warning("assistente do cliente sem modelo utilizavel: %s", plano.estado)
-        return _passar_para_equipe(
-            conexao, usuario, id_conversa, plano, texto, motivo="assistente indisponivel"
-        )
+        return _responder(conexao, id_conversa, plano, TEXTO_INDISPONIVEL, sem_resposta=True)
 
     destino = plano.destino
     rotulo_modelo = f"{destino.provedor}:{destino.modelo}"
@@ -155,6 +157,17 @@ def enviar_mensagem(
         )
     except ErroProvedor as erro:
         log.warning("provedor do assistente falhou: %s", erro)
+        if erro.motivo == "chave ausente":
+            # Mesmo caso da configuracao acima, pego na fabrica do provedor.
+            return _responder(
+                conexao,
+                id_conversa,
+                plano,
+                TEXTO_INDISPONIVEL,
+                sem_resposta=True,
+                modelo=rotulo_modelo,
+                dados={"erro": erro.motivo},
+            )
         return _passar_para_equipe(
             conexao,
             usuario,
