@@ -62,6 +62,10 @@ def _usuario(pg, tipo, nome, loja=None):
 
 @pytest.fixture
 def cena(banco_migrado, monkeypatch):
+    from app.assistente.cliente import embeddings
+
+    # Sem chamada real ao Gemini: a busca semantica tem teste proprio com vetor falso.
+    monkeypatch.setattr(embeddings, "vetorizador", lambda configuracoes: None)
     monkeypatch.setattr(vigencia, "ATIVA", True)
     vigencia._conferidos.clear()
     sufixo = uuid4().hex[:6].upper()

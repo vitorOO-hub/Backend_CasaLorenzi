@@ -19,7 +19,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 from sqlalchemy.engine import Connection
 
-from app.assistente.cliente import passagem, politicas, repositorio
+from app.assistente.cliente import embeddings, passagem, politicas, repositorio
 from app.assistente.cliente.provedor import Ferramenta
 from app.cliente import service as cliente
 from app.cliente.vencimento_pontos import SP
@@ -30,6 +30,11 @@ log = logging.getLogger(__name__)
 
 LIMITE_PRODUTOS = 5
 LIMITE_PEDIDOS = 5
+# Busca semantica (distancia de cosseno, 0 = identica). Com o gemini-embedding-001 as distancias
+# ficam proximas (o que tem a ver ~0,25-0,33; o resto ~0,35-0,43), mas a ordem e boa: entram so
+# as pecas perto da melhor, com um teto absoluto.
+DISTANCIA_MAXIMA = 0.40
+MARGEM_DA_MELHOR = 0.04
 # Palavras que o cliente fala mas que nao estao no nome da peca ("camisa DE linho"), como no
 # assistente do vendedor (app/assistente/vendedor/ferramentas.py).
 SEM_PESO = frozenset(
@@ -226,9 +231,15 @@ class Ferramentas:
     (chamado aberto, sacola alterada)."""
 
     def __init__(
-        self, conexao: Connection, usuario: UsuarioAtual, id_conversa: UUID | None = None
+        self,
+        conexao: Connection,
+        usuario: UsuarioAtual,
+        id_conversa: UUID | None = None,
+        vetorizar: embeddings.Vetorizar | None = None,
     ) -> None:
         self.conexao, self.usuario, self.id_conversa = conexao, usuario, id_conversa
+        # Busca semantica (embedding da pergunta); None = so a busca por palavras.
+        self.vetorizar = vetorizar
         self.id_atendimento: UUID | None = None
         # Loja do chamado (None = fila geral), para o aviso de horario da resposta.
         self.id_loja_chamado: UUID | None = None
@@ -254,10 +265,35 @@ class Ferramentas:
         dados = BuscarProduto.model_validate(argumentos)
         palavras = re.findall(r"[0-9a-zà-ÿ]{2,}", _normalizar(dados.descricao))
         termos = [t for t in palavras if t not in SEM_PESO][:6]
-        if not termos:
-            return {"pecas": [], "observacao": "descricao sem termos de busca"}
-        pecas = repositorio.buscar_produtos(self.conexao, termos, LIMITE_PRODUTOS)
+        # Primeiro o que bate pelas palavras; depois o que se parece pelo sentido ("algo para
+        # casamento", "blusa" para camisa), sem repetir peca.
+        pecas = repositorio.buscar_produtos(self.conexao, termos, LIMITE_PRODUTOS) if termos else []
+        for peca in self._semelhantes(dados.descricao):
+            if len(pecas) >= LIMITE_PRODUTOS:
+                break
+            if all(peca["nome"] != p["nome"] for p in pecas):
+                pecas.append(peca)
         return {"pecas": [{**p, "variacoes": p["variacoes"][:12]} for p in pecas]}
+
+    def _semelhantes(self, descricao: str) -> list[dict[str, Any]]:
+        if self.vetorizar is None:
+            return []
+        try:
+            vetor = self.vetorizar(descricao)
+        except Exception as erro:  # noqa: BLE001 - sem embedding, a busca por palavras continua
+            log.warning("busca semantica indisponivel: %s", type(erro).__name__)
+            return []
+        achadas = repositorio.buscar_produtos_semelhantes(
+            self.conexao, embeddings.vetor_sql(vetor), LIMITE_PRODUTOS, DISTANCIA_MAXIMA
+        )
+        if not achadas:
+            return []
+        melhor = min(float(p["distancia"]) for p in achadas)
+        return [
+            {k: v for k, v in p.items() if k != "distancia"}
+            for p in achadas
+            if float(p["distancia"]) <= melhor + MARGEM_DA_MELHOR
+        ]
 
     def _consultar_estoque(self, argumentos: dict[str, Any]) -> dict[str, Any]:
         dados = ConsultarEstoque.model_validate(argumentos)

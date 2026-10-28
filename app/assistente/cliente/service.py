@@ -25,7 +25,7 @@ from uuid import UUID
 
 from sqlalchemy.engine import Connection
 
-from app.assistente.cliente import lojas, passagem, repositorio
+from app.assistente.cliente import embeddings, lojas, passagem, repositorio
 from app.assistente.cliente.erros import (
     ConversaComAtendente,
     ConversaNaoEncontrada,
@@ -167,7 +167,9 @@ def enviar_mensagem(
     historico = [{"papel": m["autor"], "texto": m["texto"]} for m in anteriores] + [
         {"papel": "usuario", "texto": texto}
     ]
-    ferramentas = Ferramentas(conexao, usuario, id_conversa)
+    ferramentas = Ferramentas(
+        conexao, usuario, id_conversa, vetorizar=embeddings.vetorizador(configuracoes)
+    )
     try:
         resposta = fabrica(destino, configuracoes).responder(
             modelo=destino.modelo,

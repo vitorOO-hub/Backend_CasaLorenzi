@@ -22,8 +22,8 @@ automático: se mudarem lá, este documento precisa mudar junto.
 - Peças compradas em promoção seguem as mesmas regras de troca.
 - Peças que já passaram por ajuste de alfaiataria (barra, mangas, cintura) ou foram feitas sob
   medida não podem ser trocadas, a não ser por defeito.
-- Onde trocar: em uma loja física da mesma marca da peça (Casa Lorenzi ou Vulto) ou pelo site,
-  abrindo um chamado na área Atendimento.
+- Onde trocar: em uma loja física da marca da peça (peça Casa Lorenzi numa loja Casa Lorenzi, peça
+  Vulto numa loja Vulto) ou pelo site, abrindo um chamado na área Atendimento.
 
 ## devolucao | Devolução e direito de arrependimento (compras pelo site)
 
@@ -71,8 +71,8 @@ automático: se mudarem lá, este documento precisa mudar junto.
 
 ## prazo_entrega | Prazo de entrega
 
-PENDENTE: o prazo oficial de entrega ainda não foi definido. Não informe prazo; ofereça passar a
-conversa para a equipe.
+- A entrega em casa é feita em até 7 dias úteis.
+- Para retirar na loja, veja "Retirada na loja" (as peças ficam prontas em 2 dias úteis).
 
 ## retirada | Retirada na loja
 
@@ -96,8 +96,7 @@ conversa para a equipe.
 - As lojas não abrem para agendamento aos domingos.
 - Clientes Lorenzi+ da categoria black têm os ajustes de alfaiataria como cortesia, em qualquer
   uma das casas.
-- PENDENTE: o valor dos ajustes para as demais categorias ainda não foi definido. Não informe
-  preço; ofereça passar a conversa para a equipe.
+- Para as demais categorias, cada ajuste custa R$ 100.
 
 ## lorenzi_mais | Programa Lorenzi+ (pontos)
 

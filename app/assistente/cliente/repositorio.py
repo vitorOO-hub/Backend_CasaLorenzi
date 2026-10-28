@@ -197,3 +197,49 @@ def variacao_ativa_pelo_sku(conexao: Connection, sku: str) -> UUID | None:
         ),
         {"sku": sku},
     ).scalar()
+
+
+def buscar_produtos_semelhantes(
+    conexao: Connection, vetor: str, limite: int, distancia_maxima: float
+) -> list[dict[str, Any]]:
+    """Pecas ativas com estoque mais perto do vetor da pergunta (cosseno), mais proximas primeiro.
+
+    So entram pecas que ja tem embedding (scripts/gerar_embeddings_produtos.py). `vetor` e o
+    literal de `embeddings.vetor_sql`.
+    """
+    linhas = conexao.execute(
+        text(
+            """
+            WITH proximos AS (
+                SELECT p.id_produto,
+                       p.embedding OPERATOR(extensions.<=>) CAST(:vetor AS extensions.vector)
+                           AS distancia
+                FROM produto p
+                WHERE p.ativo AND p.embedding IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1 FROM variacao_produto v
+                      JOIN estoque e ON e.id_variacao = v.id_variacao AND e.quantidade > 0
+                      JOIN loja l ON l.id_loja = e.id_loja AND l.ativa
+                      WHERE v.id_produto = p.id_produto AND v.ativa
+                  )
+                ORDER BY distancia
+                LIMIT :limite
+            )
+            SELECT p.nome, p.categoria, p.marca, p.preco_base, px.distancia,
+                   json_agg(json_build_object('sku', v.sku, 'cor', v.cor, 'tamanho', v.tamanho,
+                                              'preco', v.preco_venda) ORDER BY v.sku) AS variacoes
+            FROM proximos px
+            JOIN produto p ON p.id_produto = px.id_produto
+            JOIN variacao_produto v ON v.id_produto = p.id_produto AND v.ativa
+            WHERE px.distancia <= :distancia_maxima
+              AND EXISTS (
+                  SELECT 1 FROM estoque e JOIN loja l ON l.id_loja = e.id_loja AND l.ativa
+                  WHERE e.id_variacao = v.id_variacao AND e.quantidade > 0
+              )
+            GROUP BY p.id_produto, p.nome, p.categoria, p.marca, p.preco_base, px.distancia
+            ORDER BY px.distancia
+            """
+        ),
+        {"vetor": vetor, "limite": limite, "distancia_maxima": distancia_maxima},
+    ).mappings()
+    return [dict(linha) for linha in linhas]
