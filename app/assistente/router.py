@@ -78,5 +78,8 @@ def enviar_mensagem(
     except FalhaDoProvedor as erro:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="O provedor de IA está indisponível. Tente novamente mais tarde.",
+            detail=service.mensagem_sem_confirmacao(
+                dados.texto,
+                "o provedor de IA ficou indisponível antes de validar os dados.",
+            ),
         ) from erro

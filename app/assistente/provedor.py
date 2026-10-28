@@ -1,6 +1,8 @@
 """Adaptadores HTTP de tool calling para Gemini e Groq."""
 
 import json
+import logging
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -11,10 +13,31 @@ from app.core.config import Settings
 
 TIMEOUT_SEGUNDOS = 25.0
 MAX_TOKENS_SAIDA = 500
+logger = logging.getLogger(__name__)
 
 
 class FalhaDoProvedor(Exception):
     """Falha externa sem carregar chave, URL sensivel ou corpo do provedor."""
+
+
+def _detalhe_http_seguro(resposta: httpx.Response, chave: str) -> tuple[str, str]:
+    """Extrai apenas o status e a mensagem curta do erro, nunca o corpo completo."""
+    try:
+        erro = resposta.json().get("error", {})
+    except (ValueError, AttributeError):
+        erro = {}
+    if not isinstance(erro, dict):
+        erro = {}
+
+    status = erro.get("status")
+    mensagem = erro.get("message")
+    status = status if isinstance(status, str) else "desconhecido"
+    if not isinstance(mensagem, str):
+        mensagem = "mensagem de erro indisponível"
+    mensagem = mensagem.replace(chave, "[chave omitida]")
+    mensagem = re.sub(r"AIza[0-9A-Za-z_-]{20,}", "[chave omitida]", mensagem)
+    mensagem = re.sub(r"[\r\n\t]+", " ", mensagem).strip()
+    return status[:80], mensagem[:500]
 
 
 def _tools_groq(ferramentas: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -72,7 +95,7 @@ def _tools_gemini(ferramentas: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 {
                     "name": item["name"],
                     "description": item["description"],
-                    "parameters": item["parameters"],
+                    "parametersJsonSchema": item["parameters"],
                 }
                 for item in ferramentas
             ]
@@ -102,20 +125,19 @@ def _historico_gemini(historico: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 }
             )
         elif mensagem["role"] == "assistant" and mensagem.get("tool_calls"):
-            resultado.append(
-                {
-                    "role": "model",
-                    "parts": [
-                        {
-                            "functionCall": {
-                                "name": chamada["name"],
-                                "args": chamada["arguments"],
-                            }
-                        }
-                        for chamada in mensagem["tool_calls"]
-                    ],
+            partes = []
+            for chamada in mensagem["tool_calls"]:
+                parte = {
+                    "functionCall": {
+                        "name": chamada["name"],
+                        "args": chamada["arguments"],
+                    }
                 }
-            )
+                assinatura = chamada.get("thought_signature")
+                if assinatura:
+                    parte["thoughtSignature"] = assinatura
+                partes.append(parte)
+            resultado.append({"role": "model", "parts": partes})
         else:
             resultado.append(
                 {
@@ -204,6 +226,8 @@ def completar(
                     "id": str(uuid4()),
                     "name": parte["functionCall"].get("name", ""),
                     "arguments": parte["functionCall"].get("args", {}),
+                    "thought_signature": parte.get("thoughtSignature")
+                    or parte.get("thought_signature"),
                 }
                 for parte in partes
                 if "functionCall" in parte
@@ -215,5 +239,23 @@ def completar(
                 "tokens_entrada": int(uso.get("promptTokenCount", 0)),
                 "tokens_saida": int(uso.get("candidatesTokenCount", 0)),
             }
-    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+    except httpx.HTTPStatusError as erro:
+        status_provedor, mensagem = _detalhe_http_seguro(erro.response, chave)
+        logger.warning(
+            "Provedor %s rejeitou a chamada (http_status=%s, provider_status=%s, message=%s)",
+            provedor,
+            erro.response.status_code,
+            status_provedor,
+            mensagem,
+        )
+        raise FalhaDoProvedor("Nao foi possivel consultar o provedor de IA") from None
+    except httpx.HTTPError as erro:
+        logger.warning(
+            "Falha de transporte com provedor %s (tipo=%s)", provedor, type(erro).__name__
+        )
+        raise FalhaDoProvedor("Nao foi possivel consultar o provedor de IA") from None
+    except (KeyError, IndexError, TypeError, ValueError) as erro:
+        logger.warning(
+            "Resposta incompatível do provedor %s (tipo=%s)", provedor, type(erro).__name__
+        )
         raise FalhaDoProvedor("Nao foi possivel consultar o provedor de IA") from None

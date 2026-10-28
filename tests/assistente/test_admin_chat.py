@@ -2,10 +2,30 @@ from uuid import uuid4
 
 import pytest
 
-from app.assistente import ferramentas, provedor
+from app.assistente import ferramentas, provedor, service
 from app.assistente.roteamento import DestinoModelo
 from app.core.config import Settings
 from app.core.papeis import Papel, UsuarioAtual
+
+
+def test_diagnostico_http_omite_chave_e_limita_mensagem():
+    chave = "AIzaabcdefghijklmnopqrstuvwxyz0123456789"
+    resposta = provedor.httpx.Response(
+        400,
+        json={
+            "error": {
+                "status": "INVALID_ARGUMENT",
+                "message": f"Schema inválido para a chave {chave} {'x' * 600}",
+            }
+        },
+    )
+
+    status, mensagem = provedor._detalhe_http_seguro(resposta, chave)
+
+    assert status == "INVALID_ARGUMENT"
+    assert chave not in mensagem
+    assert "[chave omitida]" in mensagem
+    assert len(mensagem) == 500
 
 
 def admin() -> UsuarioAtual:
@@ -68,7 +88,19 @@ def test_adaptador_converte_chamada_de_ferramenta_sem_rede(provedor_nome, monkey
     else:
         resposta = {
             "candidates": [
-                {"content": {"parts": [{"functionCall": {"name": "consultar_equipe", "args": {}}}]}}
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "functionCall": {
+                                    "name": "consultar_equipe",
+                                    "args": {},
+                                },
+                                "thoughtSignature": "assinatura-teste",
+                            }
+                        ]
+                    }
+                }
             ],
             "usageMetadata": {"promptTokenCount": 9, "candidatesTokenCount": 3},
         }
@@ -107,6 +139,8 @@ def test_adaptador_converte_chamada_de_ferramenta_sem_rede(provedor_nome, monkey
 
     assert turno["chamadas"][0]["name"] == "consultar_equipe"
     assert turno["chamadas"][0]["arguments"] == {}
+    if provedor_nome == "gemini":
+        assert turno["chamadas"][0]["thought_signature"] == "assinatura-teste"
     assert turno["tokens_entrada"] > 0
 
 
@@ -150,3 +184,203 @@ def test_historico_groq_formata_corretamente_o_retorno_de_ferramenta():
         },
         {"role": "tool", "tool_call_id": "call-1", "content": '{"total": 4}'},
     ]
+
+
+def test_historico_gemini_preserva_assinatura_de_pensamento():
+    historico = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "name": "consultar_vendas",
+                    "arguments": {"inicio": "2025-01-01", "fim": "2025-12-31"},
+                    "thought_signature": "assinatura-teste",
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call-1",
+            "name": "consultar_vendas",
+            "content": '{"atual": {"faturamento": 100}}',
+        },
+    ]
+
+    assert provedor._historico_gemini(historico) == [
+        {
+            "role": "model",
+            "parts": [
+                {
+                    "functionCall": {
+                        "name": "consultar_vendas",
+                        "args": {"inicio": "2025-01-01", "fim": "2025-12-31"},
+                    },
+                    "thoughtSignature": "assinatura-teste",
+                }
+            ],
+        },
+        {
+            "role": "user",
+            "parts": [
+                {
+                    "functionResponse": {
+                        "name": "consultar_vendas",
+                        "response": {"atual": {"faturamento": 100}},
+                    }
+                }
+            ],
+        },
+    ]
+
+
+def test_tools_gemini_envia_esquema_json_no_campo_compativel():
+    esquema = {
+        "type": "object",
+        "properties": {"busca": {"type": "string"}},
+        "required": ["busca"],
+        "additionalProperties": False,
+    }
+
+    ferramentas_gemini = provedor._tools_gemini(
+        [{"name": "buscar_cliente", "description": "Busca cliente", "parameters": esquema}]
+    )
+
+    funcao = ferramentas_gemini[0]["functionDeclarations"][0]
+    assert funcao["parametersJsonSchema"] == esquema
+    assert "parameters" not in funcao
+
+
+def _configuracoes_assistente() -> Settings:
+    return Settings(
+        _env_file=None,
+        database_url="postgresql://localhost/teste",
+        groq_api_key="chave-groq-falsa",
+        gemini_api_key="chave-gemini-falsa",
+    )
+
+
+def _preparar_persistencia(monkeypatch):
+    monkeypatch.setattr(service.repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(service.repositorio, "gravar_pergunta", lambda *_args: [])
+    monkeypatch.setattr(service.repositorio, "gravar_resposta", lambda *_args: None)
+    monkeypatch.setattr(service.repositorio, "marcar_pergunta_sem_resposta", lambda *_args: None)
+    monkeypatch.setattr(service.repositorio, "gravar_ferramenta", lambda *_args: None)
+
+
+def _executar_db(callback):
+    return callback(None)
+
+
+def test_encaminha_para_area_responsavel_sem_inventar_nome():
+    mensagem = service.mensagem_sem_confirmacao(
+        "Qual é o estoque da peça X?", "a consulta não encontrou registros."
+    )
+
+    assert "Não posso confirmar" in mensagem
+    assert "responsável pelo estoque" in mensagem
+    assert "gerente da unidade" in mensagem
+
+
+def test_pergunta_de_dado_sem_chamada_de_ferramenta_abstem(monkeypatch):
+    _preparar_persistencia(monkeypatch)
+    monkeypatch.setattr(
+        provedor,
+        "completar",
+        lambda *_args: {
+            "texto": "Temos 42 unidades em estoque.",
+            "chamadas": [],
+            "tokens_entrada": 1,
+            "tokens_saida": 2,
+        },
+    )
+
+    resposta = service.enviar_mensagem(
+        _executar_db,
+        admin(),
+        _configuracoes_assistente(),
+        uuid4(),
+        "Quantas unidades temos no estoque?",
+    )
+
+    assert "Não posso confirmar" in resposta["resposta"]
+    assert "responsável pelo estoque" in resposta["resposta"]
+    assert "42" not in resposta["resposta"]
+
+
+def test_falha_na_consulta_abstem_sem_pedir_nova_resposta_ao_modelo(monkeypatch):
+    _preparar_persistencia(monkeypatch)
+    chamadas_modelo = 0
+
+    def completar(*_args):
+        nonlocal chamadas_modelo
+        chamadas_modelo += 1
+        return {
+            "texto": "",
+            "chamadas": [
+                {
+                    "id": "call-1",
+                    "name": "consultar_estoque",
+                    "arguments": {"sku": "CAM-001"},
+                }
+            ],
+            "tokens_entrada": 1,
+            "tokens_saida": 1,
+        }
+
+    monkeypatch.setattr(provedor, "completar", completar)
+    monkeypatch.setattr(
+        ferramentas,
+        "executar",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("banco indisponível")),
+    )
+
+    resposta = service.enviar_mensagem(
+        _executar_db,
+        admin(),
+        _configuracoes_assistente(),
+        uuid4(),
+        "Tem estoque da peça CAM-001 na loja Savassi?",
+    )
+
+    assert chamadas_modelo == 1
+    assert "Não posso confirmar" in resposta["resposta"]
+    assert "responsável pelo estoque" in resposta["resposta"]
+
+
+def test_consulta_sem_registros_abstem_sem_gerar_resposta_livre(monkeypatch):
+    _preparar_persistencia(monkeypatch)
+    chamadas_modelo = 0
+
+    def completar(*_args):
+        nonlocal chamadas_modelo
+        chamadas_modelo += 1
+        return {
+            "texto": "",
+            "chamadas": [
+                {
+                    "id": "call-1",
+                    "name": "consultar_estoque",
+                    "arguments": {"sku": "CAM-001"},
+                }
+            ],
+            "tokens_entrada": 1,
+            "tokens_saida": 1,
+        }
+
+    monkeypatch.setattr(provedor, "completar", completar)
+    monkeypatch.setattr(ferramentas, "executar", lambda *_args: {"itens": [], "total": 0})
+
+    resposta = service.enviar_mensagem(
+        _executar_db,
+        admin(),
+        _configuracoes_assistente(),
+        uuid4(),
+        "Tem estoque da peça CAM-001 na loja Savassi?",
+    )
+
+    assert chamadas_modelo == 1
+    assert "Não posso confirmar" in resposta["resposta"]
+    assert "não encontrou registros" in resposta["resposta"]
+    assert "responsável pelo estoque" in resposta["resposta"]
