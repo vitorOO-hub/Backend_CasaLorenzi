@@ -303,3 +303,28 @@ def test_espera_pedida_pelo_provedor_fica_no_erro():
     with pytest.raises(ErroProvedor) as erro:
         _responder(ProvedorGroq(CHAVE, _cliente([limite], [])))
     assert erro.value.espera == 305.0
+
+
+def test_gpt_oss_pede_raciocinio_curto_e_outros_modelos_nao():
+    pedidos = []
+    ProvedorGroq(CHAVE, _cliente([_groq_texto("Oi!")], pedidos)).responder(
+        modelo="openai/gpt-oss-20b",
+        sistema="s",
+        historico=HISTORICO,
+        ferramentas=FERRAMENTAS,
+        executar=lambda n, a: {},
+        max_rodadas=4,
+        max_tokens=600,
+    )
+    assert json.loads(pedidos[0].content)["reasoning_effort"] == "low"
+    pedidos.clear()
+    ProvedorGroq(CHAVE, _cliente([_groq_texto("Oi!")], pedidos)).responder(
+        modelo="llama-3.3-70b-versatile",
+        sistema="s",
+        historico=HISTORICO,
+        ferramentas=FERRAMENTAS,
+        executar=lambda n, a: {},
+        max_rodadas=4,
+        max_tokens=600,
+    )
+    assert "reasoning_effort" not in json.loads(pedidos[0].content)

@@ -168,6 +168,13 @@ def _inteiro(valor: Any) -> int:
     return valor if isinstance(valor, int) and valor >= 0 else 0
 
 
+def _raciocinio_curto(modelo: str) -> dict[str, str]:
+    """Os gpt-oss raciocinam antes de responder, e esse raciocinio conta no `max_tokens`: no
+    padrao ("medium") ele consumia os 600 tokens e a resposta vinha vazia (finish_reason=length).
+    "low" responde direto e gasta bem menos cota."""
+    return {"reasoning_effort": "low"} if modelo.startswith("openai/gpt-oss") else {}
+
+
 class ProvedorGroq:
     """API compativel com OpenAI (chat/completions com `tools`)."""
 
@@ -211,6 +218,7 @@ class ProvedorGroq:
                     "parallel_tool_calls": False,
                     "temperature": 0,
                     "max_tokens": max_tokens,
+                    **_raciocinio_curto(modelo),
                 },
             )
             uso = dados.get("usage") or {}
