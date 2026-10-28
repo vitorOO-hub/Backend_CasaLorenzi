@@ -58,6 +58,7 @@ class Banco:
         self.avaliacoes: dict[UUID, str | None] = {}
         self.mensagens: list[dict] = []
         self.perguntas_hoje: dict[UUID, int] = {}
+        self.por_minuto: dict[UUID, int] = {}
 
     def _titulo(self, id_conversa):
         primeira = next(
@@ -161,6 +162,29 @@ class Banco:
     def perguntas_de_hoje(self, conexao, id_usuario):
         return self.perguntas_hoje.get(id_usuario, 0)
 
+    def perguntas_no_ultimo_minuto(self, conexao, id_usuario):
+        return self.por_minuto.get(id_usuario, 0)
+
+    def pendencia(self, conexao, id_conversa):
+        ultima = next(
+            (
+                m
+                for m in reversed(self.mensagens)
+                if m["id_conversa"] == id_conversa and m["autor"] == "assistente"
+            ),
+            None,
+        )
+        return (ultima["dados"] or {}).get("pendente") if ultima else None
+
+    def perguntas_antigas(self, conexao, id_conversa, pular, limite):
+        perguntas = [
+            m["texto"][:60]
+            for m in self.mensagens
+            if m["id_conversa"] == id_conversa and m["autor"] == "usuario"
+        ]
+        antigas = perguntas[: max(len(perguntas) - pular, 0)]
+        return antigas[-limite:]
+
     def da_resposta(self):
         return next(m for m in reversed(self.mensagens) if m["autor"] == "assistente")
 
@@ -173,7 +197,16 @@ class ProvedorFalso:
         self.chamadas: list[dict] = []
 
     def conversar(
-        self, modelo, sistema, historico, ferramentas, executar, *, max_rodadas, max_tokens
+        self,
+        modelo,
+        sistema,
+        historico,
+        ferramentas,
+        executar,
+        *,
+        max_rodadas,
+        max_tokens,
+        concluir=None,
     ):
         self.chamadas.append(
             {
@@ -181,6 +214,8 @@ class ProvedorFalso:
                 "sistema": sistema,
                 "historico": list(historico),
                 "ferramentas": [f.nome for f in ferramentas],
+                "max_tokens": max_tokens,
+                "max_rodadas": max_rodadas,
             }
         )
         if self.erro:
@@ -188,6 +223,11 @@ class ProvedorFalso:
         resultado = Resultado(texto=self.texto, tokens_entrada=100, tokens_saida=20)
         for nome, argumentos in self.pedir:
             resultado.chamadas.append(ChamadaFeita(nome, argumentos, executar(nome, argumentos)))
+            # Como os provedores de verdade: o backend pode responder logo depois da ferramenta.
+            pronto = concluir(resultado.chamadas) if concluir else None
+            if pronto is not None:
+                resultado.texto, resultado.concluido_pelo_backend = pronto, True
+                return resultado
         resultado.rodadas_esgotadas = self.esgotar
         return resultado
 
@@ -206,6 +246,9 @@ def banco(monkeypatch):
         "mudar_status",
         "avaliar_resposta",
         "perguntas_de_hoje",
+        "perguntas_no_ultimo_minuto",
+        "pendencia",
+        "perguntas_antigas",
     ):
         monkeypatch.setattr(repositorio, nome, getattr(b, nome))
     # Cada conta do Supabase vira um id de usuario estavel.

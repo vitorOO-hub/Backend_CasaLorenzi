@@ -11,6 +11,11 @@ Fluxo de uma pergunta:
    `ferramentas.executar` (allowlist, schema e a loja do token);
 5. grava cada chamada de ferramenta (argumentos com CPF mascarado e um resumo do resultado) e a
    resposta, com modelo, tokens, latencia e a decisao de roteamento.
+
+Perguntas sobre um cliente (CPF, e-mail, telefone, compras de um dia) seguem `consulta_cliente`:
+prompt curto, so a ferramenta da intencao e, quando der, resposta montada pelo backend. O que fica
+gravado dessas perguntas (texto, argumentos) vai com CPF, e-mail e telefone mascarados, e cada
+acesso a dado pessoal fica na auditoria (cliente e campos, sem o dado em si).
 """
 
 import logging
@@ -30,14 +35,30 @@ from app.assistente.roteamento import (
     PlanoRoteamento,
     planejar_pergunta,
 )
-from app.assistente.vendedor import conferencia, intencao, repositorio
+from app.assistente.vendedor import (
+    conferencia,
+    consulta_cliente,
+    intencao,
+    privacidade,
+    repositorio,
+)
 from app.assistente.vendedor import ferramentas as ferramentas_vendedor
 from app.assistente.vendedor.erros import (
     ConversaArquivada,
     ConversaNaoEncontrada,
     LimiteDiarioDoAssistente,
+    PerguntasDemaisPorMinuto,
 )
-from app.assistente.vendedor.provedores import ErroDoProvedor, Provedor, Turno
+from app.assistente.vendedor.provedores import (
+    ChamadaFeita,
+    Concluir,
+    ErroDoProvedor,
+    Executar,
+    Ferramenta,
+    Provedor,
+    Resultado,
+    Turno,
+)
 from app.chamados.repositorio import id_usuario_ativo
 from app.cliente.vencimento_pontos import SP
 from app.core.config import Settings
@@ -49,7 +70,8 @@ registro = logging.getLogger("app.assistente")
 
 PAPEIS_DO_ASSISTENTE = (Papel.VENDEDOR,)
 LIMITE_PERGUNTAS_POR_DIA = 80
-MENSAGENS_NO_HISTORICO = 12
+# Perguntas antigas (fora do historico) que entram no resumo curto, cada uma cortada em 60 letras.
+PERGUNTAS_NO_RESUMO = 5
 MAX_RODADAS_DE_FERRAMENTA = 4
 MAX_TOKENS_DE_SAIDA = 800
 TAMANHO_MAXIMO_RESPOSTA = 4000
@@ -269,10 +291,52 @@ def _roteamento(plano: PlanoRoteamento) -> dict[str, Any]:
     }
 
 
-def _sistema(conexao: Connection, usuario: UsuarioAtual) -> str:
+def _sistema(conexao: Connection, usuario: UsuarioAtual, modelo: str = SISTEMA) -> str:
     loja = vendas_repositorio.nome_da_loja(conexao, usuario.id_loja) if usuario.id_loja else None
     hoje = datetime.now(UTC).astimezone(SP).strftime("%d/%m/%Y")
-    return SISTEMA.format(loja=loja or "do vendedor", hoje=hoje)
+    return modelo.format(loja=loja or "do vendedor", hoje=hoje)
+
+
+def _com_resumo(sistema: str, antigas: list[str]) -> str:
+    """Perguntas que sairam do historico viram uma linha no FIM do prompt (o comeco fica igual,
+    para o cache do provedor)."""
+    if not antigas:
+        return sistema
+    return f"{sistema}\n\nAntes, nesta conversa, o vendedor perguntou: {'; '.join(antigas)}."
+
+
+def _auditoria(chamada: ChamadaFeita) -> dict[str, Any] | None:
+    """Acesso a dado pessoal: qual cliente e quais campos (nunca o valor)."""
+    r = chamada.resultado
+    if chamada.nome == "buscar_cliente" and "cliente_id" in r:
+        return {
+            "cliente_id": r["cliente_id"],
+            "campos": ["nome", *(chamada.argumentos.get("campos") or [])],
+        }
+    if chamada.nome == "compras_do_cliente" and "erro" not in r and "nao_encontrado" not in r:
+        return {"cliente_id": chamada.argumentos.get("cliente_id"), "campos": ["compras"]}
+    return None
+
+
+def _gravar_ferramentas(
+    conexao: Connection, id_conversa: UUID, chamadas: list[ChamadaFeita], dados: dict[str, Any]
+) -> None:
+    for chamada in chamadas:
+        dados["ferramentas"].append(chamada.nome)
+        registro_da_chamada: dict[str, Any] = {
+            "argumentos": privacidade.mascarar(_mascarar(chamada.argumentos)),
+            "resultado": _resumo_do_resultado(chamada.resultado),
+        }
+        if acesso := _auditoria(chamada):
+            registro_da_chamada["dado_pessoal"] = acesso
+        repositorio.gravar_mensagem(
+            conexao,
+            id_conversa,
+            "ferramenta",
+            "",
+            ferramenta=chamada.nome,
+            dados=registro_da_chamada,
+        )
 
 
 NAVEGACAO = ClassificacaoPergunta("rapida", "simples", False, ("navegacao",))
@@ -303,15 +367,38 @@ def enviar_mensagem(
     conversa = _conversa(conexao, id_conversa, id_usuario)
     if conversa["status"] != "ativa":
         raise ConversaArquivada()
+    por_minuto = configuracoes.assistente_vendedor_perguntas_por_minuto
+    if repositorio.perguntas_no_ultimo_minuto(conexao, id_usuario) >= por_minuto:
+        raise PerguntasDemaisPorMinuto()
     if repositorio.perguntas_de_hoje(conexao, id_usuario) >= LIMITE_PERGUNTAS_POR_DIA:
         raise LimiteDiarioDoAssistente()
 
-    anteriores = repositorio.historico(conexao, id_conversa, MENSAGENS_NO_HISTORICO - 1)
-    pergunta = repositorio.gravar_mensagem(conexao, id_conversa, "usuario", texto)
+    limite_historico = max(configuracoes.assistente_vendedor_historico, 0)
+    anteriores = (
+        repositorio.historico(conexao, id_conversa, limite_historico) if limite_historico else []
+    )
+    antigas = (
+        repositorio.perguntas_antigas(
+            conexao, id_conversa, limite_historico // 2, PERGUNTAS_NO_RESUMO
+        )
+        if limite_historico and len(anteriores) >= limite_historico
+        else []
+    )
+    pendente = repositorio.pendencia(conexao, id_conversa)
+    # O texto gravado vai mascarado (CPF, e-mail, telefone); o fluxo usa o texto original.
+    pergunta = repositorio.gravar_mensagem(
+        conexao, id_conversa, "usuario", privacidade.mascarar_texto(texto)
+    )
     conexao.commit()
 
     inicio = time.monotonic()
     pedido = intencao.classificar(texto)
+    if not pedido.navegacao:
+        saida = _consulta_de_cliente(
+            conexao, usuario, id_conversa, texto, pendente, configuracoes, fabrica, inicio
+        )
+        if saida is not None:
+            return {"pergunta": pergunta, "resposta": saida}
     if pedido.navegacao:
         # Sem ferramenta de dados e sem historico: so o mapa das telas e a pergunta.
         plano = _plano_de_navegacao(configuracoes)
@@ -320,7 +407,7 @@ def enviar_mensagem(
         historico = [Turno("usuario", texto)]
     else:
         plano = planejar_pergunta(texto, configuracoes)
-        sistema = _sistema(conexao, usuario)
+        sistema = _com_resumo(_sistema(conexao, usuario), antigas)
         ferramentas = ferramentas_vendedor.FERRAMENTAS
         historico = [Turno(m["autor"], m["texto"]) for m in anteriores]
         historico.append(Turno("usuario", texto))
@@ -366,19 +453,7 @@ def enviar_mensagem(
             sem_resposta = True
         else:
             tokens_entrada, tokens_saida = resultado.tokens_entrada, resultado.tokens_saida
-            for chamada in resultado.chamadas:
-                dados["ferramentas"].append(chamada.nome)
-                repositorio.gravar_mensagem(
-                    conexao,
-                    id_conversa,
-                    "ferramenta",
-                    "",
-                    ferramenta=chamada.nome,
-                    dados={
-                        "argumentos": _mascarar(chamada.argumentos),
-                        "resultado": _resumo_do_resultado(chamada.resultado),
-                    },
-                )
+            _gravar_ferramentas(conexao, id_conversa, resultado.chamadas, dados)
             if resultado.rodadas_esgotadas:
                 resposta, sem_resposta = CONSULTAS_DEMAIS, True
             elif not resultado.texto:
@@ -413,3 +488,140 @@ def enviar_mensagem(
     repositorio.tocar_conversa(conexao, id_conversa)
     conexao.commit()
     return {"pergunta": pergunta, "resposta": gravada}
+
+
+# ------------------------------------------------------------------ consultas de cliente
+
+
+def _chamar_modelo(
+    texto: str,
+    configuracoes: Settings,
+    fabrica: FabricaDeProvedor,
+    dados: dict[str, Any],
+) -> consulta_cliente.ChamarModelo:
+    """O modelo das consultas de cliente: destino do roteador, sem fallback; falha vira
+    `SemModelo` com a mesma resposta controlada do fluxo geral."""
+
+    def chamar(
+        sistema: str,
+        historico: list[Turno],
+        ferramentas: list[Ferramenta],
+        executar: Executar,
+        max_tokens: int,
+        concluir: Concluir | None,
+    ) -> Resultado:
+        plano = planejar_pergunta(texto, configuracoes)
+        dados["roteamento"] = _roteamento(plano)
+        if plano.estado == "esclarecer":
+            motivo = plano.classificacao.motivos[0] if plano.classificacao.motivos else ""
+            raise consulta_cliente.SemModelo(
+                ESCLARECER.get(motivo, consulta_cliente.PERGUNTAR_CLIENTE)
+            )
+        if plano.estado != "pronto" or plano.destino is None:
+            registro.warning("assistente sem destino utilizavel: %s", plano.estado)
+            raise consulta_cliente.SemModelo(INDISPONIVEL, {"sem_resposta": True})
+        destino = plano.destino
+        dados["modelo"] = f"{destino.provedor}:{destino.modelo}"
+        try:
+            return fabrica(destino, configuracoes).conversar(
+                destino.modelo,
+                sistema,
+                historico,
+                ferramentas,
+                executar,
+                max_rodadas=consulta_cliente.MAX_RODADAS,
+                max_tokens=max_tokens,
+                concluir=concluir,
+            )
+        except ErroDoProvedor as erro:
+            extra = {
+                "sem_resposta": True,
+                "erro_do_provedor": {"provedor": erro.provedor, "status": erro.status},
+            }
+            if erro.status == 429:
+                segundos = max(round(erro.espera), 5) if erro.espera else 30
+                raise consulta_cliente.SemModelo(
+                    LIMITE_DO_PROVEDOR.format(segundos=segundos), extra
+                ) from None
+            raise consulta_cliente.SemModelo(FALHA_DO_PROVEDOR, extra) from None
+
+    return chamar
+
+
+def _consulta_de_cliente(
+    conexao: Connection,
+    usuario: UsuarioAtual,
+    id_conversa: UUID,
+    texto: str,
+    pendente: dict[str, Any] | None,
+    configuracoes: Settings,
+    fabrica: FabricaDeProvedor,
+    inicio: float,
+) -> dict[str, Any] | None:
+    """Responde e grava a pergunta de cliente; None se a pergunta nao e de cliente."""
+    pedido = intencao.consulta_de_cliente(texto)
+    if pedido is None and pendente is None:
+        return None
+    dados: dict[str, Any] = {"ferramentas": []}
+    configuracao = consulta_cliente.Configuracao(
+        template_campos=configuracoes.assistente_vendedor_template_campos,
+        template_compras=configuracoes.assistente_vendedor_template_compras,
+        max_tokens=configuracoes.assistente_vendedor_max_tokens_cliente,
+    )
+    sistema = _sistema(conexao, usuario, consulta_cliente.SISTEMA)
+    modelo = _chamar_modelo(texto, configuracoes, fabrica, dados)
+    try:
+        if pedido is None:
+            assert pendente is not None
+            saida = consulta_cliente.responder_escolha(
+                conexao,
+                usuario,
+                texto,
+                pendente,
+                sistema=sistema,
+                configuracao=configuracao,
+                modelo=modelo,
+            )
+            if saida is None:
+                return None
+            dados["intencao"] = f"cliente_{pendente['tipo']}"
+        else:
+            dados["intencao"] = f"cliente_{pedido.tipo}"
+            saida = consulta_cliente.responder(
+                conexao,
+                usuario,
+                texto,
+                pedido,
+                hoje=ferramentas_vendedor._hoje(),
+                sistema=sistema,
+                configuracao=configuracao,
+                modelo=modelo,
+            )
+    except consulta_cliente.SemModelo as falha:
+        saida = consulta_cliente.Saida(falha.resposta, via="sem_modelo")
+        dados |= falha.dados
+
+    sem_resposta = bool(dados.pop("sem_resposta", False))
+    modelo_usado = dados.pop("modelo", None)
+    dados["via"] = saida.via
+    if saida.pendente:
+        dados["pendente"] = saida.pendente
+    _gravar_ferramentas(conexao, id_conversa, saida.chamadas, dados)
+    resposta = (saida.resposta or consulta_cliente.PERGUNTAR_CLIENTE)[:TAMANHO_MAXIMO_RESPOSTA]
+    dados["latencia_ms"] = round((time.monotonic() - inicio) * 1000)
+    dados["ferramentas"] = list(dict.fromkeys(dados["ferramentas"]))
+    gravada = repositorio.gravar_mensagem(
+        conexao,
+        id_conversa,
+        "assistente",
+        privacidade.mascarar_texto(resposta),
+        dados=dados,
+        sem_resposta=sem_resposta,
+        modelo=modelo_usado if saida.resultado else None,
+        tokens_entrada=saida.resultado.tokens_entrada if saida.resultado else None,
+        tokens_saida=saida.resultado.tokens_saida if saida.resultado else None,
+    )
+    repositorio.tocar_conversa(conexao, id_conversa)
+    conexao.commit()
+    # Quem perguntou ve o dado inteiro agora; o historico salvo fica mascarado.
+    return {**gravada, "texto": resposta}

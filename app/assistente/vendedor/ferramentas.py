@@ -14,10 +14,12 @@ import unicodedata
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any, Literal, get_args, get_origin
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 from sqlalchemy.engine import Connection
 
+from app.assistente.vendedor import clientes, datas
 from app.assistente.vendedor import estoque as estoque_vendedor
 from app.assistente.vendedor.provedores import Ferramenta
 from app.cliente import repositorio as lojas_repositorio
@@ -49,6 +51,7 @@ CRITERIO_VENDAS = (
 
 Busca = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=80)]
 TextoCurto = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=30)]
+TextoData = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=40)]
 
 
 class _Entrada(BaseModel):
@@ -219,6 +222,43 @@ def buscar_clientes(conexao: Connection, usuario: UsuarioAtual, e: EntradaBuscaC
             for c in lista["itens"]
         ],
     }
+
+
+class EntradaBuscarCliente(_Entrada):
+    busca: Busca = Field(description="Nome, e-mail ou CPF do cliente, como o vendedor escreveu")
+    campos: list[clientes.Campo] = Field(
+        default_factory=list, max_length=5, description="Dados pedidos pelo vendedor"
+    )
+
+
+def buscar_cliente(conexao: Connection, usuario: UsuarioAtual, e: EntradaBuscarCliente) -> dict:
+    """Um cliente da loja do vendedor, so com os campos pedidos (CPF mascarado, como na tela)."""
+    busca = clientes.interpretar(e.busca)
+    if busca is None:
+        return {"nao_encontrado": clientes.NAO_ENCONTREI}
+    linhas = clientes.procurar(conexao, usuario, busca, clientes.LIMITE_HOMONIMOS + 1)
+    return clientes.resultado_da_busca(linhas, e.campos)
+
+
+class EntradaCompras(_Entrada):
+    cliente_id: UUID = Field(description="cliente_id devolvido por buscar_cliente")
+    data: TextoData = Field(
+        description="Dia ou periodo como o vendedor falou (ex.: ontem, dia 15, 15/10, outubro)"
+    )
+
+
+def compras_do_cliente(conexao: Connection, usuario: UsuarioAtual, e: EntradaCompras) -> dict:
+    """Pedidos do cliente na loja do vendedor num dia ou periodo; a data e resolvida aqui."""
+    hoje = _hoje()
+    periodo = datas.resolver(e.data, hoje)
+    if periodo is None:
+        return {"erro": "Não entendi a data. Diga o dia, por exemplo: ontem, 15/10 ou 15/10/2026."}
+    if erro := clientes.hoje_valido(periodo, hoje):
+        return {"erro": erro}
+    if (periodo.fim - periodo.inicio).days + 1 > MAX_DIAS_PERIODO:
+        return {"erro": f"Consulte no maximo {MAX_DIAS_PERIODO} dias por vez."}
+    resultado = clientes.compras(conexao, usuario, e.cliente_id, periodo)
+    return resultado if resultado is not None else {"nao_encontrado": clientes.NAO_ENCONTREI}
 
 
 class EntradaRanking(_Entrada):
@@ -629,7 +669,19 @@ _REGISTRO: dict[str, tuple[str, type[_Entrada], Funcao]] = {
         EntradaVazia,
         formas_de_pagamento,
     ),
+    # Consultas de cliente: so vao ao modelo quando a pergunta e sobre um cliente.
+    "buscar_cliente": (
+        "Acha um cliente da loja por nome, e-mail ou CPF e traz so os campos pedidos.",
+        EntradaBuscarCliente,
+        buscar_cliente,
+    ),
+    "compras_do_cliente": (
+        "Pedidos, itens e totais de um cliente (cliente_id de buscar_cliente) num dia ou periodo.",
+        EntradaCompras,
+        compras_do_cliente,
+    ),
 }
+CONSULTA_CLIENTE = ("buscar_cliente", "compras_do_cliente")
 
 
 # O modelo tende a "ajudar" pedindo 10 itens ou um periodo que o vendedor nao disse. Sem um
@@ -695,20 +747,20 @@ def _parametros(modelo: type[_Entrada]) -> dict[str, Any]:
     propriedades: dict[str, Any] = {}
     obrigatorios = []
     for nome, campo in modelo.model_fields.items():
-        tipo = _tipo_base(campo.annotation)
+        lista = get_origin(campo.annotation) is list
+        anotacao = get_args(campo.annotation)[0] if lista else campo.annotation
+        tipo = _tipo_base(anotacao)
         propriedade: dict[str, Any] = {"type": "integer" if tipo is int else "string"}
-        if campo.description:
-            propriedade["description"] = campo.description
         literal = next(
-            (
-                a
-                for a in (campo.annotation, *get_args(campo.annotation))
-                if get_origin(a) is Literal
-            ),
+            (a for a in (anotacao, *get_args(anotacao)) if get_origin(a) is Literal),
             None,
         )
         if literal is not None:
             propriedade["enum"] = list(get_args(literal))
+        if lista:
+            propriedade = {"type": "array", "items": propriedade}
+        if campo.description:
+            propriedade["description"] = campo.description
         minimo, maximo = _limites(campo)
         if tipo is int and minimo is not None:
             propriedade["minimum"] = minimo
@@ -723,9 +775,18 @@ def _parametros(modelo: type[_Entrada]) -> dict[str, Any]:
     return schema
 
 
-FERRAMENTAS = [
-    Ferramenta(nome, desc, _parametros(modelo)) for nome, (desc, modelo, _) in _REGISTRO.items()
-]
+def ferramenta(nome: str) -> Ferramenta:
+    desc, modelo, _ = _REGISTRO[nome]
+    return Ferramenta(nome, desc, _parametros(modelo))
+
+
+# Catalogo das perguntas gerais; as de cliente recebem so as delas (`ferramentas_de_cliente`).
+FERRAMENTAS = [ferramenta(nome) for nome in _REGISTRO if nome not in CONSULTA_CLIENTE]
+
+
+# Pergunta de cliente: o modelo so recebe a busca. Nas de compras, o backend emenda as compras do
+# dia no resultado da busca (ver `consulta_cliente`), o que poupa uma ida e volta ao modelo.
+FERRAMENTAS_DE_CLIENTE = [ferramenta("buscar_cliente")]
 
 
 def executar(

@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     # Destinos validados no benchmark; variaveis de ambiente podem substitui-los.
     assistente_modelo_rapido: str | None = "groq:openai/gpt-oss-20b"
     assistente_modelo_preciso: str | None = "gemini:gemini-3.5-flash-lite"
+    # Assistente do vendedor: mensagens anteriores enviadas ao modelo (as mais antigas viram um
+    # resumo curto), teto de saida nas consultas de cliente, respostas por template (sem segunda
+    # chamada ao modelo) e limite de perguntas por pessoa por minuto.
+    assistente_vendedor_historico: int = 6
+    assistente_vendedor_max_tokens_cliente: int = 300
+    assistente_vendedor_template_campos: bool = True
+    assistente_vendedor_template_compras: bool = False
+    assistente_vendedor_perguntas_por_minuto: int = 6
     cors_origins: Annotated[list[str], NoDecode] = []
     # /docs, /redoc e /openapi.json mostram o mapa inteiro da API: so ligam de proposito (dev).
     docs_habilitadas: bool = False

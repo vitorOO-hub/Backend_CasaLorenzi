@@ -17,6 +17,13 @@ class ConversaArquivada(ErroDeNegocio):
     detalhe = "Esta conversa foi arquivada. Desarquive ou comece um novo chat."
 
 
+class PerguntasDemaisPorMinuto(ErroDeNegocio):
+    """Limite por pessoa (no banco, vale para todas as instancias do servidor)."""
+
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    detalhe = "Muitas perguntas em pouco tempo. Aguarde um minuto e tente de novo."
+
+
 class LimiteDiarioDoAssistente(ErroDeNegocio):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     detalhe = "Voce chegou ao limite de perguntas ao assistente por hoje. Tente amanha."

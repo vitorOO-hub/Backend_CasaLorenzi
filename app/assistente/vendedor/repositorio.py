@@ -208,6 +208,58 @@ def avaliar_resposta(
     return alteradas == 1
 
 
+def perguntas_no_ultimo_minuto(conexao: Connection, id_usuario: UUID) -> int:
+    return int(
+        conexao.execute(
+            text(
+                """
+                SELECT count(*) FROM mensagem_assistente m
+                JOIN conversa_assistente c ON c.id_conversa = m.id_conversa
+                WHERE c.id_usuario = CAST(:u AS uuid) AND m.autor = 'usuario'
+                  AND m.criada_em >= now() - interval '1 minute'
+                """
+            ),
+            {"u": str(id_usuario)},
+        ).scalar_one()
+    )
+
+
+def pendencia(conexao: Connection, id_conversa: UUID) -> dict[str, Any] | None:
+    """Lista de homonimos que a ultima resposta pediu para escolher (se houver)."""
+    valor = conexao.execute(
+        text(
+            """
+            SELECT dados -> 'pendente' FROM mensagem_assistente
+            WHERE id_conversa = CAST(:c AS uuid) AND autor = 'assistente'
+            ORDER BY criada_em DESC, id_mensagem DESC
+            LIMIT 1
+            """
+        ),
+        {"c": str(id_conversa)},
+    ).scalar()
+    return valor if isinstance(valor, dict) else None
+
+
+def perguntas_antigas(conexao: Connection, id_conversa: UUID, pular: int, limite: int) -> list[str]:
+    """Comeco das perguntas que ficaram fora do historico (para o resumo curto)."""
+    return list(
+        conexao.execute(
+            text(
+                """
+                SELECT left(texto, 60) FROM (
+                    SELECT texto, criada_em, id_mensagem FROM mensagem_assistente
+                    WHERE id_conversa = CAST(:c AS uuid) AND autor = 'usuario'
+                    ORDER BY criada_em DESC, id_mensagem DESC
+                    OFFSET :pular LIMIT :limite
+                ) antigas
+                ORDER BY criada_em, id_mensagem
+                """
+            ),
+            {"c": str(id_conversa), "pular": pular, "limite": limite},
+        ).scalars()
+    )
+
+
 def perguntas_de_hoje(conexao: Connection, id_usuario: UUID) -> int:
     """Perguntas da pessoa desde a meia-noite de Sao Paulo, em todas as conversas dela."""
     return int(

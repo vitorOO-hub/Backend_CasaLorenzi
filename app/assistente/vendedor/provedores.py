@@ -63,9 +63,14 @@ class Resultado:
     tokens_saida: int = 0
     # Verdadeiro quando o limite de rodadas de ferramenta acabou antes da resposta final.
     rodadas_esgotadas: bool = False
+    # Verdadeiro quando o backend montou a resposta logo depois da ferramenta (`concluir`).
+    concluido_pelo_backend: bool = False
 
 
 Executar = Callable[[str, dict[str, Any]], dict[str, Any]]
+# Depois de cada rodada de ferramentas: texto pronto do backend (encerra sem nova chamada ao
+# modelo) ou None (o modelo continua e escreve a resposta).
+Concluir = Callable[[list["ChamadaFeita"]], str | None]
 
 
 class ErroDoProvedor(Exception):
@@ -90,6 +95,7 @@ class Provedor(Protocol):
         *,
         max_rodadas: int,
         max_tokens: int,
+        concluir: Concluir | None = None,
     ) -> Resultado: ...
 
 
@@ -127,6 +133,14 @@ def _espera_pedida(resposta: httpx.Response) -> float | None:
 
 def _inteiro(valor: Any) -> int:
     return valor if isinstance(valor, int) and valor >= 0 else 0
+
+
+def _concluiu(resultado: Resultado, concluir: Concluir | None) -> bool:
+    texto = concluir(resultado.chamadas) if concluir else None
+    if texto is None:
+        return False
+    resultado.texto, resultado.concluido_pelo_backend = texto, True
+    return True
 
 
 class _ClienteHttp:
@@ -167,7 +181,16 @@ class ProvedorGroq:
         self._http = _ClienteHttp("groq", cliente)
 
     def conversar(
-        self, modelo, sistema, historico, ferramentas, executar, *, max_rodadas, max_tokens
+        self,
+        modelo,
+        sistema,
+        historico,
+        ferramentas,
+        executar,
+        *,
+        max_rodadas,
+        max_tokens,
+        concluir=None,
     ):
         mensagens: list[dict[str, Any]] = [{"role": "system", "content": sistema}]
         mensagens += [
@@ -229,6 +252,8 @@ class ProvedorGroq:
                         "content": json.dumps(saida, ensure_ascii=False, default=str),
                     }
                 )
+            if _concluiu(resultado, concluir):
+                return resultado
         resultado.rodadas_esgotadas = True
         return resultado
 
@@ -237,7 +262,9 @@ def _schema_gemini(parametros: dict[str, Any]) -> dict[str, Any]:
     """O Gemini nao aceita `additionalProperties` e usa os tipos em maiusculas."""
     schema = json.loads(json.dumps(parametros))
     schema.pop("additionalProperties", None)
-    for valor in [schema, *schema.get("properties", {}).values()]:
+    propriedades = list(schema.get("properties", {}).values())
+    itens = [p["items"] for p in propriedades if isinstance(p.get("items"), dict)]
+    for valor in [schema, *propriedades, *itens]:
         if isinstance(valor.get("type"), str):
             valor["type"] = valor["type"].upper()
     return schema
@@ -249,7 +276,16 @@ class ProvedorGemini:
         self._http = _ClienteHttp("gemini", cliente)
 
     def conversar(
-        self, modelo, sistema, historico, ferramentas, executar, *, max_rodadas, max_tokens
+        self,
+        modelo,
+        sistema,
+        historico,
+        ferramentas,
+        executar,
+        *,
+        max_rodadas,
+        max_tokens,
+        concluir=None,
     ):
         conteudos: list[dict[str, Any]] = [
             {"role": "user" if t.autor == "usuario" else "model", "parts": [{"text": t.texto}]}
@@ -299,6 +335,8 @@ class ProvedorGemini:
                 resultado.chamadas.append(ChamadaFeita(nome, argumentos, saida))
                 respostas.append({"functionResponse": {"name": nome, "response": saida}})
             conteudos.append({"role": "user", "parts": respostas})
+            if _concluiu(resultado, concluir):
+                return resultado
         resultado.rodadas_esgotadas = True
         return resultado
 

@@ -8,6 +8,7 @@ vira um ranking de clientes.
 import re
 import unicodedata
 from dataclasses import dataclass
+from typing import Literal
 
 
 def _normalizar(texto: str) -> str:
@@ -52,6 +53,60 @@ class Intencao:
     navegacao: bool
     # A pergunta de navegacao tambem pede dados ("onde vejo quanto vendemos hoje?").
     tambem_pede_dados: bool = False
+
+
+_CAMPOS_DE_CLIENTE = {
+    "cpf": re.compile(r"\bcpf\b"),
+    "email": re.compile(r"\be-? ?mail\b"),
+    "telefone": re.compile(r"\b(telefone|celular|fone|whatsapp|whats|zap)\b"),
+}
+_COMPRAS_DO_CLIENTE = re.compile(
+    r"\b(comprou|levou|gastou)\b|"
+    r"\b(compras?|pedidos?)\s+(do|da)\s+(?!(dia|mes|semana|loja|periodo|ano|hoje)\b)\w"
+)
+# "Quem comprou mais" e ranking (outra ferramenta), nao a consulta de um cliente.
+_RANKING = re.compile(r"\b(quem|quais clientes|ranking|mais compr\w*|melhores|top)\b")
+# O que sobra da pergunta sem estas palavras e (ou contem) o cliente.
+_SEM_CLIENTE = set(
+    """
+    qual quais o a os as e ou um uma do da de dos das no na nos nas em pra para por com que oque
+    cliente clientes cpf email mail e-mail telefone celular fone whatsapp whats zap contato numero
+    comprou levou gastou compra compras pedido pedidos item itens total valor quanto quanta quantos
+    quantas foi foram me passa passe manda mande diz diga fala fale mostra mostre informe ver saber
+    tem ta esta eh e qual hoje ontem anteontem dia dias semana mes ano passado passada este esse
+    esta essa neste nesse nesta nessa janeiro fevereiro marco abril maio junho julho agosto setembro
+    outubro novembro dezembro dele dela desse dessa deste desta
+    """.split()
+)
+
+
+@dataclass(frozen=True)
+class ConsultaCliente:
+    """Pergunta sobre um cliente: um dado do cadastro (CPF, e-mail, telefone) ou as compras."""
+
+    tipo: Literal["campos", "compras"]
+    campos: tuple[str, ...]
+    # A pergunta diz quem e o cliente (nome, e-mail ou CPF)? Sem isso, o chat pergunta antes.
+    tem_cliente: bool
+
+
+def consulta_de_cliente(pergunta: str) -> ConsultaCliente | None:
+    texto = _normalizar(pergunta)
+    if _RANKING.search(texto):
+        return None
+    campos = tuple(campo for campo, padrao in _CAMPOS_DE_CLIENTE.items() if padrao.search(texto))
+    if _COMPRAS_DO_CLIENTE.search(texto):
+        tipo = "compras"
+    elif campos:
+        tipo = "campos"
+    else:
+        return None
+    sobra = [
+        p
+        for p in re.findall(r"[a-z]+|\S+@\S+|\d[\d.\-/]*", texto)
+        if p not in _SEM_CLIENTE and not re.fullmatch(r"\d{1,2}([/.-]\d{1,4}){0,2}", p)
+    ]
+    return ConsultaCliente(tipo, campos, tem_cliente=bool(sobra))
 
 
 def classificar(pergunta: str) -> Intencao:
