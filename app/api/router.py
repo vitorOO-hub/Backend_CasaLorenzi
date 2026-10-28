@@ -7,6 +7,7 @@ esquecer isso.
 
 from fastapi import APIRouter
 
+from app.acesso.router import router as acesso_router
 from app.api import health
 from app.assistente.cliente.router import router as assistente_cliente_router
 from app.assistente.router import router as assistente_router
@@ -37,6 +38,8 @@ api_router.include_router(cliente_router, prefix="/api/v1")
 api_router.include_router(assistente_cliente_router, prefix="/api/v1")
 # Unica area publica de escrita: o cliente importado ainda nao tem login (ver app/ativacao).
 api_router.include_router(ativacao_router, prefix="/api/v1")
+# Publica: login do cliente por CPF e senha (limite por IP, sem revelar conta).
+api_router.include_router(acesso_router, prefix="/api/v1")
 api_router.include_router(clientes_router, prefix="/api/v1")
 # Assistente do vendedor (chat com IA, so leitura na loja do token).
 api_router.include_router(assistente_vendedor_router, prefix="/api/v1")

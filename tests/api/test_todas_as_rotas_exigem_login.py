@@ -29,6 +29,8 @@ ABERTAS = {
     # Ativacao da conta do cliente importado: ele ainda nao tem login (limite por IP).
     "/api/v1/ativacao-conta",
     "/api/v1/ativacao-conta/consultar",
+    # Login por CPF: troca CPF e senha por sessao do Supabase (limite por IP, sem revelar conta).
+    "/api/v1/acesso/entrar-cpf",
 }
 METODOS = {"get", "post", "put", "patch", "delete"}
 
