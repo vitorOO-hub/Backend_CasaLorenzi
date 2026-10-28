@@ -32,10 +32,10 @@ LIMITE_PRODUTOS = 5
 LIMITE_PEDIDOS = 5
 LIMITE_OFERTAS = 3
 MAX_VARIACOES = 12  # por peca, na resposta ao modelo e no seletor do cartao
-# Busca semantica (distancia de cosseno, 0 = identica). Com o gemini-embedding-001 as distancias
-# ficam proximas (o que tem a ver ~0,25-0,33; o resto ~0,35-0,43), mas a ordem e boa: entram so
-# as pecas perto da melhor, com um teto absoluto.
-DISTANCIA_MAXIMA = 0.40
+# Busca semantica (distancia de cosseno, 0 = identica). Com o gemini-embedding-2 o que tem a ver
+# fica em ~0,42-0,48 e o resto em ~0,51-0,60, mas a ordem e boa: entram so as pecas perto da
+# melhor, com um teto absoluto.
+DISTANCIA_MAXIMA = 0.60
 MARGEM_DA_MELHOR = 0.04
 # Palavras que o cliente fala mas que nao estao no nome da peca ("camisa DE linho"), como no
 # assistente do vendedor (app/assistente/vendedor/ferramentas.py).

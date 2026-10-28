@@ -1,6 +1,6 @@
 """Gera os embeddings das pecas para a busca semantica do assistente do cliente.
 
-Vetoriza com o Gemini (`gemini-embedding-001`, 768 dimensoes) o nome, a marca, a categoria, a
+Vetoriza com o Gemini (`gemini-embedding-2`, 768 dimensoes) o nome, a marca, a categoria, a
 colecao, o tipo, o tecido, as cores e a nota de cada peca ativa e grava em `produto.embedding`. So
 pega peca sem embedding ou editada depois dele; `--todas` refaz tudo (ao trocar texto ou modelo).
 

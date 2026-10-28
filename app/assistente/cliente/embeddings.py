@@ -1,4 +1,8 @@
-"""Embeddings das pecas para a busca semantica do assistente (Gemini `gemini-embedding-001`).
+"""Embeddings das pecas para a busca semantica do assistente (Gemini `gemini-embedding-2`).
+
+Mesmo modelo e mesma chamada (sem `taskType`) do chatbot do admin (app/assistente/embeddings.py):
+os dois gravam e leem a mesma coluna `produto.embedding`, e vetores de modelos diferentes nao se
+comparam. Se um trocar de modelo, o outro troca junto e todas as pecas sao regravadas.
 
 A coluna `produto.embedding` e `vector(768)` com indice HNSW de cosseno (migration
 20261027120000); o modelo devolve 768 dimensoes com `outputDimensionality`. Quem gera os vetores
@@ -21,7 +25,7 @@ from app.core.config import Settings
 
 log = logging.getLogger(__name__)
 
-MODELO = "gemini-embedding-001"
+MODELO = "gemini-embedding-2"
 DIMENSOES = 768
 URL = "https://generativelanguage.googleapis.com/v1beta/models/{modelo}:{acao}"
 # A busca do cliente espera pouco: se o Gemini demorar, fica so a busca por palavras.
@@ -66,7 +70,6 @@ class EmbeddingsGemini:
             "embedContent",
             {
                 "content": {"parts": [{"text": texto}]},
-                "taskType": "RETRIEVAL_QUERY",
                 "outputDimensionality": DIMENSOES,
             },
             TEMPO_DA_CONSULTA_SEGUNDOS,
@@ -84,7 +87,6 @@ class EmbeddingsGemini:
                     {
                         "model": f"models/{MODELO}",
                         "content": {"parts": [{"text": texto}]},
-                        "taskType": "RETRIEVAL_DOCUMENT",
                         "outputDimensionality": DIMENSOES,
                     }
                     for texto in textos

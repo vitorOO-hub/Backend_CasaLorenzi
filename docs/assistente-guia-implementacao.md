@@ -61,7 +61,8 @@ Atualizações do assistente do cliente:
   `app/assistente/cliente/politicas.md`, lidas pela ferramenta `consultar_politica`. Tema marcado
   como `PENDENTE` faz o assistente passar para a equipe. Um teste confere os números do documento
   contra o código (frete, pontos, categorias).
-- Busca semântica: `gemini-embedding-001` com 768 dimensões em `produto.embedding`
+- Busca semântica: `gemini-embedding-2` com 768 dimensões em `produto.embedding`, o mesmo modelo
+  do chatbot do admin (os dois usam a mesma coluna; vetores de modelos diferentes não se comparam)
   (`app/assistente/cliente/embeddings.py`). `scripts/gerar_embeddings_produtos.py` gera os vetores
   das peças sem embedding ou editadas depois dele; rodar de novo após importar ou editar o catálogo.
   Sem embedding (ou com o Gemini fora), a busca por palavras continua sozinha.

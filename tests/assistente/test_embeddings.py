@@ -39,9 +39,10 @@ def test_consulta_pede_768_dimensoes_com_a_chave_so_no_cabecalho():
     (requisicao,) = pedidos
     assert requisicao.headers["x-goog-api-key"] == CHAVE
     assert CHAVE not in str(requisicao.url)
-    assert str(requisicao.url).endswith("/models/gemini-embedding-001:embedContent")
+    # Mesmo modelo e mesma chamada do chatbot do admin: os dois usam a coluna produto.embedding.
+    assert str(requisicao.url).endswith("/models/gemini-embedding-2:embedContent")
     corpo = json.loads(requisicao.content)
-    assert corpo["taskType"] == "RETRIEVAL_QUERY" and corpo["outputDimensionality"] == 768
+    assert corpo["outputDimensionality"] == 768 and "taskType" not in corpo
 
 
 def test_documentos_em_lote():
@@ -50,7 +51,8 @@ def test_documentos_em_lote():
     vetores = _gerador([resposta], pedidos).documentos(["a", "b"])
     assert len(vetores) == 2
     corpo = json.loads(pedidos[0].content)
-    assert [r["taskType"] for r in corpo["requests"]] == ["RETRIEVAL_DOCUMENT"] * 2
+    assert [r["model"] for r in corpo["requests"]] == ["models/gemini-embedding-2"] * 2
+    assert all("taskType" not in r for r in corpo["requests"])
     with pytest.raises(ValueError):
         _gerador([], []).documentos(["x"] * (embeddings.TAMANHO_DO_LOTE + 1))
 
