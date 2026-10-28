@@ -51,10 +51,6 @@ def test_ferramenta_desconhecida(ferramentas):
         ("montar_carrinho", {"sku": "VLT-1", "quantidade": 0}),
         ("montar_carrinho", {"sku": "VLT-1", "quantidade": 500}),
         ("transferir_para_atendente", {"motivo": "oi", "resumo": "curto"}),
-        (
-            "transferir_para_atendente",
-            {"motivo": "Troca", "resumo": "Quer trocar a peca.", "categoria": "vip"},
-        ),
     ],
 )
 def test_argumento_invalido_ou_extra_e_recusado_sem_chamar_service(

@@ -12,7 +12,8 @@ from uuid import UUID
 
 from sqlalchemy.engine import Connection
 
-from app.assistente.cliente import repositorio
+from app.assistente.cliente import lojas, repositorio
+from app.cliente import repositorio as cliente_repositorio
 from app.cliente import service as cliente
 from app.core.papeis import UsuarioAtual
 
@@ -24,9 +25,15 @@ CABECALHO = "Chamado aberto pelo assistente do site."
 NOMES = {"usuario": "Cliente", "assistente": "Assistente"}
 
 
-def montar_descricao(mensagens: list[dict[str, Any]], *, motivo: str, resumo: str | None) -> str:
+def montar_descricao(
+    mensagens: list[dict[str, Any]], *, motivo: str, resumo: str | None, loja: str | None = None
+) -> str:
     """Motivo e resumo no topo; abaixo, a conversa. Se nao couber, ficam as mais recentes."""
-    topo = [CABECALHO, f"Motivo: {motivo}"]
+    topo = [
+        CABECALHO,
+        f"Motivo: {motivo}",
+        f"Loja: {loja} (citada pelo cliente)" if loja else "Loja: nao identificada (fila geral)",
+    ]
     if resumo:
         topo.append(f"Resumo do assistente: {resumo}")
     inicio = "\n".join(topo) + "\n\nConversa com o assistente:"
@@ -53,18 +60,24 @@ def abrir_chamado_da_conversa(
     categoria: str = "outro",
     resumo: str | None = None,
 ) -> dict[str, Any]:
-    """Abre o chamado do cliente do token com a conversa anexada. Quem chama marca a conversa."""
+    """Abre o chamado do cliente do token com a conversa anexada. Quem chama marca a conversa.
+
+    Se o cliente falou de uma loja especifica, o chamado vai para a equipe dela; senao, fila geral.
+    """
     mensagens = (
         repositorio.mensagens_visiveis(conexao, id_conversa, MENSAGENS_NA_TRANSCRICAO)
         if id_conversa
         else []
     )
-    return cliente.criar_chamado(
-        conexao,
-        usuario,
-        {
-            "assunto": assunto.strip()[:LIMITE_ASSUNTO] or "Atendimento pelo assistente",
-            "categoria": categoria,
-            "descricao": montar_descricao(mensagens, motivo=motivo, resumo=resumo),
-        },
-    )
+    do_cliente = [m["texto"] for m in mensagens if m["autor"] == "usuario"]
+    loja = lojas.identificar(do_cliente, cliente_repositorio.listar_lojas(conexao))
+    dados: dict[str, Any] = {
+        "assunto": assunto.strip()[:LIMITE_ASSUNTO] or "Atendimento pelo assistente",
+        "categoria": categoria,
+        "descricao": montar_descricao(
+            mensagens, motivo=motivo, resumo=resumo, loja=loja.nome if loja else None
+        ),
+    }
+    if loja:
+        dados["id_loja"] = loja.id_loja
+    return cliente.criar_chamado(conexao, usuario, dados)

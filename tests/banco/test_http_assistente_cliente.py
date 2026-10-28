@@ -267,14 +267,14 @@ def test_pergunta_incompleta_nao_chama_o_modelo(cena):
     assert "qual peça" in corpo["resposta"]
 
 
-def test_erro_do_provedor_passa_para_a_equipe_que_le_a_conversa(cena):
+def test_sem_resposta_do_modelo_passa_para_a_equipe_que_le_a_conversa(cena):
     http, como, provedor, pg, _ = cena
     conversa = _nova(http, como("cliente"))
     provedor.texto = "Qual o numero do pedido?"
     assert (
         _enviar(http, como("cliente"), conversa, "minha camisa veio com defeito").status_code == 200
     )
-    provedor.erro = ErroProvedor("groq", "resposta de erro do provedor", 500)
+    provedor.texto = ""  # o modelo nao devolveu resposta
     r = _enviar(http, como("cliente"), conversa, "pedido PD-77, costura aberta na manga")
     assert r.status_code == 200
     corpo = r.json()
@@ -282,7 +282,8 @@ def test_erro_do_provedor_passa_para_a_equipe_que_le_a_conversa(cena):
     assert "chave" not in r.text.lower()
     registros = _registros(pg, conversa)
     assert [x[0] for x in registros] == ["usuario", "assistente", "usuario", "assistente"]
-    assert registros[-1][3]["status_http"] == 500 and registros[-1][4] is True
+    assert registros[-1][3]["motivo_passagem"] == "o modelo nao devolveu texto"
+    assert registros[-1][4] is True
     # O chamado sem loja cai na fila geral: o atendente le a conversa sem o cliente repetir nada.
     id_ = corpo["id_atendimento"]
     lidas = http.get(f"/api/v1/painel/chat/conversas/{id_}/mensagens", headers=como("atendente"))
@@ -311,6 +312,17 @@ def test_erro_do_provedor_passa_para_a_equipe_que_le_a_conversa(cena):
     assert do_cliente[-1]["texto"] == "Oi! Ja vi o resumo, vamos trocar a peca."
 
 
+def test_falha_tecnica_do_provedor_nao_abre_chamado(cena):
+    http, como, provedor, pg, _ = cena
+    conversa = _nova(http, como("cliente"))
+    provedor.erro = ErroProvedor("gemini", "resposta de erro do provedor", 503)
+    corpo = _enviar(http, como("cliente"), conversa, "quais os metodos de pagamento?").json()
+    assert corpo["status"] == "ativa" and corpo["id_atendimento"] is None
+    assert "instabilidade" in corpo["resposta"]
+    registros = _registros(pg, conversa)
+    assert registros[-1][3]["status_http"] == 503
+
+
 def test_limite_diario_por_cliente(cena, monkeypatch):
     from app.assistente.cliente import service
 
@@ -324,3 +336,22 @@ def test_limite_diario_por_cliente(cena, monkeypatch):
     outra = _nova(http, como("cliente"))
     assert _enviar(http, como("cliente"), outra, "oi").status_code == 429
     assert _enviar(http, como("outro"), _nova(http, como("outro")), "oi").status_code == 200
+
+
+def test_chamado_vai_para_a_loja_que_o_cliente_citou(cena):
+    http, como, provedor, pg, ids = cena
+    conversa = _nova(http, como("cliente"))
+    provedor.texto = ""
+    texto = f"comprei na loja assistente {ids['sufixo']} e a peca veio com defeito"
+    corpo = _enviar(http, como("cliente"), conversa, texto).json()
+    assert corpo["status"] == "com_atendente"
+    loja = pg.execute(
+        "SELECT id_loja FROM atendimento WHERE id_atendimento = %s", (corpo["id_atendimento"],)
+    ).fetchone()[0]
+    assert loja == ids["loja"]
+    # A equipe da loja ve o chamado e le de onde ele veio.
+    lidas = http.get(
+        f"/api/v1/painel/chat/conversas/{corpo['id_atendimento']}/mensagens",
+        headers=como("atendente"),
+    ).json()
+    assert "(citada pelo cliente)" in lidas["mensagens"][0]["texto"]

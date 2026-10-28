@@ -14,6 +14,7 @@ def test_descricao_tem_motivo_resumo_e_conversa_em_ordem():
     assert descricao.splitlines() == [
         "Chamado aberto pelo assistente do site.",
         "Motivo: Entrega atrasada",
+        "Loja: nao identificada (fila geral)",
         "Resumo do assistente: Pedido PD-12 atrasado.",
         "",
         "Conversa com o assistente:",

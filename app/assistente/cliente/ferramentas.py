@@ -12,21 +12,30 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from typing import Annotated, Any, Literal
+from datetime import datetime
+from typing import Annotated, Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 from sqlalchemy.engine import Connection
 
-from app.assistente.cliente import passagem, repositorio
+from app.assistente.cliente import passagem, politicas, repositorio
 from app.assistente.cliente.provedor import Ferramenta
 from app.cliente import service as cliente
+from app.cliente.vencimento_pontos import SP
+from app.core.horario import aberta, descrever
 from app.core.papeis import UsuarioAtual
 
 log = logging.getLogger(__name__)
 
 LIMITE_PRODUTOS = 5
 LIMITE_PEDIDOS = 5
+# Palavras que o cliente fala mas que nao estao no nome da peca ("camisa DE linho"), como no
+# assistente do vendedor (app/assistente/vendedor/ferramentas.py).
+SEM_PESO = frozenset(
+    {"de", "da", "do", "das", "dos", "com", "sem", "para", "e", "a", "o", "em", "um", "uma"}
+)
+TEMAS_DE_POLITICA = tuple(politicas.todas())
 CATEGORIAS_DE_CHAMADO = (
     "pedido",
     "entrega",
@@ -60,6 +69,12 @@ class ConsultarEstoque(_Entrada):
     loja: Texto | None = None
 
 
+class ConsultarPolitica(_Entrada):
+    # Sem enum no esquema enviado ao modelo: o Groq recusa a chamada inteira (HTTP 400) quando o
+    # modelo erra o valor. A validacao fica aqui, e o erro volta ao modelo com os temas validos.
+    tema: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=40)]
+
+
 class InfoLoja(_Entrada):
     loja: Texto | None = None
 
@@ -81,7 +96,8 @@ class MontarCarrinho(_Entrada):
 class TransferirParaAtendente(_Entrada):
     motivo: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=200)]
     resumo: Annotated[str, StringConstraints(strip_whitespace=True, min_length=10, max_length=1500)]
-    categoria: Literal[CATEGORIAS_DE_CHAMADO] = "outro"  # type: ignore[valid-type]
+    # Categoria fora da lista vira "outro" (o chamado nao se perde por um rotulo errado).
+    categoria: Annotated[str, StringConstraints(strip_whitespace=True, max_length=40)] = "outro"
 
 
 DECLARACOES = [
@@ -164,9 +180,26 @@ DECLARACOES = [
                     "type": "string",
                     "description": "2 ou 3 linhas com o essencial da conversa",
                 },
-                "categoria": {"type": "string", "enum": list(CATEGORIAS_DE_CHAMADO)},
+                "categoria": {
+                    "type": "string",
+                    "description": "Uma de: " + ", ".join(CATEGORIAS_DE_CHAMADO),
+                },
             },
             "required": ["motivo", "resumo"],
+            "additionalProperties": False,
+        },
+    ),
+    Ferramenta(
+        "consultar_politica",
+        "Politicas oficiais da loja: trocas, devolucao, defeito, reembolso, cancelamento, "
+        "frete, prazo de entrega, retirada na loja, pagamento e parcelamento, ajustes e "
+        "agendamento, regras do Lorenzi+. Responda so com o texto devolvido.",
+        {
+            "type": "object",
+            "properties": {
+                "tema": {"type": "string", "description": "Um de: " + ", ".join(TEMAS_DE_POLITICA)}
+            },
+            "required": ["tema"],
             "additionalProperties": False,
         },
     ),
@@ -178,6 +211,16 @@ def _normalizar(texto: str) -> str:
     return "".join(c for c in sem_acento if not unicodedata.combining(c)).strip()
 
 
+def _tema_da_politica(tema: str) -> str | None:
+    """'troca', 'Trocas' ou 'prazo de entrega' tambem valem: o codigo exato, se houver um so."""
+    palavras = re.findall(r"[a-z]+", _normalizar(tema))
+    alvo = "_".join(p for p in palavras if p not in {"de", "da", "do", "e", "a", "o"})
+    if alvo in TEMAS_DE_POLITICA:
+        return alvo
+    parecidos = [t for t in TEMAS_DE_POLITICA if t.startswith(alvo) or alvo.startswith(t)]
+    return parecidos[0] if len(parecidos) == 1 else None
+
+
 class Ferramentas:
     """Executa as ferramentas para o cliente do token. Guarda o que o fluxo precisa saber depois
     (chamado aberto, sacola alterada)."""
@@ -187,6 +230,8 @@ class Ferramentas:
     ) -> None:
         self.conexao, self.usuario, self.id_conversa = conexao, usuario, id_conversa
         self.id_atendimento: UUID | None = None
+        # Loja do chamado (None = fila geral), para o aviso de horario da resposta.
+        self.id_loja_chamado: UUID | None = None
         self.carrinho_alterado = False
 
     def executar(self, nome: str, argumentos: dict[str, Any]) -> dict[str, Any]:
@@ -207,7 +252,8 @@ class Ferramentas:
 
     def _buscar_produto(self, argumentos: dict[str, Any]) -> dict[str, Any]:
         dados = BuscarProduto.model_validate(argumentos)
-        termos = [t for t in re.findall(r"[0-9a-zà-ÿ]{2,}", _normalizar(dados.descricao))][:6]
+        palavras = re.findall(r"[0-9a-zà-ÿ]{2,}", _normalizar(dados.descricao))
+        termos = [t for t in palavras if t not in SEM_PESO][:6]
         if not termos:
             return {"pecas": [], "observacao": "descricao sem termos de busca"}
         pecas = repositorio.buscar_produtos(self.conexao, termos, LIMITE_PRODUTOS)
@@ -232,9 +278,12 @@ class Ferramentas:
             "total": sum(r["quantidade"] for r in linhas),
         }
 
+    def _lojas(self) -> list[dict[str, Any]]:
+        return cliente.listar_lojas(self.conexao, self.usuario)
+
     def _info_loja(self, argumentos: dict[str, Any]) -> dict[str, Any]:
         dados = InfoLoja.model_validate(argumentos)
-        lojas = cliente.listar_lojas(self.conexao, self.usuario)
+        lojas = self._lojas()
         if dados.loja:
             alvo = _normalizar(dados.loja)
             lojas = [lj for lj in lojas if alvo in _normalizar(str(lj["nome"]))]
@@ -247,7 +296,10 @@ class Ferramentas:
                     "uf": lj.get("uf"),
                     "telefone": lj.get("telefone"),
                     # Nulo = a loja nao tem horario cadastrado: o assistente deve dizer isso.
-                    "horario_funcionamento": lj.get("horario_funcionamento"),
+                    "horario_funcionamento": descrever(lj.get("horario_funcionamento")),
+                    "aberta_agora": aberta(lj.get("horario_funcionamento"), datetime.now(SP))
+                    if lj.get("horario_funcionamento")
+                    else None,
                 }
                 for lj in lojas
             ]
@@ -288,6 +340,29 @@ class Ferramentas:
             ]
         }
 
+    def _consultar_politica(self, argumentos: dict[str, Any]) -> dict[str, Any]:
+        dados = ConsultarPolitica.model_validate(argumentos)
+        codigo = _tema_da_politica(dados.tema)
+        if codigo is None:
+            return {"erro": "tema_desconhecido", "temas_validos": list(TEMAS_DE_POLITICA)}
+        politica = politicas.todas()[codigo]
+        resultado = {
+            # Antes do texto: o modelo menor tende a repetir a secao inteira.
+            "como_responder": (
+                "Responda em 1 ou 2 frases curtas so o que o cliente perguntou, com base neste "
+                "texto. Nao repita o texto inteiro."
+            ),
+            "tema": politica.codigo,
+            "titulo": politica.titulo,
+            "texto": politica.texto,
+        }
+        if politica.pendente:
+            resultado["orientacao"] = (
+                "ha ponto sem definicao oficial: nao informe esse ponto; ofereca transferir para a "
+                "equipe (transferir_para_atendente)"
+            )
+        return resultado
+
     # ---------------------------------------------------------------- acoes
 
     def _montar_carrinho(self, argumentos: dict[str, Any]) -> dict[str, Any]:
@@ -310,8 +385,13 @@ class Ferramentas:
             self.id_conversa,
             assunto=dados.motivo,
             motivo=dados.motivo,
-            categoria=dados.categoria,
+            categoria=dados.categoria if dados.categoria in CATEGORIAS_DE_CHAMADO else "outro",
             resumo=dados.resumo,
         )
         self.id_atendimento = UUID(str(chamado["id_atendimento"]))
-        return {"transferido": True, "protocolo": chamado.get("protocolo")}
+        self.id_loja_chamado = UUID(str(chamado["id_loja"])) if chamado.get("id_loja") else None
+        return {
+            "transferido": True,
+            "protocolo": chamado.get("protocolo"),
+            "equipe": chamado.get("loja_nome") or "atendimento geral",
+        }
