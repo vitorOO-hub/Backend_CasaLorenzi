@@ -294,3 +294,12 @@ def test_codigo_do_erro_400_fica_registrado_sem_a_mensagem():
     with pytest.raises(ErroProvedor) as erro:
         _responder(ProvedorGroq(CHAVE, _cliente([falha], [])))
     assert erro.value.codigo == "tool_use_failed" and "geracao" not in str(erro.value)
+
+
+def test_espera_pedida_pelo_provedor_fica_no_erro():
+    limite = httpx.Response(
+        429, headers={"retry-after": "305"}, json={"error": {"code": "rate_limit_exceeded"}}
+    )
+    with pytest.raises(ErroProvedor) as erro:
+        _responder(ProvedorGroq(CHAVE, _cliente([limite], [])))
+    assert erro.value.espera == 305.0

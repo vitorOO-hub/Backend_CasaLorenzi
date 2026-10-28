@@ -61,9 +61,16 @@ class ErroProvedor(RuntimeError):
     """`codigo` e o codigo de erro do provedor (ex.: rate_limit_exceeded), nunca o corpo inteiro."""
 
     def __init__(
-        self, provedor: str, motivo: str, status: int | None = None, codigo: str | None = None
+        self,
+        provedor: str,
+        motivo: str,
+        status: int | None = None,
+        codigo: str | None = None,
+        espera: float | None = None,
     ) -> None:
         self.provedor, self.motivo, self.status, self.codigo = provedor, motivo, status, codigo
+        # Segundos que o provedor pediu para esperar (retry-after), quando ha limite de uso.
+        self.espera = espera
         super().__init__(
             f"{provedor}: {motivo}"
             + (f" (HTTP {status})" if status else "")
@@ -146,6 +153,7 @@ def _postar(cliente: httpx.Client, provedor: str, url: str, cabecalhos: dict, co
             "resposta de erro do provedor",
             resposta.status_code,
             _codigo_do_erro(resposta),
+            espera if resposta.status_code == 429 else None,
         )
     try:
         dados = resposta.json()

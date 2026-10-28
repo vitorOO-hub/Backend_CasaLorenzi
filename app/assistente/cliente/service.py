@@ -86,6 +86,12 @@ TEXTO_INDISPONIVEL = (
     "O assistente está indisponível no momento. Se precisar, abra um chamado na área Atendimento."
 )
 TEXTO_OCUPADO = "Estou recebendo muitas mensagens agora. Tente de novo em um minuto, por favor."
+TEXTO_SEM_COTA = (
+    "O assistente atingiu o limite de uso no momento. Tente de novo mais tarde; se for urgente, "
+    "abra um chamado na área Atendimento."
+)
+# Acima disto (cota diaria do provedor, por exemplo), "tente em um minuto" seria falso.
+ESPERA_CURTA_SEGUNDOS = 90
 TEXTO_FALHA = (
     "Não consegui responder agora. Tente de novo em instantes ou abra um chamado na área "
     "Atendimento."
@@ -170,11 +176,12 @@ def enviar_mensagem(
         log.warning("provedor do assistente falhou: %s", erro)
         if erro.limite_de_uso:
             # Limite por minuto do provedor: e capacidade, nao duvida do cliente; nao abre chamado.
+            curta = erro.espera is None or erro.espera <= ESPERA_CURTA_SEGUNDOS
             return _responder(
                 conexao,
                 id_conversa,
                 plano,
-                TEXTO_OCUPADO,
+                TEXTO_OCUPADO if curta else TEXTO_SEM_COTA,
                 sem_resposta=True,
                 modelo=rotulo_modelo,
                 dados={"erro": erro.motivo, "status_http": erro.status, "codigo": erro.codigo},

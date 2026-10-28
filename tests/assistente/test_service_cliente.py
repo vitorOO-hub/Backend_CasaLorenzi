@@ -507,3 +507,12 @@ def test_limite_do_provedor_pede_para_tentar_depois_sem_abrir_chamado(repo, cham
     assert resposta["resposta"] == service.TEXTO_OCUPADO
     assert resposta["status"] == "ativa" and chamados.abertos == []
     assert _assistente(repo)["dados"]["codigo"] == "rate_limit_exceeded"
+
+
+def test_cota_do_dia_esgotada_nao_promete_um_minuto(repo, chamados):
+    erro = ErroProvedor(
+        "groq", "resposta de erro do provedor", 429, "rate_limit_exceeded", espera=305
+    )
+    resposta, _, _ = _enviar(repo, "oi, tudo bem?", ProvedorFalso(erro=erro))
+    assert resposta["resposta"] == service.TEXTO_SEM_COTA
+    assert chamados.abertos == []
