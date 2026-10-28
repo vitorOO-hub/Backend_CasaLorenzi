@@ -18,6 +18,8 @@ Desenho completo: `docs/superpowers/specs/2026-10-27-assistente-base-design.md`.
 | Chaves e destinos de LLM | `Settings.gemini_api_key`, `Settings.groq_api_key`, `assistente_modelo_rapido`, `assistente_modelo_preciso` | opcionais; destinos no formato `provedor:modelo` |
 | Classificador e plano de roteamento | `app/assistente/roteamento.py` | implementado e testado; ainda não chama provedores |
 | Benchmark de modelos | `scripts/benchmark_chatbot/` | piloto isolado, importa o classificador compartilhado |
+| Chatbot administrativo (backend) | `app/assistente/` | conversas privadas de admin, roteamento Groq/Gemini e ferramentas de consulta; sem frontend |
+| Assistente do cliente (backend e site) | `app/assistente/cliente/` | rotas em `/api/v1/assistente/cliente/conversas`; ferramentas de busca, estoque, loja, pontos, pedidos, sacola e transferência; quando não consegue responder, abre chamado com resumo e conversa (`passagem.py`) |
 
 ## 2. Onde colocar o código
 
@@ -43,6 +45,13 @@ Rotas sugeridas:
 | POST | `/assistente/conversas` | cliente logado, gerente ou admin; o tipo (`cliente`/`interno`) vem do token |
 | GET | `/assistente/conversas/{id}` | só o dono da conversa |
 | POST | `/assistente/conversas/{id}/mensagens` | só o dono; devolve a resposta do assistente |
+
+Como ficou: o chatbot administrativo usa `/assistente/conversas` (só admin) e o do cliente usa
+`/assistente/cliente/conversas` (só cliente), cada um com o próprio contrato. O do cliente tem limite
+de 40 mensagens por cliente por dia e conta como escrita sensível no limite por IP. Busca de produto
+ainda é por texto (nome, categoria, cor, tecido, marca) enquanto os embeddings não forem gerados.
+Sem modelo configurado, ele só avisa que está indisponível; nos demais casos em que não consegue
+responder com segurança, passa a conversa para a equipe com o resumo.
 
 ## 3. Ferramentas: o que cada uma chama
 
@@ -71,6 +80,30 @@ sempre do token** (`UsuarioAtual`), nunca de argumento do modelo. Nenhuma ferram
 | `pontos_a_vencer(dias)` | `app.gerencia.service.montar_pontos_a_vencer` | **só admin**; só totais |
 | `reposicao()` | `app.gerencia.service.montar_reposicao` | idem ao de vendas |
 | `lojas()` | `app.gerencia.service.montar_lojas` | idem |
+
+O chatbot administrativo foi separado das consultas de gerente e só aceita `Papel.ADMIN`. Ele pode
+consultar vendas, estoque/saldo, movimentações, ajustes, transferências, mínimos, reposição, estoque
+parado, lojas, pendências, chamados e mensagens, equipe, catálogo, clientes/fichas, auditoria, integrações,
+vendas pendentes e totais de pontos a vencer. Toda consulta chama uma função allowlisted do servidor;
+não há SQL livre nem ferramenta de escrita. O acesso a cliente usa os serviços de escopo já existentes.
+
+Rotas do backend admin:
+
+| Método | Rota | Função |
+|---|---|---|
+| POST | `/api/v1/assistente/conversas` | cria conversa privada do admin autenticado |
+| GET | `/api/v1/assistente/conversas` | lista até 50 conversas do próprio admin |
+| GET | `/api/v1/assistente/conversas/{id}` | lê o histórico do dono da conversa |
+| POST | `/api/v1/assistente/conversas/{id}/mensagens` | envia pergunta, consulta ferramentas e retorna resposta |
+
+As chaves de Gemini/Groq são lidas apenas do servidor. Cada pergunta tem limite de 2.000 caracteres;
+o histórico enviado ao provedor fica nas 8 últimas mensagens (com teto de 12 mil caracteres); cada resposta pode fazer até quatro
+chamadas de ferramenta; e o limite inicial é 25 perguntas por admin/dia. Tokens do provedor ficam
+registrados para estimativa de consumo. As conversas e respostas ficam persistidas; os dados brutos
+retornados por ferramentas não são gravados no log, e a consulta de cliente não grava o termo buscado.
+Como o admin autorizou o envio de dados pessoais identificáveis aos provedores, respostas só devem
+incluir esses dados quando forem necessários à pergunta. Avaliar política de retenção/privacidade
+antes de disponibilizar o frontend.
 
 Toda resposta com número deve repetir o critério (período, loja, "sem frete e sem cancelados"). Os
 textos prontos ficam em `CRITERIO_*` de `app/gerencia/service.py` e `app/automacoes/service.py`.
