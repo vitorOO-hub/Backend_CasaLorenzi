@@ -5,15 +5,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from app.assistente import service
-from app.assistente.provedor import criar_provedor
-from app.assistente.schemas import Conversa, MensagemCriacao, RespostaAssistente
+from app.assistente.cliente import service
+from app.assistente.cliente.provedor import criar_provedor
+from app.assistente.cliente.schemas import Conversa, MensagemCriacao, RespostaAssistente
 from app.core.config import Settings, get_settings
 from app.core.db import ExecutarDep
 from app.core.papeis import UsuarioAtual
 from app.core.security import get_current_user
 
-router = APIRouter(prefix="/assistente", tags=["assistente"])
+# Prefixo proprio: /assistente/conversas e do chatbot administrativo (app.assistente.router).
+router = APIRouter(prefix="/assistente/cliente", tags=["assistente-cliente"])
 
 UsuarioDep = Annotated[UsuarioAtual, Depends(get_current_user)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]

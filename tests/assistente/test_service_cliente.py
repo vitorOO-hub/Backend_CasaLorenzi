@@ -4,14 +4,14 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.assistente import service
-from app.assistente.erros import (
+from app.assistente.cliente import service
+from app.assistente.cliente.erros import (
     ConversaComAtendente,
     ConversaNaoEncontrada,
     LimiteDiarioDoAssistente,
 )
-from app.assistente.ferramentas import Ferramentas
-from app.assistente.provedor import ChamadaFeita, ErroProvedor, RespostaProvedor
+from app.assistente.cliente.ferramentas import Ferramentas
+from app.assistente.cliente.provedor import ChamadaFeita, ErroProvedor, RespostaProvedor
 from app.core.config import Settings
 from app.core.erros_auth import SemPermissao
 from app.core.papeis import Papel, UsuarioAtual

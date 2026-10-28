@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from app.assistente.provedor import (
+from app.assistente.cliente.provedor import (
     ErroProvedor,
     Ferramenta,
     ProvedorGemini,

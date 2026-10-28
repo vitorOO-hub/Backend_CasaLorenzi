@@ -4,8 +4,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.assistente import ferramentas as modulo
-from app.assistente.ferramentas import DECLARACOES, Ferramentas
+from app.assistente.cliente import ferramentas as modulo
+from app.assistente.cliente.ferramentas import DECLARACOES, Ferramentas
 from app.core.papeis import UsuarioAtual
 from app.core.protecoes import LimitadorDeRequisicoes
 
@@ -184,7 +184,8 @@ def test_montar_carrinho_adiciona_para_o_cliente_do_token(ferramentas, monkeypat
 def test_mensagem_do_assistente_conta_como_escrita_sensivel_no_limite_por_ip():
     limitador = LimitadorDeRequisicoes(app=None)
     assert (
-        limitador._tipo("POST", f"/api/v1/assistente/conversas/{uuid4()}/mensagens") == "sensivel"
+        limitador._tipo("POST", f"/api/v1/assistente/cliente/conversas/{uuid4()}/mensagens")
+        == "sensivel"
     )
-    assert limitador._tipo("POST", "/api/v1/assistente/conversas") == "escrita"
-    assert limitador._tipo("GET", f"/api/v1/assistente/conversas/{uuid4()}") == "leitura"
+    assert limitador._tipo("POST", "/api/v1/assistente/cliente/conversas") == "escrita"
+    assert limitador._tipo("GET", f"/api/v1/assistente/cliente/conversas/{uuid4()}") == "leitura"

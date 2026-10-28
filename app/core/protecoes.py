@@ -32,7 +32,7 @@ ESCRITAS_SENSIVEIS = frozenset(
     }
 )
 # Cada mensagem ao assistente chama um LLM pago; o caminho tem o id da conversa, por isso o padrao.
-MENSAGEM_DO_ASSISTENTE = re.compile(r"^/api/v1/assistente/conversas/[^/]+/mensagens$")
+MENSAGEM_DO_ASSISTENTE = re.compile(r"^/api/v1/assistente/cliente/conversas/[^/]+/mensagens$")
 MENSAGEM_429 = "Muitas requisicoes em pouco tempo. Aguarde um instante e tente de novo."
 
 

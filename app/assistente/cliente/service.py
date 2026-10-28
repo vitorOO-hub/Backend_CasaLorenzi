@@ -9,7 +9,7 @@
    - pronto: chama o provedor e o modelo escolhidos, com as ferramentas do cliente.
 4. Quando o assistente nao consegue responder com seguranca (erro do provedor, resposta vazia ou
    interrompida, dado atual sem consulta, consulta que falhou), a conversa vai para um atendente
-   com o resumo e a transcricao (app.assistente.passagem): o cliente nao repete o problema.
+   com o resumo e a transcricao (app.assistente.cliente.passagem): o cliente nao repete o problema.
 5. Grava cada ferramenta usada, a resposta, o modelo e os tokens.
 """
 
@@ -22,14 +22,14 @@ from uuid import UUID
 
 from sqlalchemy.engine import Connection
 
-from app.assistente import passagem, repositorio
-from app.assistente.erros import (
+from app.assistente.cliente import passagem, repositorio
+from app.assistente.cliente.erros import (
     ConversaComAtendente,
     ConversaNaoEncontrada,
     LimiteDiarioDoAssistente,
 )
-from app.assistente.ferramentas import DECLARACOES, Ferramentas
-from app.assistente.provedor import ErroProvedor, Provedor, criar_provedor
+from app.assistente.cliente.ferramentas import DECLARACOES, Ferramentas
+from app.assistente.cliente.provedor import ErroProvedor, Provedor, criar_provedor
 from app.assistente.roteamento import DestinoModelo, PlanoRoteamento, planejar_pergunta
 from app.cliente import repositorio as cliente_repositorio
 from app.core.config import Settings

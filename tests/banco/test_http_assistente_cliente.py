@@ -11,8 +11,8 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from app.assistente.provedor import ChamadaFeita, ErroProvedor, RespostaProvedor
-from app.assistente.router import get_fabrica_provedor
+from app.assistente.cliente.provedor import ChamadaFeita, ErroProvedor, RespostaProvedor
+from app.assistente.cliente.router import get_fabrica_provedor
 from app.core import vigencia
 from app.core.config import Settings
 from app.main import criar_app
@@ -20,7 +20,7 @@ from tests.auth_util import SUPABASE_URL, ParDeChaves, provedor_para
 
 pytestmark = pytest.mark.banco
 
-BASE = "/api/v1/assistente/conversas"
+BASE = "/api/v1/assistente/cliente/conversas"
 
 
 class ProvedorRoteirizado:
@@ -300,7 +300,7 @@ def test_erro_do_provedor_passa_para_a_equipe_que_le_a_conversa(cena):
 
 
 def test_limite_diario_por_cliente(cena, monkeypatch):
-    from app.assistente import service
+    from app.assistente.cliente import service
 
     http, como, *_ = cena
     monkeypatch.setattr(service, "LIMITE_DIARIO_POR_CLIENTE", 2)

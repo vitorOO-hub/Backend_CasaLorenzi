@@ -18,8 +18,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 from sqlalchemy.engine import Connection
 
-from app.assistente import passagem, repositorio
-from app.assistente.provedor import Ferramenta
+from app.assistente.cliente import passagem, repositorio
+from app.assistente.cliente.provedor import Ferramenta
 from app.cliente import service as cliente
 from app.core.papeis import UsuarioAtual
 

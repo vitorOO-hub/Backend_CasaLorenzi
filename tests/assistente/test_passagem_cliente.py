@@ -1,6 +1,6 @@
 """O que o atendente recebe quando a conversa sai do assistente."""
 
-from app.assistente.passagem import LIMITE_DESCRICAO, montar_descricao
+from app.assistente.cliente.passagem import LIMITE_DESCRICAO, montar_descricao
 
 
 def test_descricao_tem_motivo_resumo_e_conversa_em_ordem():

@@ -12,7 +12,7 @@ from uuid import UUID
 
 from sqlalchemy.engine import Connection
 
-from app.assistente import repositorio
+from app.assistente.cliente import repositorio
 from app.cliente import service as cliente
 from app.core.papeis import UsuarioAtual
 
