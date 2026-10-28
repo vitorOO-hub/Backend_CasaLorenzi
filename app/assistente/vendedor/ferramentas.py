@@ -17,7 +17,7 @@ from typing import Annotated, Any, get_args
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 from sqlalchemy.engine import Connection
 
-from app.assistente.provedores import Ferramenta
+from app.assistente.vendedor.provedores import Ferramenta
 from app.cliente import repositorio as lojas_repositorio
 from app.cliente.vencimento_pontos import SP
 from app.core.erros import ErroDeNegocio

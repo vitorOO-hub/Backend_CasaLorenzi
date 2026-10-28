@@ -6,8 +6,8 @@ Hoje cobre o **vendedor**: rotas em `/api/v1/assistente/vendedor`, só leitura, 
 |---|---|
 | `roteamento.py` | classifica a pergunta e escolhe o destino (`rapida` → Groq, `precisa` → Gemini). Compartilhado |
 | `provedores.py` | chamada ao Groq e ao Gemini atrás de `Provedor.conversar(...)`; trata erro e timeout sem vazar corpo nem chave |
-| `ferramentas_vendedor.py` | allowlist de ferramentas, schemas de entrada e execução sobre `app.vendas.service` |
-| `vendedor.py` | fluxo da pergunta: dono, limite diário, roteamento, modelo, ferramentas, registro |
+| `ferramentas.py` | allowlist de ferramentas, schemas de entrada e execução sobre `app.vendas.service` |
+| `service.py` | fluxo da pergunta: dono, limite diário, roteamento, modelo, ferramentas, registro |
 | `repositorio.py` | `conversa_assistente` e `mensagem_assistente` (sempre filtradas pelo `id_usuario` do token) |
 | `router.py` | rotas HTTP (`requer_papel(Papel.VENDEDOR)`) |
 
@@ -48,7 +48,7 @@ FROM mensagem_assistente WHERE autor = 'assistente' GROUP BY 1, 2;
 
 ## Como adicionar uma ferramenta
 
-1. Em `ferramentas_vendedor.py`, crie a entrada (subclasse de `_Entrada`, com `extra="forbid"`,
+1. Em `ferramentas.py`, crie a entrada (subclasse de `_Entrada`, com `extra="forbid"`,
    limites e descrição em cada campo) e a função `(conexao, usuario, entrada) -> dict`.
 2. A função chama um service que o vendedor já pode usar e devolve uma saída enxuta: listas curtas,
    sem e-mail ou telefone de cliente, CPF mascarado. **Nunca** aceite loja, usuário ou CPF de escopo

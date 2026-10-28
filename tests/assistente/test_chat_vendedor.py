@@ -13,8 +13,10 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.assistente import ferramentas_vendedor, repositorio, vendedor
-from app.assistente.provedores import (
+from app.assistente.vendedor import ferramentas as ferramentas_vendedor
+from app.assistente.vendedor import repositorio
+from app.assistente.vendedor import service as vendedor
+from app.assistente.vendedor.provedores import (
     ChamadaFeita,
     ErroDoProvedor,
     Ferramenta,
@@ -23,7 +25,7 @@ from app.assistente.provedores import (
     Resultado,
     Turno,
 )
-from app.assistente.router import get_fabrica_de_provedor
+from app.assistente.vendedor.router import get_fabrica_de_provedor
 from app.core.config import Settings
 from app.core.db import get_executar
 from app.core.papeis import Papel, UsuarioAtual
@@ -47,7 +49,7 @@ class ConexaoFalsa:
 
 
 class Banco:
-    """Mesma interface de `app.assistente.repositorio`, em memoria."""
+    """Mesma interface de `app.assistente.vendedor.repositorio`, em memoria."""
 
     def __init__(self):
         self.conversas: dict[UUID, dict] = {}
@@ -677,7 +679,7 @@ def test_schema_mostra_o_maximo_ao_modelo():
 
 
 def test_limite_do_provedor_espera_o_pedido_e_tenta_uma_vez(monkeypatch):
-    from app.assistente import provedores
+    from app.assistente.vendedor import provedores
 
     esperas = []
     monkeypatch.setattr(provedores, "dormir", esperas.append)
@@ -696,7 +698,7 @@ def test_limite_do_provedor_espera_o_pedido_e_tenta_uma_vez(monkeypatch):
 
 
 def test_limite_do_provedor_com_espera_longa_desiste_e_informa(monkeypatch):
-    from app.assistente import provedores
+    from app.assistente.vendedor import provedores
 
     monkeypatch.setattr(provedores, "dormir", lambda s: pytest.fail("nao devia esperar"))
     cliente = httpx.Client(

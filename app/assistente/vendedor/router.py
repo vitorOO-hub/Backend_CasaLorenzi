@@ -9,9 +9,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from app.assistente import vendedor
-from app.assistente.provedores import provedor_para
-from app.assistente.schemas import (
+from app.assistente.vendedor import service as vendedor
+from app.assistente.vendedor.provedores import provedor_para
+from app.assistente.vendedor.schemas import (
     AlteracaoDaConversa,
     Conversa,
     ListaDeConversas,

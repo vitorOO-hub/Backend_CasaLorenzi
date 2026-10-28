@@ -6,7 +6,7 @@ Fluxo de uma pergunta:
 3. `planejar_pergunta` decide: `esclarecer` responde sem modelo; estado de configuracao responde de
    forma controlada, sem fallback para outro modelo; `pronto` chama o destino escolhido;
 4. o provedor conversa com o modelo; cada ferramenta pedida passa por
-   `ferramentas_vendedor.executar` (allowlist, schema e a loja do token);
+   `ferramentas.executar` (allowlist, schema e a loja do token);
 5. grava cada chamada de ferramenta (argumentos com CPF mascarado e um resumo do resultado) e a
    resposta, com modelo, tokens, latencia e a decisao de roteamento.
 """
@@ -21,14 +21,15 @@ from uuid import UUID
 
 from sqlalchemy.engine import Connection
 
-from app.assistente import ferramentas_vendedor, repositorio
-from app.assistente.erros import (
+from app.assistente.roteamento import DestinoModelo, PlanoRoteamento, planejar_pergunta
+from app.assistente.vendedor import ferramentas as ferramentas_vendedor
+from app.assistente.vendedor import repositorio
+from app.assistente.vendedor.erros import (
     ConversaArquivada,
     ConversaNaoEncontrada,
     LimiteDiarioDoAssistente,
 )
-from app.assistente.provedores import ErroDoProvedor, Provedor, Turno
-from app.assistente.roteamento import DestinoModelo, PlanoRoteamento, planejar_pergunta
+from app.assistente.vendedor.provedores import ErroDoProvedor, Provedor, Turno
 from app.chamados.repositorio import id_usuario_ativo
 from app.cliente.vencimento_pontos import SP
 from app.core.config import Settings
