@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.assistente.vendedor import conferencia, intencao, repositorio
+from app.assistente.vendedor import estoque as estoque_vendedor
 from app.assistente.vendedor import ferramentas as ferramentas_vendedor
 from app.assistente.vendedor import service as vendedor
 from app.assistente.vendedor.provedores import (
@@ -54,6 +55,7 @@ class Banco:
 
     def __init__(self):
         self.conversas: dict[UUID, dict] = {}
+        self.avaliacoes: dict[UUID, str | None] = {}
         self.mensagens: list[dict] = []
         self.perguntas_hoje: dict[UUID, int] = {}
 
@@ -140,6 +142,22 @@ class Banco:
     def mudar_status(self, conexao, id_conversa, status):
         self.conversas[id_conversa]["status"] = status
 
+    def avaliar_resposta(self, conexao, id_conversa, id_mensagem, avaliacao):
+        alvo = next(
+            (
+                m
+                for m in self.mensagens
+                if m["id_mensagem"] == id_mensagem
+                and m["id_conversa"] == id_conversa
+                and m["autor"] == "assistente"
+            ),
+            None,
+        )
+        if alvo is None:
+            return False
+        self.avaliacoes[id_mensagem] = avaliacao
+        return True
+
     def perguntas_de_hoje(self, conexao, id_usuario):
         return self.perguntas_hoje.get(id_usuario, 0)
 
@@ -186,6 +204,7 @@ def banco(monkeypatch):
         "gravar_mensagem",
         "tocar_conversa",
         "mudar_status",
+        "avaliar_resposta",
         "perguntas_de_hoje",
     ):
         monkeypatch.setattr(repositorio, nome, getattr(b, nome))
@@ -1040,3 +1059,175 @@ def test_ferramentas_de_cliente_nao_mandam_cpf_email_nem_telefone_ao_modelo(monk
     for item in busca["clientes"] + top["clientes"]:
         assert not set(item) & {"cpf", "email", "telefone"}
     assert top["padroes_usados"] == ["período padrão dos últimos 90 dias", "os 5 primeiros"]
+
+
+# ------------------------------------------------------------------ contagem de estoque
+
+CATALOGO = estoque_vendedor.Catalogo(
+    tamanhos=("PP", "P", "M", "G", "GG", "U", "38", "90"),
+    categorias=("acessório", "calça", "calçado", "camisa", "tricô", "vestido"),
+)
+
+
+@pytest.mark.parametrize(
+    ("falado", "codigo"),
+    [
+        ("G", "G"),
+        ("g", "G"),
+        (" G ", "G"),
+        ("tam g", "G"),
+        ("tamanho G", "G"),
+        ("grande", "G"),
+        ("gg", "GG"),
+        ("médio", "M"),
+        ("38", "38"),
+        ("único", "U"),
+    ],
+)
+def test_tamanho_falado_vira_o_codigo_real(falado, codigo):
+    n = estoque_vendedor.Normalizacao()
+    estoque_vendedor.normalizar_tamanho(falado, CATALOGO, n)
+    assert n.tamanho == codigo and not n.invalidos
+
+
+def test_tamanho_que_nao_existe_e_invalido_e_nao_vira_outro():
+    n = estoque_vendedor.Normalizacao()
+    estoque_vendedor.normalizar_tamanho("XG", CATALOGO, n)
+    assert n.tamanho is None and n.invalidos == {"tamanho": "XG"}
+
+
+@pytest.mark.parametrize(
+    ("falado", "categorias"),
+    [
+        ("roupas", CATALOGO.categorias),
+        ("reoupas", CATALOGO.categorias),
+        ("peças", CATALOGO.categorias),
+        ("camisas", ("camisa",)),
+        ("camsias", ("camisa",)),
+        ("calcas", ("calça",)),
+        ("trico", ("tricô",)),
+        ("sapatos", ("calçado",)),
+    ],
+)
+def test_categoria_falada_vira_as_categorias_reais(falado, categorias):
+    n = estoque_vendedor.Normalizacao()
+    estoque_vendedor.normalizar_categoria(falado, CATALOGO, n)
+    assert n.categorias == categorias
+
+
+def test_filtro_de_tamanho_e_igualdade_exata():
+    condicoes, parametros = estoque_vendedor._condicoes(
+        estoque_vendedor.Filtro(LOJA_A, tamanho="G")
+    )
+    assert "va.tamanho = :tamanho" in condicoes and parametros["tamanho"] == "G"
+    assert "LIKE" not in condicoes
+
+
+@pytest.fixture
+def estoque_conhecido(monkeypatch):
+    """Fixture: 12 unidades G em 5 modelos; GG zerado."""
+    recebidos = []
+
+    def contar(conexao, filtro, agrupar_por):
+        recebidos.append(filtro)
+        if filtro.tamanho == "GG":
+            return {"unidades": 0, "modelos": 0, "skus": 0, "detalhamento": [], "truncado": False}
+        return {
+            "unidades": 12,
+            "modelos": 5,
+            "skus": 6,
+            "detalhamento": [{"categoria": "camisa", "unidades": 7, "modelos": 3}],
+            "truncado": False,
+        }
+
+    monkeypatch.setattr(ferramentas_vendedor.vendas_repositorio, "loja_de_venda", lambda c, i: i)
+    monkeypatch.setattr(
+        ferramentas_vendedor.vendas_repositorio, "nome_da_loja", lambda c, i: "centro"
+    )
+    monkeypatch.setattr(estoque_vendedor, "catalogo", lambda c: CATALOGO)
+    monkeypatch.setattr(estoque_vendedor, "contar", contar)
+    return recebidos
+
+
+def _pergunta_de_estoque(par, banco, pergunta, argumentos, texto_do_modelo):
+    provedor = ProvedorFalso(texto=texto_do_modelo, pedir=[("consultar_estoque", argumentos)])
+    cliente = montar(par, provedor)
+    cabecalho = token(par)
+    id_conversa = nova_conversa(cliente, cabecalho)
+    resposta = perguntar(cliente, cabecalho, id_conversa, pergunta)
+    assert resposta.status_code == 200
+    return resposta.json()["resposta"]["texto"], banco.da_resposta()["dados"]
+
+
+def test_regressao_roupas_do_tamanho_g_responde_a_contagem_real(par, banco, estoque_conhecido):
+    texto, dados = _pergunta_de_estoque(
+        par,
+        banco,
+        "quantas roupas do tamanho G tem?",
+        {"categoria": "roupas", "tamanho": "G"},
+        "Não há peças de roupa no tamanho G em estoque.",
+    )
+    filtro = estoque_conhecido[-1]
+    assert (filtro.id_loja, filtro.tamanho, filtro.categorias) == (
+        LOJA_A,
+        "G",
+        CATALOGO.categorias,
+    )
+    assert "**12 unidades**" in texto and "**5 modelos**" in texto
+    assert "não há" not in texto.lower()
+    assert dados["resposta_do_backend"] is True
+
+
+def test_resposta_certa_do_modelo_fica_como_ele_escreveu(par, banco, estoque_conhecido):
+    certo = "Você tem **12 unidades** no tamanho G, em **5 modelos** (loja Centro)."
+    texto, dados = _pergunta_de_estoque(par, banco, "quantas peças G tem?", {"tamanho": "g"}, certo)
+    assert texto == certo and "resposta_do_backend" not in dados
+
+
+def test_zero_confirmado_pode_dizer_que_nao_ha_e_fica_marcado(par, banco, estoque_conhecido):
+    texto, dados = _pergunta_de_estoque(
+        par, banco, "sobrou gg?", {"tamanho": "gg"}, "Não encontrei peças no tamanho GG."
+    )
+    assert texto == "Não encontrei peças no tamanho GG."
+    assert dados["revisar_zero"] is True
+
+
+def test_tamanho_inexistente_nao_vira_zero(par, banco, estoque_conhecido):
+    texto, _ = _pergunta_de_estoque(
+        par, banco, "quantas peças XG?", {"tamanho": "XG"}, "Você tem 0 unidades no XG."
+    )
+    assert "Não existe tamanho 'XG'" in texto and "PP, P, M, G, GG" in texto
+
+
+def test_erro_da_ferramenta_nunca_vira_estoque_zero(par, banco, monkeypatch):
+    def quebra(conexao):
+        raise RuntimeError("banco fora")
+
+    monkeypatch.setattr(ferramentas_vendedor.vendas_repositorio, "loja_de_venda", lambda c, i: i)
+    monkeypatch.setattr(estoque_vendedor, "catalogo", quebra)
+    texto, _ = _pergunta_de_estoque(
+        par, banco, "quantas peças G tem?", {"tamanho": "G"}, "Não há peças no tamanho G."
+    )
+    assert texto == conferencia.FALHA_NO_ESTOQUE
+
+
+# ------------------------------------------------------------------ avaliacao da resposta
+
+
+def test_vendedor_avalia_a_propria_resposta_e_nao_a_de_outro(cliente, par, banco):
+    dono = token(par, sub=uuid4())
+    id_conversa = nova_conversa(cliente, dono)
+    resposta = perguntar(cliente, dono, id_conversa, "quanto vendemos ontem?").json()
+    id_resposta = resposta["resposta"]["id_mensagem"]
+    caminho = f"{BASE}/conversas/{id_conversa}/mensagens/{id_resposta}/avaliacao"
+
+    assert cliente.put(caminho, json={"avaliacao": "util"}, headers=dono).status_code == 200
+    assert banco.avaliacoes[UUID(id_resposta)] == "util"
+    outro = token(par, sub=uuid4())
+    assert cliente.put(caminho, json={"avaliacao": "nao_util"}, headers=outro).status_code == 404
+    pergunta = resposta["pergunta"]["id_mensagem"]
+    caminho_da_pergunta = f"{BASE}/conversas/{id_conversa}/mensagens/{pergunta}/avaliacao"
+    assert (
+        cliente.put(caminho_da_pergunta, json={"avaliacao": "util"}, headers=dono).status_code
+        == 404
+    )

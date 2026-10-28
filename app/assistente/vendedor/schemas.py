@@ -48,6 +48,12 @@ class MensagemDoChat(Saida):
     criada_em: datetime
     # Ferramentas consultadas para montar a resposta (nomes), para a tela mostrar.
     ferramentas: list[str] = []
+    avaliacao: Literal["util", "nao_util"] | None = None
+
+
+class AvaliacaoDaResposta(Entrada):
+    # None tira a avaliacao.
+    avaliacao: Literal["util", "nao_util"] | None
 
 
 class MensagensDaConversa(Saida):

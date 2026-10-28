@@ -13,6 +13,7 @@ from app.assistente.vendedor import service as vendedor
 from app.assistente.vendedor.provedores import provedor_para
 from app.assistente.vendedor.schemas import (
     AlteracaoDaConversa,
+    AvaliacaoDaResposta,
     Conversa,
     ListaDeConversas,
     MensagensDaConversa,
@@ -85,6 +86,26 @@ def perguntar(
             fabrica=fabrica,
         )
     )
+
+
+@router.put(
+    "/conversas/{id_conversa}/mensagens/{id_mensagem}/avaliacao",
+    response_model=AvaliacaoDaResposta,
+    summary="Avaliar uma resposta (util ou nao)",
+)
+def avaliar_resposta(
+    id_conversa: UUID,
+    id_mensagem: UUID,
+    dados: AvaliacaoDaResposta,
+    usuario: UsuarioDep,
+    executar: ExecutarDep,
+):
+    executar(
+        lambda conexao: vendedor.avaliar_resposta(
+            conexao, usuario, id_conversa, id_mensagem, dados.avaliacao
+        )
+    )
+    return dados
 
 
 @router.patch(

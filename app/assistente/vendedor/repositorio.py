@@ -84,7 +84,8 @@ def mensagens_visiveis(conexao: Connection, id_conversa: UUID) -> list[dict[str,
         text(
             """
             SELECT id_mensagem, autor, texto, criada_em,
-                   COALESCE(dados -> 'ferramentas', '[]'::jsonb) AS ferramentas
+                   COALESCE(dados -> 'ferramentas', '[]'::jsonb) AS ferramentas,
+                   dados ->> 'avaliacao' AS avaliacao
             FROM mensagem_assistente
             WHERE id_conversa = CAST(:c AS uuid) AND autor IN ('usuario', 'assistente')
             ORDER BY criada_em, id_mensagem
@@ -181,6 +182,30 @@ def mudar_status(conexao: Connection, id_conversa: UUID, status: str) -> None:
         {"c": str(id_conversa), "s": status},
     )
     conexao.commit()
+
+
+def avaliar_resposta(
+    conexao: Connection, id_conversa: UUID, id_mensagem: UUID, avaliacao: str | None
+) -> bool:
+    """Avaliacao do vendedor (util/nao_util) numa resposta, em `dados` junto da auditoria.
+    Devolve False se a mensagem nao e uma resposta desta conversa."""
+    alteradas = conexao.execute(
+        text(
+            """
+            UPDATE mensagem_assistente
+            SET dados = CASE
+                WHEN CAST(:a AS text) IS NULL THEN COALESCE(dados, '{}'::jsonb) - 'avaliacao'
+                ELSE COALESCE(dados, '{}'::jsonb)
+                     || jsonb_build_object('avaliacao', CAST(:a AS text))
+            END
+            WHERE id_mensagem = CAST(:m AS uuid) AND id_conversa = CAST(:c AS uuid)
+              AND autor = 'assistente'
+            """
+        ),
+        {"m": str(id_mensagem), "c": str(id_conversa), "a": avaliacao},
+    ).rowcount
+    conexao.commit()
+    return alteradas == 1
 
 
 def perguntas_de_hoje(conexao: Connection, id_usuario: UUID) -> int:

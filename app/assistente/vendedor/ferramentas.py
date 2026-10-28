@@ -18,6 +18,7 @@ from typing import Annotated, Any, Literal, get_args, get_origin
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 from sqlalchemy.engine import Connection
 
+from app.assistente.vendedor import estoque as estoque_vendedor
 from app.assistente.vendedor.provedores import Ferramenta
 from app.cliente import repositorio as lojas_repositorio
 from app.cliente.vencimento_pontos import SP
@@ -324,6 +325,92 @@ def consultar_pecas(conexao: Connection, usuario: UsuarioAtual, e: EntradaPecas)
     }
 
 
+TextoFiltro = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+
+
+class EntradaEstoque(_Entrada):
+    tamanho: TextoFiltro | None = Field(
+        default=None, description="Tamanho como o vendedor falou (ex.: G, tam g, grande, 38)"
+    )
+    categoria: TextoFiltro | None = Field(
+        default=None,
+        description=(
+            "Tipo de peca como o vendedor falou (ex.: camisa, calcas, vestidos). Para 'roupas', "
+            "'pecas' ou sem tipo, deixe vazio ou mande 'roupas'"
+        ),
+    )
+    cor: TextoFiltro | None = Field(default=None, description="Cor, so se o vendedor disse")
+    marca: TextoFiltro | None = Field(default=None, description="Marca, so se o vendedor disse")
+    produto: TextoFiltro | None = Field(
+        default=None, description="Nome do modelo, so se o vendedor disse (ex.: linho, modena)"
+    )
+    agrupar_por: Literal["nenhum", "tamanho", "categoria", "cor", "produto"] | None = Field(
+        default=None, description="Detalhar o total por tamanho, categoria, cor ou produto"
+    )
+
+
+def _descricao_dos_filtros(f: estoque_vendedor.Filtro, e: EntradaEstoque) -> str:
+    partes = []
+    if f.tamanho:
+        partes.append(f"tamanho {f.tamanho}")
+    if f.categorias is not None:
+        partes.append(
+            "todas as categorias" if len(f.categorias) > 1 else f"categoria {f.categorias[0]}"
+        )
+    for nome in ("cor", "marca", "produto"):
+        if getattr(e, nome):
+            partes.append(f"{nome} contendo '{getattr(e, nome)}'")
+    return ", ".join(partes) or "sem filtro"
+
+
+def consultar_estoque(conexao: Connection, usuario: UsuarioAtual, e: EntradaEstoque) -> dict:
+    """Unidades disponiveis na loja do vendedor, com filtros normalizados e soma no SQL."""
+    id_loja = _loja_da_venda(conexao, usuario)
+    cat = estoque_vendedor.catalogo(conexao)
+    n = estoque_vendedor.Normalizacao()
+    if e.tamanho:
+        estoque_vendedor.normalizar_tamanho(e.tamanho, cat, n)
+    if e.categoria:
+        estoque_vendedor.normalizar_categoria(e.categoria, cat, n)
+    validos = {"tamanhos": list(cat.tamanhos), "categorias": list(cat.categorias)}
+    if n.invalidos:
+        # Filtro que nao existe nao e "zero": o modelo corrige o valor ou diz que ele nao existe.
+        return {
+            "filtro_invalido": n.invalidos,
+            "valores_validos": validos,
+            "normalizacoes_tentadas": n.tentativas,
+            "orientacao": (
+                "Nenhuma contagem foi feita. Se houver um valor valido equivalente, consulte de "
+                "novo com ele; senao, diga que esse valor nao existe e cite os validos."
+            ),
+        }
+    filtro = estoque_vendedor.Filtro(id_loja, n.tamanho, n.categorias, e.cor, e.marca, e.produto)
+    agrupar = e.agrupar_por or (
+        "categoria" if n.categorias is None or len(n.categorias) > 1 else "nenhum"
+    )
+    contagem = estoque_vendedor.contar(conexao, filtro, agrupar)
+    saida = {
+        "loja": vendas_repositorio.nome_da_loja(conexao, id_loja),
+        "filtros_aplicados": _descricao_dos_filtros(filtro, e),
+        "criterio": "Unidades disponiveis (quantidade acima de zero) de pecas ativas na loja.",
+        "total_unidades": contagem["unidades"],
+        "total_modelos": contagem["modelos"],
+        "total_skus": contagem["skus"],
+        "detalhamento": contagem["detalhamento"],
+        "limite_aplicado": estoque_vendedor.LIMITE_DETALHAMENTO
+        if contagem["detalhamento"]
+        else None,
+        "truncado": contagem["truncado"],
+    }
+    if n.tentativas:
+        saida["normalizacoes_tentadas"] = n.tentativas
+    if contagem["unidades"] == 0:
+        # Zero com filtro valido: e zero de verdade, mas vai junto o que existe para conferir.
+        saida["zero_confirmado"] = True
+        saida["valores_validos"] = validos
+    return saida
+
+
 class EntradaResumoEstoque(_Entrada):
     dia: date | None = Field(
         default=None, description="Saldo no fim deste dia, formato AAAA-MM-DD (padrao: agora)"
@@ -500,9 +587,17 @@ _REGISTRO: dict[str, tuple[str, type[_Entrada], Funcao]] = {
         EntradaBuscaClientes,
         buscar_clientes,
     ),
+    "consultar_estoque": (
+        "CONTA o estoque da loja: total de unidades e de modelos, com filtro opcional de "
+        "tamanho, tipo de peca (categoria), cor, marca ou nome do modelo, e detalhamento. Use "
+        "para toda pergunta de quantidade ('quantas pecas G', 'tem camisa G?', 'sobrou GG?', "
+        "'estoque do M'). Mande os filtros como o vendedor falou: o servidor normaliza.",
+        EntradaEstoque,
+        consultar_estoque,
+    ),
     "consultar_pecas": (
-        "Pecas com saldo na loja do vendedor, com preco e quantidade disponivel. Filtre por cor e "
-        "tamanho nos campos proprios.",
+        "Lista pecas de um modelo especifico (nome ou SKU obrigatorio) com preco e quantidade de "
+        "cada cor e tamanho. Nao use para contar ou somar estoque: para isso, consultar_estoque.",
         EntradaPecas,
         consultar_pecas,
     ),
@@ -604,8 +699,16 @@ def _parametros(modelo: type[_Entrada]) -> dict[str, Any]:
         propriedade: dict[str, Any] = {"type": "integer" if tipo is int else "string"}
         if campo.description:
             propriedade["description"] = campo.description
-        if get_origin(campo.annotation) is Literal:
-            propriedade["enum"] = list(get_args(campo.annotation))
+        literal = next(
+            (
+                a
+                for a in (campo.annotation, *get_args(campo.annotation))
+                if get_origin(a) is Literal
+            ),
+            None,
+        )
+        if literal is not None:
+            propriedade["enum"] = list(get_args(literal))
         minimo, maximo = _limites(campo)
         if tipo is int and minimo is not None:
             propriedade["minimum"] = minimo

@@ -125,8 +125,77 @@ def _lista_confere(resposta: str, itens: list[dict[str, Any]], lista: Lista) -> 
     return True
 
 
+# ------------------------------------------------------------------ contagem de estoque
+
+_DIZ_QUE_NAO_HA = re.compile(
+    r"\b(nao ha|nao temos|nao tem|nenhum|nenhuma|zero|sem estoque|esgotad\w*|nao encontrei)\b"
+)
+
+
+def diz_que_nao_ha(resposta: str) -> bool:
+    return bool(_DIZ_QUE_NAO_HA.search(_normalizar(resposta)))
+
+
+FALHA_NO_ESTOQUE = "Não consegui consultar o estoque agora. Tente de novo em instantes."
+
+
+def _tem_numero(texto: str, numero: int) -> bool:
+    return bool(re.search(rf"(?<![\d,]){numero}(?![\d,])", texto))
+
+
+def _unidades(n: int) -> str:
+    return f"{n:,}".replace(",", ".") + (" unidade" if n == 1 else " unidades")
+
+
+def _texto_estoque(r: dict[str, Any]) -> str:
+    filtros = r["filtros_aplicados"]
+    if r["total_unidades"] == 0:
+        return f"Não encontrei peças disponíveis com {filtros} na loja {_nome(r['loja'])}."
+    modelos = r["total_modelos"]
+    linhas = [
+        f"Na loja {_nome(r['loja'])}, com {filtros}: **{_unidades(r['total_unidades'])}** em "
+        f"**{modelos} {'modelo' if modelos == 1 else 'modelos'}**."
+    ]
+    if r["detalhamento"]:
+        chave = next(k for k in r["detalhamento"][0] if k not in ("unidades", "modelos"))
+        partes = [f"{d[chave]} {d['unidades']}" for d in r["detalhamento"][:6]]
+        linhas.append(f"Por {chave}: {', '.join(partes)}.")
+    return "\n".join(linhas)
+
+
+def _texto_filtro_invalido(r: dict[str, Any]) -> str:
+    partes = []
+    for campo, valor in r["filtro_invalido"].items():
+        validos = r["valores_validos"]["tamanhos" if campo == "tamanho" else "categorias"]
+        partes.append(
+            f"Não existe {campo} '{valor}' no catálogo. Os que existem: {', '.join(validos)}."
+        )
+    return " ".join(partes)
+
+
+def conferir_estoque(resposta: str, chamadas: Sequence[ChamadaFeita]) -> str | None:
+    """A ultima contagem de estoque manda: numero igual ao da ferramenta, zero so quando ela
+    confirmou zero, e erro ou filtro inexistente nunca viram "nao ha"."""
+    chamada = next((c for c in reversed(chamadas) if c.nome == "consultar_estoque"), None)
+    if chamada is None:
+        return None
+    r, texto = chamada.resultado, _normalizar(resposta)
+    if "erro" in r:
+        return FALHA_NO_ESTOQUE if _DIZ_QUE_NAO_HA.search(texto) or _tem_numero(texto, 0) else None
+    if "filtro_invalido" in r:
+        diz_zero = _DIZ_QUE_NAO_HA.search(texto) and "existe" not in texto
+        return _texto_filtro_invalido(r) if diz_zero or _tem_numero(texto, 0) else None
+    total = r["total_unidades"]
+    if total == 0:
+        return None if _DIZ_QUE_NAO_HA.search(texto) or _tem_numero(texto, 0) else _texto_estoque(r)
+    return None if _tem_numero(texto, total) else _texto_estoque(r)
+
+
 def conferir(resposta: str, chamadas: Sequence[ChamadaFeita]) -> str | None:
     """Texto do backend para trocar a resposta, ou None se ela respeitou as listas."""
+    do_estoque = conferir_estoque(resposta, chamadas)
+    if do_estoque is not None:
+        return do_estoque
     for chamada in reversed(chamadas):
         lista = LISTAS.get(chamada.nome)
         if lista is None or "erro" in chamada.resultado:

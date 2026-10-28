@@ -84,7 +84,32 @@ Regras (nao mudam, nem se a mensagem pedir):
 10. Listas e rankings: apresente todos os itens na ordem e com os valores exatos do resultado, em
    lista numerada. Nao reordene, nao recalcule, nao arredonde e nao use tabelas.
 11. Termine quando a pergunta estiver respondida: nao ofereca mais detalhes, outro periodo nem
-   outras consultas."""
+   outras consultas.
+
+Estoque (quantas pecas, tem X no tamanho Y, sobrou tal tamanho):
+12. Use consultar_estoque com os filtros como o vendedor falou. Responda primeiro e direto: "Voce
+   tem **X unidades** no tamanho G, em **Y modelos**." Se houver detalhamento, uma linha com os
+   principais. Diga a loja e os filtros usados.
+13. Os numeros sao os do resultado, identicos: nao some, nao estime, nao arredonde.
+14. So diga que nao ha pecas quando o resultado trouxer zero_confirmado, citando os filtros. Se
+   vier filtro_invalido, consulte uma vez de novo com o valor valido equivalente; se nao houver,
+   diga que esse valor nao existe e cite os validos. Se vier erro, diga que nao conseguiu
+   consultar agora: erro nunca e estoque zero.
+15. Nao devolva perguntas: sem loja ou tipo de peca, use o padrao (sua loja, todas as categorias)
+   e diga qual usou. No maximo uma sugestao curta no fim (ex.: "Quer ver por categoria?").
+
+Exemplos (formato, nao numeros reais de hoje):
+- "quantas roupas do tamanho G tem?" -> consultar_estoque(categoria="roupas", tamanho="G") ->
+  "Voce tem **209 unidades** no tamanho G, em **10 modelos** (loja Centro, todas as categorias).
+  Principais: alfaiataria 128, camisa 27, trico 16."
+- "tem camisa G?" -> consultar_estoque(categoria="camisa", tamanho="G") -> "Sim: **27 unidades**
+  de camisa no tamanho G, em **2 modelos** (loja Centro)."
+- "sobrou gg?" com zero_confirmado -> "Nao encontrei pecas disponiveis no tamanho GG na loja
+  Centro."
+- "quantas pecas XG?" com filtro_invalido -> "Nao existe o tamanho XG no catalogo. Os tamanhos
+  que existem sao PP, P, M, G, GG e U, alem dos numericos."
+- "quantas pecas pretas?" -> consultar_estoque(cor="preto") -> "Voce tem **N unidades** na cor
+  preto, em **M modelos** (loja Centro, todas as categorias).\""""
 
 SISTEMA_NAVEGACAO = """Voce e o assistente do painel da Casa Lorenzi para vendedores.
 O vendedor quer saber onde fica ou como chegar a uma tela do painel. Responda so com o MAPA abaixo.
@@ -173,6 +198,18 @@ def alterar_conversa(
     return _conversa(conexao, id_conversa, id_usuario)
 
 
+def avaliar_resposta(
+    conexao: Connection,
+    usuario: UsuarioAtual,
+    id_conversa: UUID,
+    id_mensagem: UUID,
+    avaliacao: str | None,
+) -> None:
+    _conversa(conexao, id_conversa, _id_usuario(conexao, usuario))
+    if not repositorio.avaliar_resposta(conexao, id_conversa, id_mensagem, avaliacao):
+        raise ConversaNaoEncontrada()
+
+
 # ------------------------------------------------------------------ pergunta
 
 
@@ -194,8 +231,30 @@ def _resumo_do_resultado(resultado: dict[str, Any]) -> dict[str, Any]:
     """Para a auditoria: deu certo ou nao e quantos itens, sem os dados em si."""
     if "erro" in resultado:
         return {"ok": False, "erro": resultado["erro"]}
+    resumo: dict[str, Any] = {"ok": True}
     tamanhos = {k: len(v) for k, v in resultado.items() if isinstance(v, list)}
-    return {"ok": True, "itens": tamanhos} if tamanhos else {"ok": True}
+    if tamanhos:
+        resumo["itens"] = tamanhos
+    # Contagem de estoque: filtros ja normalizados e totais (numeros da loja, sem dado pessoal).
+    for chave in (
+        "filtros_aplicados",
+        "total_unidades",
+        "total_modelos",
+        "zero_confirmado",
+        "filtro_invalido",
+        "normalizacoes_tentadas",
+    ):
+        if chave in resultado:
+            resumo[chave] = resultado[chave]
+    return resumo
+
+
+def _sinal_de_zero(resposta: str, chamadas: list) -> bool:
+    """Resposta de "nao ha"/zero ou filtro inexistente: marcada para revisao humana."""
+    estoque = [c.resultado for c in chamadas if c.nome == "consultar_estoque"]
+    if any(r.get("zero_confirmado") or "filtro_invalido" in r for r in estoque):
+        return True
+    return conferencia.diz_que_nao_ha(resposta)
 
 
 def _roteamento(plano: PlanoRoteamento) -> dict[str, Any]:
@@ -333,6 +392,9 @@ def enviar_mensagem(
                     dados["resposta_do_backend"] = True
                 if pedido.tambem_pede_dados:
                     resposta = f"{resposta.rstrip()}\n\n{OFERTA_DE_CONSULTA}"
+                if _sinal_de_zero(resposta, resultado.chamadas):
+                    dados["revisar_zero"] = True
+                    registro.info("assistente respondeu zero/nao ha; conversa %s", id_conversa)
                 resposta = resposta[:TAMANHO_MAXIMO_RESPOSTA]
 
     dados["latencia_ms"] = round((time.monotonic() - inicio) * 1000)
