@@ -9,6 +9,7 @@ Saida enxuta: listas curtas, CPF mascarado (como nas telas) e sem e-mail nem tel
 """
 
 import logging
+import re
 import unicodedata
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -77,8 +78,13 @@ def _loja_da_venda(conexao: Connection, usuario: UsuarioAtual):
 
 
 class EntradaPeriodo(_Entrada):
-    inicio: date | None = Field(default=None, description="Primeiro dia, formato AAAA-MM-DD")
-    fim: date | None = Field(default=None, description="Ultimo dia, formato AAAA-MM-DD")
+    inicio: date | None = Field(
+        default=None,
+        description="Primeiro dia, AAAA-MM-DD; vazio se o vendedor nao disse o periodo",
+    )
+    fim: date | None = Field(
+        default=None, description="Ultimo dia, AAAA-MM-DD; vazio se o vendedor nao disse o periodo"
+    )
 
 
 def vendas_do_periodo(conexao: Connection, usuario: UsuarioAtual, e: EntradaPeriodo) -> dict:
@@ -108,11 +114,12 @@ def vendas_do_periodo(conexao: Connection, usuario: UsuarioAtual, e: EntradaPeri
         "ticket_medio": round(faturamento / pedidos, 2) if pedidos else 0.0,
         "mais_vendidas": [
             {
+                "posicao": posicao,
                 "produto": p["nome"],
                 "unidades": int(p["unidades"]),
                 "faturamento": _dinheiro(p["faturamento"]),
             }
-            for p in mais_vendidas
+            for posicao, p in enumerate(mais_vendidas, start=1)
         ],
     }
 
@@ -201,8 +208,8 @@ def buscar_clientes(conexao: Connection, usuario: UsuarioAtual, e: EntradaBuscaC
         "total": lista["total"],
         "clientes": [
             {
+                # Sem CPF, e-mail e telefone: o chat mostra so o nome (a tela Clientes tem o resto).
                 "nome": c["nome"],
-                "cpf": c["cpf"],
                 "cidade": c["cidade"],
                 "cliente_desde": c["cliente_desde"].date().isoformat()
                 if hasattr(c["cliente_desde"], "date")
@@ -215,10 +222,12 @@ def buscar_clientes(conexao: Connection, usuario: UsuarioAtual, e: EntradaBuscaC
 
 class EntradaRanking(_Entrada):
     inicio: date | None = Field(
-        default=None, description="Primeiro dia, formato AAAA-MM-DD (padrao: 90 dias atras)"
+        default=None,
+        description="Primeiro dia, AAAA-MM-DD; vazio se o vendedor nao disse (padrao: 90 dias)",
     )
     fim: date | None = Field(
-        default=None, description="Ultimo dia, formato AAAA-MM-DD (padrao: hoje)"
+        default=None,
+        description="Ultimo dia, AAAA-MM-DD; vazio se o vendedor nao disse (padrao: hoje)",
     )
     limite: int = Field(default=5, ge=1, le=LIMITE_LISTA)
 
@@ -236,19 +245,26 @@ def clientes_que_mais_compram(
     ranking = vendas_repositorio.clientes_que_mais_compram(
         conexao, id_loja, STATUS_DE_VENDA, inicio, fim, limit=e.limite
     )
+    padroes = []
+    if e.inicio is None:
+        padroes.append(f"período padrão dos últimos {DIAS_DO_RANKING} dias")
+    if "limite" not in e.model_fields_set:
+        padroes.append(f"os {e.limite} primeiros")
     return {
         "inicio": inicio.isoformat(),
         "fim": fim.isoformat(),
         "criterio": CRITERIO_VENDAS + " Valor comprado nesta loja.",
+        "padroes_usados": padroes,
+        "ordem": "ja ordenado do maior para o menor total; mantenha esta ordem",
         "clientes": [
             {
+                "posicao": posicao,
                 "nome": c["nome"],
-                "cpf": vendas_repositorio.mascarar_cpf(c["cpf"]),
                 "pedidos": int(c["pedidos"]),
                 "total": _dinheiro(c["total"]),
                 "ultima_compra": c["ultima_compra"].date().isoformat(),
             }
-            for c in ranking
+            for posicao, c in enumerate(ranking, start=1)
         ],
     }
 
@@ -396,35 +412,43 @@ def lojas_e_horarios(conexao: Connection, usuario: UsuarioAtual, e: EntradaVazia
 # Mudou um botao ou uma aba la, atualize aqui.
 GUIA_DO_PAINEL = {
     "menu": (
-        "No computador, o menu fica na barra azul a esquerda (passe o mouse para ver os nomes); no "
-        "celular, nos botoes logo abaixo do topo. O vendedor ve tres secoes: Vendas, Clientes e "
-        "Estoque. O botao redondo no canto inferior direito abre este assistente."
+        "No computador, o menu fica na barra azul do lado esquerdo da tela (passe o mouse sobre "
+        "ela para ver os nomes); no celular, nos botoes logo abaixo do topo. O vendedor ve tres "
+        "secoes, nesta ordem: Estoque, Vendas e Clientes. O botao redondo no canto inferior "
+        "direito abre este assistente."
     ),
     "vendas": (
-        "Menu > Vendas: lista as vendas da sua loja (venda, cliente, vendedor, pecas, total e "
-        "situacao). Use o campo Buscar com o numero da venda, o nome ou o CPF do cliente. Clique "
-        "numa linha para ver os itens, a forma de pagamento e o vendedor."
+        "Tela Vendas (no menu, clique em Vendas): lista as vendas da sua loja, com as colunas "
+        "Venda, Cliente, Vendedor, Pecas, Total e Situacao. No campo Buscar, digite o numero da "
+        "venda, parte do nome do cliente ou o CPF completo do cliente. Clique numa linha para ver "
+        "a data, a forma de pagamento e as pecas da venda. A tela nao tem filtro de data nem "
+        "mostra o total vendido no dia ou no mes."
     ),
     "nova_venda": (
-        "Menu > Vendas > botao Nova venda (no alto, a direita). 1) Digite o CPF do cliente e "
-        "clique em Buscar. 2) Em Buscar peca, digite nome, SKU ou codigo de barras e clique em "
-        "Adicionar em cada peca (Tirar remove). 3) Escolha a forma de pagamento. 4) Se for troca, "
-        "escreva 'troca' em Observacao. 5) Clique em Lancar venda."
+        "Lancar uma venda: no menu, clique em Vendas e depois no botao Nova venda (no alto da "
+        "tela). 1) Em CPF do cliente, digite o CPF e clique em Buscar. 2) Em Buscar peca, digite "
+        "nome, SKU ou codigo de barras e clique em Adicionar em cada peca (Tirar remove). 3) "
+        "Escolha a forma de pagamento. 4) Se for troca, escreva 'troca' em Observacao "
+        "(opcional). 5) Clique em Lancar venda."
     ),
     "clientes": (
-        "Menu > Clientes: clientes da sua loja (cadastrados nela ou que ja compraram nela), com "
-        "telefone, cidade e desde quando sao clientes. Use o campo Buscar com nome, e-mail, "
-        "telefone ou CPF. Para ver o que um cliente comprou, va em Vendas e busque pelo CPF dele."
+        "Tela Clientes (no menu, clique em Clientes): lista os clientes da sua loja (cadastrados "
+        "nela ou que ja compraram nela) que tem CPF cadastrado, com as colunas Cliente (nome e "
+        "e-mail), CPF (so os dois ultimos digitos), Telefone, Cidade e Desde. Para achar um "
+        "cliente especifico, use o campo Buscar: aceita parte do nome, do e-mail ou do telefone, "
+        "ou o CPF completo. As linhas nao abrem detalhes; para ver as compras de um cliente, va "
+        "em Vendas e busque pelo nome ou CPF dele."
     ),
     "estoque": (
-        "Menu > Estoque > aba Saldo: no topo, unidades em estoque, SKUs com estoque baixo, SKUs "
-        "esgotados e valor em estoque a preco de venda. Filtre por Buscar (nome ou SKU), "
-        "Categoria, Situacao (ok, baixo, esgotado) e Saldo em (para ver um dia passado). Clique "
-        "numa peca para ver o saldo em cada loja da rede e o historico de movimentacoes."
+        "Tela Saldo de estoque (no menu, clique em Estoque; abre na aba Saldo): no topo, quatro "
+        "quadros com os totais da loja: Unidades em estoque, SKUs com estoque baixo, SKUs "
+        "esgotados e Valor em estoque (a preco de venda). Filtros: Buscar (nome ou SKU), "
+        "Categoria, Saldo em (para ver o fim de um dia passado) e Situacao (OK, Estoque baixo, "
+        "Esgotado). Clique numa peca para ver o Saldo por loja e o Historico de movimentacoes."
     ),
     "conta": (
-        "Clique no seu nome no canto superior direito para abrir o menu da conta; la fica Sair "
-        "da conta."
+        "No canto superior direito fica o botao da conta (suas iniciais e seu nome). Clique nele "
+        "para abrir o menu; la fica Sair da conta."
     ),
     "nao_e_do_vendedor": (
         "Movimentar estoque (entrada, saida, ajuste), transferencias, aprovacoes, atendimento e "
@@ -511,6 +535,31 @@ _REGISTRO: dict[str, tuple[str, type[_Entrada], Funcao]] = {
         formas_de_pagamento,
     ),
 }
+
+
+# O modelo tende a "ajudar" pedindo 10 itens ou um periodo que o vendedor nao disse. Sem um
+# numero ou uma palavra de tempo na pergunta, esses argumentos caem e vale o padrao da ferramenta
+# (que volta em `padroes_usados` para a resposta dizer qual foi).
+_PEDE_QUANTIDADE = re.compile(
+    r"\d|\b(dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|quinze|vinte)\b"
+)
+_PEDE_PERIODO = re.compile(
+    r"\d{1,2}/\d{1,2}|\d{4}-\d{2}|\b20\d\d\b|\b(hoje|ontem|anteontem|semana|semanas|mes|meses|ano|anos|dia|dias|periodo|trimestre|"
+    r"semestre|desde|janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|"
+    r"novembro|dezembro|natal|black friday)\b"
+)
+_ARGUMENTOS_DE_QUANTIDADE = {"limite"}
+_ARGUMENTOS_DE_PERIODO = {"inicio", "fim", "dia"}
+
+
+def so_o_que_foi_pedido(pergunta: str, argumentos: dict[str, Any]) -> dict[str, Any]:
+    texto = _normal(pergunta)
+    tirar = set()
+    if not _PEDE_QUANTIDADE.search(texto):
+        tirar |= _ARGUMENTOS_DE_QUANTIDADE
+    if not _PEDE_PERIODO.search(texto):
+        tirar |= _ARGUMENTOS_DE_PERIODO
+    return {k: v for k, v in argumentos.items() if k not in tirar}
 
 
 def _tipo_base(anotacao: Any) -> Any:

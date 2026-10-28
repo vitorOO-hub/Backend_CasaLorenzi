@@ -13,8 +13,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app.assistente.vendedor import conferencia, intencao, repositorio
 from app.assistente.vendedor import ferramentas as ferramentas_vendedor
-from app.assistente.vendedor import repositorio
 from app.assistente.vendedor import service as vendedor
 from app.assistente.vendedor.provedores import (
     ChamadaFeita,
@@ -30,6 +30,7 @@ from app.core.config import Settings
 from app.core.db import get_executar
 from app.core.papeis import Papel, UsuarioAtual
 from app.main import criar_app
+from app.vendas.repositorio import mascarar_cpf
 from tests.auth_util import SUPABASE_URL, ParDeChaves, provedor_para
 from tests.conftest import DATABASE_URL_TESTE
 
@@ -156,7 +157,14 @@ class ProvedorFalso:
     def conversar(
         self, modelo, sistema, historico, ferramentas, executar, *, max_rodadas, max_tokens
     ):
-        self.chamadas.append({"modelo": modelo, "sistema": sistema, "historico": list(historico)})
+        self.chamadas.append(
+            {
+                "modelo": modelo,
+                "sistema": sistema,
+                "historico": list(historico),
+                "ferramentas": [f.nome for f in ferramentas],
+            }
+        )
         if self.erro:
             raise self.erro
         resultado = Resultado(texto=self.texto, tokens_entrada=100, tokens_saida=20)
@@ -657,7 +665,8 @@ def test_ranking_de_clientes_usa_a_loja_do_token(monkeypatch):
     )
     assert recebido["id_loja"] == LOJA_A and recebido["limit"] == 10
     assert recebido["status"] == ("pago", "separado", "entregue")
-    assert saida["clientes"][0]["cpf"] == "***.***.***-01"
+    assert "cpf" not in saida["clientes"][0]
+    assert saida["clientes"][0]["posicao"] == 1
     assert saida["clientes"][0]["total"] == 900.0
 
 
@@ -789,10 +798,245 @@ def test_guia_do_painel_traz_o_caminho_de_cliques_das_telas_do_vendedor():
     saida = ferramentas_vendedor.executar(ConexaoFalsa(), VENDEDOR_A, "guia_do_painel", {})
     telas = saida["telas"]
     assert {"vendas", "nova_venda", "clientes", "estoque"} <= set(telas)
-    assert "Menu > Clientes" in telas["clientes"]
+    assert "clique em Clientes" in telas["clientes"]
     assert "Lancar venda" in telas["nova_venda"]
 
 
 def test_prompt_proibe_citar_ferramentas_e_pede_caminho_de_cliques():
     assert "Nunca cite ferramentas" in vendedor.SISTEMA
-    assert "caminho de cliques" in vendedor.SISTEMA
+    assert "nao use tabelas" in vendedor.SISTEMA
+    assert "Nao invente telas" in vendedor.SISTEMA_NAVEGACAO
+
+
+# ------------------------------------------------------------------ navegacao x dados
+
+
+@pytest.mark.parametrize(
+    "pergunta",
+    [
+        "onde ver os clientes dessa loja",
+        "onde posso ver os clientes da loja",
+        "Onde eu acho a tela de vendas?",
+        "como faço pra lançar uma venda?",
+        "como acesso o saldo do estoque",
+        "em qual tela fica o estoque?",
+        "onde fica o botão de sair",
+    ],
+)
+def test_pergunta_de_navegacao(pergunta):
+    assert intencao.classificar(pergunta) == intencao.Intencao(True, False)
+
+
+@pytest.mark.parametrize(
+    "pergunta",
+    [
+        "quais os clientes que mais compram?",
+        "quanto vendemos hoje?",
+        "onde fica a loja do shopping?",
+        "como estão as vendas hoje?",
+        "onde está o pedido CL-123?",
+        "tem camisa de linho azul no M?",
+        "me mostre o ranking de clientes",
+    ],
+)
+def test_pergunta_de_dados(pergunta):
+    assert intencao.classificar(pergunta).navegacao is False
+
+
+def test_navegacao_que_tambem_pede_dados():
+    assert intencao.classificar("onde vejo quanto vendemos hoje?") == intencao.Intencao(True, True)
+
+
+def test_navegacao_usa_o_modelo_rapido_so_com_o_mapa_e_sem_ferramentas(cliente, par, provedor):
+    cabecalho = token(par)
+    id_conversa = nova_conversa(cliente, cabecalho)
+    perguntar(cliente, cabecalho, id_conversa, "quanto vendemos ontem?")
+    resposta = perguntar(cliente, cabecalho, id_conversa, "onde ver os clientes dessa loja")
+
+    assert resposta.status_code == 200
+    chamada = provedor.chamadas[-1]
+    assert chamada["ferramentas"] == []
+    assert chamada["historico"] == [Turno("usuario", "onde ver os clientes dessa loja")]
+    assert "MAPA:" in chamada["sistema"]
+    assert vendedor.AVISO_DE_CONSULTA not in chamada["sistema"]
+    assert ferramentas_vendedor.GUIA_DO_PAINEL["clientes"] in chamada["sistema"]
+    assert cliente.fabricados[-1].provedor == "groq"
+    # So o caminho: sem a oferta de consulta.
+    assert resposta.json()["resposta"]["texto"] == "Resposta de teste"
+
+
+def test_navegacao_com_dados_oferece_a_consulta_em_uma_frase(cliente, par, provedor):
+    cabecalho = token(par)
+    id_conversa = nova_conversa(cliente, cabecalho)
+    resposta = perguntar(cliente, cabecalho, id_conversa, "onde vejo quanto vendemos hoje?")
+    assert provedor.chamadas[-1]["ferramentas"] == []
+    texto = resposta.json()["resposta"]["texto"]
+    assert texto == f"Resposta de teste\n\n{vendedor.OFERTA_DE_CONSULTA}"
+    assert vendedor.AVISO_DE_CONSULTA in provedor.chamadas[-1]["sistema"]
+
+
+@pytest.mark.parametrize(
+    ("pergunta", "fica"),
+    [
+        ("quais os clientes que mais compram?", {}),
+        ("quais os 10 clientes que mais compram?", {"limite": 10}),
+        ("quem mais comprou este mes?", {"inicio": "2026-10-01", "fim": "2026-10-28"}),
+    ],
+)
+def test_argumento_que_o_vendedor_nao_pediu_cai(pergunta, fica):
+    do_modelo = {"limite": 10, "inicio": "2026-10-01", "fim": "2026-10-28"}
+    assert ferramentas_vendedor.so_o_que_foi_pedido(pergunta, do_modelo) == fica
+
+
+def test_pergunta_de_dados_recebe_as_ferramentas(cliente, par, provedor):
+    cabecalho = token(par)
+    id_conversa = nova_conversa(cliente, cabecalho)
+    perguntar(cliente, cabecalho, id_conversa, "quais os clientes que mais compram?")
+    assert "clientes_que_mais_compram" in provedor.chamadas[-1]["ferramentas"]
+
+
+# ------------------------------------------------------------------ listas conferidas
+
+RANKING = [
+    ("gustavo guimarães", 9, "14507.80"),
+    ("marina lacerda", 9, "12106.60"),
+    ("felipe barros", 4, "8433.90"),
+    ("fernanda ibrahim", 8, "8263.80"),
+]
+
+
+@pytest.fixture
+def ranking(monkeypatch):
+    def consulta(conexao, id_loja, status, inicio, fim, *, limit):
+        return [
+            {
+                "nome": nome,
+                "cpf": None,
+                "pedidos": pedidos,
+                "total": total,
+                "ultima_compra": datetime(2026, 10, 1, tzinfo=UTC),
+            }
+            for nome, pedidos, total in RANKING
+        ]
+
+    monkeypatch.setattr(ferramentas_vendedor.vendas_repositorio, "loja_de_venda", lambda c, i: i)
+    monkeypatch.setattr(
+        ferramentas_vendedor.vendas_repositorio, "clientes_que_mais_compram", consulta
+    )
+
+
+def _pergunta_de_ranking(par, banco, texto_do_modelo):
+    provedor = ProvedorFalso(texto=texto_do_modelo, pedir=[("clientes_que_mais_compram", {})])
+    cliente = montar(par, provedor)
+    cabecalho = token(par)
+    id_conversa = nova_conversa(cliente, cabecalho)
+    resposta = perguntar(cliente, cabecalho, id_conversa, "quais os clientes que mais compram?")
+    assert resposta.status_code == 200
+    return resposta.json()["resposta"]["texto"], banco.da_resposta()["dados"]
+
+
+def test_ranking_reordenado_pelo_modelo_vira_o_texto_do_backend(par, banco, ranking):
+    texto_do_modelo = (
+        "1. Gustavo Guimarães: R$ 14.507,80\n2. Marina Lacerda: R$ 12.106,60\n"
+        "3. Fernanda Ibrahim: R$ 8.263,80\n4. Felipe Barros: R$ 8.433,90"
+    )
+    texto, dados = _pergunta_de_ranking(par, banco, texto_do_modelo)
+
+    assert dados["resposta_do_backend"] is True
+    linhas = texto.splitlines()
+    assert linhas[1] == (
+        "1. Gustavo Guimarães: R$ 14.507,80 em 9 pedidos, última compra em 01/10/2026"
+    )
+    assert [linha.split(":")[0] for linha in linhas[1:5]] == [
+        "1. Gustavo Guimarães",
+        "2. Marina Lacerda",
+        "3. Felipe Barros",
+        "4. Fernanda Ibrahim",
+    ]
+    assert linhas[6] == "Padrão usado: período padrão dos últimos 90 dias e os 5 primeiros."
+    assert "*" not in texto and "|" not in texto
+
+
+def test_ranking_certo_sem_dizer_o_periodo_padrao_vira_o_texto_do_backend(par, banco, ranking):
+    texto_do_modelo = (
+        "1. Gustavo Guimarães: R$ 14.507,80\n2. Marina Lacerda: R$ 12.106,60\n"
+        "3. Felipe Barros: R$ 8.433,90\n4. Fernanda Ibrahim: R$ 8.263,80"
+    )
+    _, dados = _pergunta_de_ranking(par, banco, texto_do_modelo)
+    assert dados["resposta_do_backend"] is True
+
+
+def test_ranking_com_valor_trocado_tambem_vira_o_texto_do_backend(par, banco, ranking):
+    texto_do_modelo = (
+        "1. Gustavo Guimarães: R$ 14.507,80\n2. Marina Lacerda: R$ 12.106,60\n"
+        "3. Felipe Barros: R$ 8.433,00\n4. Fernanda Ibrahim: R$ 8.263,80"
+    )
+    _, dados = _pergunta_de_ranking(par, banco, texto_do_modelo)
+    assert dados["resposta_do_backend"] is True
+
+
+def test_ranking_na_ordem_e_com_os_valores_do_banco_fica_como_o_modelo_escreveu(
+    par, banco, ranking
+):
+    texto_do_modelo = (
+        "Ultimos 90 dias:\n1. **Gustavo Guimarães**: R$ 14 507,80\n"
+        "2. Marina Lacerda: R$ 12.106,60\n3. Felipe Barros: R$ 8.433,90\n"
+        "4. Fernanda Ibrahim: R$ 8.263,80"
+    )
+    texto, dados = _pergunta_de_ranking(par, banco, texto_do_modelo)
+    assert texto == texto_do_modelo
+    assert "resposta_do_backend" not in dados
+
+
+def test_lista_opcional_so_e_conferida_quando_o_modelo_a_mostra():
+    resultado = {
+        "inicio": "2026-10-28",
+        "fim": "2026-10-28",
+        "criterio": "c",
+        "faturamento": 100.0,
+        "pedidos": 1,
+        "pecas": 1,
+        "ticket_medio": 100.0,
+        "mais_vendidas": [
+            {"posicao": 1, "produto": "camisa linho", "unidades": 1, "faturamento": 100.0}
+        ],
+    }
+    chamadas = [ChamadaFeita("vendas_do_periodo", {}, resultado)]
+    assert conferencia.conferir("Hoje vendemos R$ 100,00.", chamadas) is None
+    assert conferencia.conferir("Camisa linho: R$ 90,00", chamadas) is not None
+
+
+# ------------------------------------------------------------------ privacidade
+
+
+def test_mascara_de_cpf_deixa_so_os_dois_ultimos_digitos():
+    assert mascarar_cpf("12345678901") == "***.***.***-01"
+    assert mascarar_cpf(None) == "***.***.***-**"
+    assert mascarar_cpf("") == "***.***.***-**"
+
+
+def test_ferramentas_de_cliente_nao_mandam_cpf_email_nem_telefone_ao_modelo(monkeypatch, ranking):
+    monkeypatch.setattr(
+        ferramentas_vendedor.vendas,
+        "listar_clientes",
+        lambda c, u, b, *, limit, offset: {
+            "total": 1,
+            "itens": [
+                {
+                    "nome": "ana",
+                    "cpf": "***.***.***-01",
+                    "email": "ana@x.com",
+                    "telefone": "11999990000",
+                    "cidade": "SP",
+                    "cliente_desde": datetime(2026, 1, 1, tzinfo=UTC),
+                }
+            ],
+        },
+    )
+    busca = ferramentas_vendedor.executar(
+        ConexaoFalsa(), VENDEDOR_A, "buscar_clientes", {"busca": "ana"}
+    )
+    top = ferramentas_vendedor.executar(ConexaoFalsa(), VENDEDOR_A, "clientes_que_mais_compram", {})
+    for item in busca["clientes"] + top["clientes"]:
+        assert not set(item) & {"cpf", "email", "telefone"}
+    assert top["padroes_usados"] == ["período padrão dos últimos 90 dias", "os 5 primeiros"]
