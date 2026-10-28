@@ -626,3 +626,93 @@ def test_timeout_do_provedor_vira_erro_sem_status():
     with pytest.raises(ErroDoProvedor) as erro:
         provedor.conversar("m", "s", [], [], lambda n, a: {}, max_rodadas=1, max_tokens=10)
     assert erro.value.status is None
+
+
+# ------------------------------------------------------------------ correcoes do primeiro uso real
+
+
+def test_ranking_de_clientes_usa_a_loja_do_token(monkeypatch):
+    recebido = {}
+
+    def ranking(conexao, id_loja, status, inicio, fim, *, limit):
+        recebido.update(id_loja=id_loja, status=status, limit=limit)
+        return [
+            {
+                "nome": "ana",
+                "cpf": "12345678901",
+                "pedidos": 3,
+                "total": "900.00",
+                "ultima_compra": datetime(2026, 10, 20, tzinfo=UTC),
+            }
+        ]
+
+    monkeypatch.setattr(ferramentas_vendedor.vendas_repositorio, "loja_de_venda", lambda c, i: i)
+    monkeypatch.setattr(
+        ferramentas_vendedor.vendas_repositorio, "clientes_que_mais_compram", ranking
+    )
+    saida = ferramentas_vendedor.executar(
+        ConexaoFalsa(), VENDEDOR_A, "clientes_que_mais_compram", {"limite": 1000}
+    )
+    assert recebido["id_loja"] == LOJA_A and recebido["limit"] == 10
+    assert recebido["status"] == ("pago", "separado", "entregue")
+    assert saida["clientes"][0]["cpf"] == "***.***.***-01"
+    assert saida["clientes"][0]["total"] == 900.0
+
+
+def test_argumentos_vazios_ou_acima_do_maximo_nao_gastam_rodada(servicos_de_venda):
+    saida = ferramentas_vendedor.executar(
+        ConexaoFalsa(), VENDEDOR_A, "buscar_vendas", {"busca": "", "limite": 1000}
+    )
+    assert "erro" not in saida
+    assert servicos_de_venda == [("listar_vendas", VENDEDOR_A, None)]
+
+
+def test_schema_mostra_o_maximo_ao_modelo():
+    buscar = next(f for f in ferramentas_vendedor.FERRAMENTAS if f.nome == "buscar_vendas")
+    assert buscar.parametros["properties"]["limite"] == {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10,
+    }
+
+
+def test_limite_do_provedor_espera_o_pedido_e_tenta_uma_vez(monkeypatch):
+    from app.assistente import provedores
+
+    esperas = []
+    monkeypatch.setattr(provedores, "dormir", esperas.append)
+    respostas = iter(
+        [
+            httpx.Response(429, headers={"retry-after": "2"}),
+            httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]}),
+        ]
+    )
+    cliente = httpx.Client(transport=httpx.MockTransport(lambda r: next(respostas)))
+    resultado = ProvedorGroq("chave", cliente).conversar(
+        "m", "s", [Turno("usuario", "oi")], [], lambda n, a: {}, max_rodadas=1, max_tokens=10
+    )
+    assert resultado.texto == "ok"
+    assert esperas == [2.2]
+
+
+def test_limite_do_provedor_com_espera_longa_desiste_e_informa(monkeypatch):
+    from app.assistente import provedores
+
+    monkeypatch.setattr(provedores, "dormir", lambda s: pytest.fail("nao devia esperar"))
+    cliente = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda r: httpx.Response(429, json={"error": {"details": [{"retryDelay": "42s"}]}})
+        )
+    )
+    with pytest.raises(ErroDoProvedor) as erro:
+        ProvedorGemini("chave", cliente).conversar(
+            "m", "s", [], [], lambda n, a: {}, max_rodadas=1, max_tokens=10
+        )
+    assert (erro.value.status, erro.value.espera) == (429, 42.0)
+
+
+def test_limite_do_provedor_vira_mensagem_com_o_tempo_de_espera(par, banco):
+    cliente = montar(par, ProvedorFalso(erro=ErroDoProvedor("groq", 429, 42.0)))
+    a = token(par, sub=uuid4())
+    resposta = perguntar(cliente, a, nova_conversa(cliente, a), "oi, tudo bem?")
+    assert "Aguarde cerca de 42 segundos" in resposta.json()["resposta"]["texto"]

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
@@ -23,8 +24,12 @@ from app.assistente.roteamento import DestinoModelo
 from app.core.config import Settings
 
 registro = logging.getLogger("app.assistente")
+# Trocado nos testes para nao esperar de verdade.
+dormir = time.sleep
 
 TIMEOUT_SEGUNDOS = 30.0
+# No limite de uso (429), espera ate isto para tentar de novo uma vez; mais que isso, desiste.
+ESPERA_MAXIMA_SEGUNDOS = 10.0
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"
 
@@ -64,12 +69,14 @@ Executar = Callable[[str, dict[str, Any]], dict[str, Any]]
 
 
 class ErroDoProvedor(Exception):
-    """Falha de rede, timeout ou resposta de erro do provedor. Guarda so o status."""
+    """Falha de rede, timeout ou resposta de erro do provedor. Guarda so o status (e, no limite de
+    uso, quantos segundos o provedor pediu para esperar)."""
 
-    def __init__(self, provedor: str, status: int | None) -> None:
+    def __init__(self, provedor: str, status: int | None, espera: float | None = None) -> None:
         super().__init__(f"{provedor}: {status if status is not None else 'sem resposta'}")
         self.provedor = provedor
         self.status = status
+        self.espera = espera
 
 
 class Provedor(Protocol):
@@ -95,6 +102,29 @@ def _argumentos(valor: Any) -> dict[str, Any]:
     return valor if isinstance(valor, dict) else {}
 
 
+def _espera_pedida(resposta: httpx.Response) -> float | None:
+    """Segundos que o provedor pediu no limite de uso: cabecalho Retry-After (Groq) ou o
+    `retryDelay` do erro (Gemini). Le so esse numero; o resto do corpo nao e usado."""
+    cabecalho = resposta.headers.get("retry-after")
+    if cabecalho:
+        try:
+            return max(float(cabecalho), 0.0)
+        except ValueError:
+            pass
+    try:
+        detalhes = (resposta.json().get("error") or {}).get("details") or []
+    except (ValueError, AttributeError):
+        return None
+    for detalhe in detalhes:
+        atraso = str(detalhe.get("retryDelay", "")) if isinstance(detalhe, dict) else ""
+        if atraso.endswith("s"):
+            try:
+                return max(float(atraso[:-1]), 0.0)
+            except ValueError:
+                return None
+    return None
+
+
 def _inteiro(valor: Any) -> int:
     return valor if isinstance(valor, int) and valor >= 0 else 0
 
@@ -105,11 +135,20 @@ class _ClienteHttp:
         self.cliente = cliente or httpx.Client(timeout=TIMEOUT_SEGUNDOS)
 
     def postar(self, url: str, cabecalhos: dict[str, str], corpo: dict[str, Any]) -> dict[str, Any]:
-        try:
-            resposta = self.cliente.post(url, headers=cabecalhos, json=corpo)
-        except httpx.HTTPError as erro:
-            registro.warning("provedor %s sem resposta (%s)", self.nome, type(erro).__name__)
-            raise ErroDoProvedor(self.nome, None) from None
+        for tentativa in range(2):
+            try:
+                resposta = self.cliente.post(url, headers=cabecalhos, json=corpo)
+            except httpx.HTTPError as erro:
+                registro.warning("provedor %s sem resposta (%s)", self.nome, type(erro).__name__)
+                raise ErroDoProvedor(self.nome, None) from None
+            if resposta.status_code != 429:
+                break
+            # Limite de uso por minuto: espera o que o provedor pediu, uma vez, se for curto.
+            espera = _espera_pedida(resposta)
+            registro.warning("provedor %s no limite de uso (espera %s s)", self.nome, espera)
+            if tentativa or espera is None or espera > ESPERA_MAXIMA_SEGUNDOS:
+                raise ErroDoProvedor(self.nome, 429, espera)
+            dormir(espera + 0.2)
         if resposta.is_error:
             registro.warning("provedor %s respondeu %s", self.nome, resposta.status_code)
             raise ErroDoProvedor(self.nome, resposta.status_code)

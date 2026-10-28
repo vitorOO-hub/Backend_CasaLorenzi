@@ -80,6 +80,10 @@ INDISPONIVEL = (
     "Avise o administrador da rede."
 )
 FALHA_DO_PROVEDOR = "Nao consegui falar com o assistente agora. Tente de novo em instantes."
+LIMITE_DO_PROVEDOR = (
+    "Muitas perguntas ao assistente em pouco tempo (limite do provedor de IA). Aguarde cerca de "
+    "{segundos} segundos e tente de novo."
+)
 SEM_TEXTO = "Nao consegui montar uma resposta agora. Pode reformular a pergunta?"
 CONSULTAS_DEMAIS = "Essa pergunta precisou de consultas demais. Pode dividir em partes menores?"
 
@@ -216,7 +220,12 @@ def enviar_mensagem(
             )
         except ErroDoProvedor as erro:
             dados["erro_do_provedor"] = {"provedor": erro.provedor, "status": erro.status}
-            resposta, sem_resposta = FALHA_DO_PROVEDOR, True
+            if erro.status == 429:
+                segundos = max(round(erro.espera), 5) if erro.espera else 30
+                resposta = LIMITE_DO_PROVEDOR.format(segundos=segundos)
+            else:
+                resposta = FALHA_DO_PROVEDOR
+            sem_resposta = True
         else:
             tokens_entrada, tokens_saida = resultado.tokens_entrada, resultado.tokens_saida
             for chamada in resultado.chamadas:

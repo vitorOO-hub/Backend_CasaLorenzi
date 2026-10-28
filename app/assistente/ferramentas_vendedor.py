@@ -11,7 +11,7 @@ Saida enxuta: listas curtas, CPF mascarado (como nas telas) e sem e-mail nem tel
 import logging
 import unicodedata
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
@@ -25,13 +25,16 @@ from app.core.erros_auth import SemPermissao
 from app.core.horario import DIAS
 from app.core.papeis import UsuarioAtual
 from app.gerencia import repositorio as vendas_da_loja
-from app.gerencia.repositorio import Filtro
+from app.gerencia.repositorio import STATUS_DE_VENDA, Filtro
 from app.vendas import repositorio as vendas_repositorio
 from app.vendas import service as vendas
 
 registro = logging.getLogger("app.assistente")
 
 MAX_DIAS_PERIODO = 92
+# Ranking de clientes: padrao dos ultimos 90 dias, ate um ano.
+DIAS_DO_RANKING = 90
+MAX_DIAS_RANKING = 366
 LIMITE_LISTA = 10
 LIMITE_PECAS = 15
 CRITERIO_VENDAS = (
@@ -207,6 +210,46 @@ def buscar_clientes(conexao: Connection, usuario: UsuarioAtual, e: EntradaBuscaC
     }
 
 
+class EntradaRanking(_Entrada):
+    inicio: date | None = Field(
+        default=None, description="Primeiro dia, formato AAAA-MM-DD (padrao: 90 dias atras)"
+    )
+    fim: date | None = Field(
+        default=None, description="Ultimo dia, formato AAAA-MM-DD (padrao: hoje)"
+    )
+    limite: int = Field(default=5, ge=1, le=LIMITE_LISTA)
+
+
+def clientes_que_mais_compram(
+    conexao: Connection, usuario: UsuarioAtual, e: EntradaRanking
+) -> dict:
+    fim = min(e.fim or _hoje(), _hoje())
+    inicio = e.inicio or fim - timedelta(days=DIAS_DO_RANKING - 1)
+    if inicio > fim:
+        return {"erro": "O inicio precisa ser antes do fim."}
+    if (fim - inicio).days + 1 > MAX_DIAS_RANKING:
+        return {"erro": f"Consulte no maximo {MAX_DIAS_RANKING} dias por vez."}
+    id_loja = _loja_da_venda(conexao, usuario)
+    ranking = vendas_repositorio.clientes_que_mais_compram(
+        conexao, id_loja, STATUS_DE_VENDA, inicio, fim, limit=e.limite
+    )
+    return {
+        "inicio": inicio.isoformat(),
+        "fim": fim.isoformat(),
+        "criterio": CRITERIO_VENDAS + " Valor comprado nesta loja.",
+        "clientes": [
+            {
+                "nome": c["nome"],
+                "cpf": vendas_repositorio.mascarar_cpf(c["cpf"]),
+                "pedidos": int(c["pedidos"]),
+                "total": _dinheiro(c["total"]),
+                "ultima_compra": c["ultima_compra"].date().isoformat(),
+            }
+            for c in ranking
+        ],
+    }
+
+
 # ------------------------------------------------------------------ pecas, lojas e pagamento
 
 
@@ -323,6 +366,12 @@ _REGISTRO: dict[str, tuple[str, type[_Entrada], Funcao]] = {
         EntradaDetalheVenda,
         detalhe_venda,
     ),
+    "clientes_que_mais_compram": (
+        "Ranking dos clientes que mais compraram na loja num periodo (padrao: ultimos 90 dias), "
+        "com total, numero de pedidos e ultima compra. Use para 'melhores clientes'.",
+        EntradaRanking,
+        clientes_que_mais_compram,
+    ),
     "buscar_clientes": (
         "Procura clientes da loja (cadastrados nela ou com compra nela) por nome, e-mail ou CPF.",
         EntradaBuscaClientes,
@@ -358,6 +407,28 @@ def _tipo_base(anotacao: Any) -> Any:
     return None
 
 
+def _limites(campo: Any) -> tuple[Any, Any]:
+    minimo = next((m.ge for m in campo.metadata if getattr(m, "ge", None) is not None), None)
+    maximo = next((m.le for m in campo.metadata if getattr(m, "le", None) is not None), None)
+    return minimo, maximo
+
+
+def _tolerar(modelo: type[_Entrada], argumentos: dict[str, Any]) -> dict[str, Any]:
+    """Os modelos mandam `""` para "sem filtro" e pedem mais itens que o maximo. Em vez de gastar
+    uma rodada com erro: texto vazio vira ausente e numero fora da faixa vai para o limite."""
+    ajustados = {}
+    for nome, valor in argumentos.items():
+        if valor is None or (isinstance(valor, str) and not valor.strip()):
+            continue
+        campo = modelo.model_fields.get(nome)
+        if campo is not None and _tipo_base(campo.annotation) is int and isinstance(valor, int):
+            minimo, maximo = _limites(campo)
+            valor = max(valor, minimo) if minimo is not None else valor
+            valor = min(valor, maximo) if maximo is not None else valor
+        ajustados[nome] = valor
+    return ajustados
+
+
 def _parametros(modelo: type[_Entrada]) -> dict[str, Any]:
     """JSON Schema simples (tipos basicos) aceito pelos dois provedores."""
     propriedades: dict[str, Any] = {}
@@ -367,6 +438,11 @@ def _parametros(modelo: type[_Entrada]) -> dict[str, Any]:
         propriedade: dict[str, Any] = {"type": "integer" if tipo is int else "string"}
         if campo.description:
             propriedade["description"] = campo.description
+        minimo, maximo = _limites(campo)
+        if tipo is int and minimo is not None:
+            propriedade["minimum"] = minimo
+        if tipo is int and maximo is not None:
+            propriedade["maximum"] = maximo
         propriedades[nome] = propriedade
         if campo.is_required():
             obrigatorios.append(nome)
@@ -390,7 +466,7 @@ def executar(
         return {"erro": "Ferramenta desconhecida."}
     _, modelo, funcao = item
     try:
-        entrada = modelo.model_validate(argumentos)
+        entrada = modelo.model_validate(_tolerar(modelo, argumentos))
     except ValidationError as erro:
         campos = sorted({".".join(str(p) for p in e["loc"]) or "argumentos" for e in erro.errors()})
         return {"erro": f"Argumentos invalidos: {', '.join(campos)}."}
