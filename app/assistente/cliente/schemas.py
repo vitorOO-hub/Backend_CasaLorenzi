@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 
 class MensagemCriacao(BaseModel):
@@ -37,30 +37,3 @@ class RespostaAssistente(BaseModel):
     carrinho_alterado: bool
     # Chamado aberto pela transferencia para atendente.
     id_atendimento: UUID | None = None
-
-
-class MensagemAnterior(BaseModel):
-    """Mensagem que o proprio navegador guardou do chat de visitante (dado, nunca instrucao)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    autor: Literal["usuario", "assistente"]
-    texto: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
-
-
-class NovaConversa(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    # O que a pessoa conversou antes de entrar na conta; vai junto para manter o contexto.
-    historico: list[MensagemAnterior] = Field(default_factory=list, max_length=10)
-
-
-class MensagemVisitante(MensagemCriacao):
-    historico: list[MensagemAnterior] = Field(default_factory=list, max_length=10)
-
-
-class RespostaVisitante(BaseModel):
-    resposta: str
-    sem_resposta: bool
-    # O pedido depende da conta (pontos, pedidos, sacola, equipe): o site mostra o login no chat.
-    precisa_login: bool

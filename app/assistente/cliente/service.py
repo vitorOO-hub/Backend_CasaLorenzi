@@ -98,26 +98,10 @@ def _conversa_do_cliente(
     return conversa
 
 
-def iniciar_conversa(
-    conexao: Connection, usuario: UsuarioAtual, historico: list[dict[str, str]] | None = None
-) -> dict[str, Any]:
-    """`historico`: o que a pessoa conversou antes de entrar na conta (chat de visitante). Entra na
-    conversa para o assistente e o atendente terem o contexto; e texto do proprio cliente, tratado
-    como dado como qualquer outra mensagem, e nao conta no limite diario."""
+def iniciar_conversa(conexao: Connection, usuario: UsuarioAtual) -> dict[str, Any]:
     conversa = repositorio.criar_conversa(conexao, _id_cliente(conexao, usuario), TIPO)
-    for mensagem in (historico or [])[-LIMITE_HISTORICO:]:
-        repositorio.gravar_mensagem(
-            conexao,
-            conversa["id_conversa"],
-            mensagem["autor"],
-            mensagem["texto"],
-            dados={"origem": "visitante"},
-        )
     conexao.commit()
-    mensagens = repositorio.mensagens_visiveis(
-        conexao, conversa["id_conversa"], LIMITE_MENSAGENS_EXIBIDAS
-    )
-    return {**conversa, "mensagens": mensagens}
+    return {**conversa, "mensagens": []}
 
 
 def obter_conversa(conexao: Connection, usuario: UsuarioAtual, id_conversa: UUID) -> dict[str, Any]:

@@ -124,7 +124,6 @@ def mensagens_do_usuario_hoje(conexao: Connection, id_usuario: UUID) -> int:
                 SELECT count(*) FROM mensagem_assistente m
                 JOIN conversa_assistente c ON c.id_conversa = m.id_conversa
                 WHERE c.id_usuario = CAST(:u AS uuid) AND m.autor = 'usuario'
-                  AND m.dados->>'origem' IS DISTINCT FROM 'visitante'
                   AND m.criada_em >= date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo')
                                      AT TIME ZONE 'America/Sao_Paulo'
                 """

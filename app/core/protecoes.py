@@ -29,9 +29,8 @@ ESCRITAS_SENSIVEIS = frozenset(
         # Rotas publicas que acham o cadastro so pelo CPF: o limite barra a tentativa em massa.
         "/api/v1/ativacao-conta",
         "/api/v1/ativacao-conta/consultar",
-        # Publicas: login por CPF (tentativa de senha) e assistente do visitante (LLM pago).
+        # Login por CPF: cada chamada e uma tentativa de senha.
         "/api/v1/acesso/entrar-cpf",
-        "/api/v1/assistente/visitante/mensagens",
     }
 )
 # Cada mensagem ao assistente chama um LLM pago; o caminho tem o id da conversa, por isso o padrao.

@@ -10,7 +10,6 @@ from fastapi import APIRouter
 from app.acesso.router import router as acesso_router
 from app.api import health
 from app.assistente.cliente.router import router as assistente_cliente_router
-from app.assistente.cliente.router import router_visitante as assistente_visitante_router
 from app.assistente.router import router as assistente_router
 from app.ativacao.router import router as ativacao_router
 from app.automacoes.router import router as automacoes_router
@@ -36,8 +35,6 @@ api_router.include_router(painel_estoque_router, prefix="/api/v1")
 api_router.include_router(vendas_router, prefix="/api/v1")
 api_router.include_router(cliente_router, prefix="/api/v1")
 api_router.include_router(assistente_cliente_router, prefix="/api/v1")
-# Publica: assistente de quem navega sem login (so catalogo; limite por IP).
-api_router.include_router(assistente_visitante_router, prefix="/api/v1")
 # Unica area publica de escrita: o cliente importado ainda nao tem login (ver app/ativacao).
 api_router.include_router(ativacao_router, prefix="/api/v1")
 # Publica: login do cliente por CPF e senha (limite por IP, sem revelar conta).
