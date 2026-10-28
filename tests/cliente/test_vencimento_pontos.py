@@ -80,3 +80,21 @@ def test_aviso_soma_o_que_vence_nos_proximos_30_dias():
     r = aviso(lotes, agora)
     assert r["pontos_a_vencer"] == 120
     assert r["proximos_vencimentos"] == [{"vence_em": em_10 + ANO, "pontos": 120}]
+
+
+def test_divida_perdoada_nao_vira_lote():
+    """Saida maior que o saldo vira divida; o ajuste que zera paga a divida e nao vence depois."""
+    t0 = CORTE_DA_CARGA + DIA
+    credito_novo = credito(t0 + 2 * DIA, 100)
+    movimentos = [saida(t0, 250), M("ajuste", 250, t0 + DIA, None), credito_novo]
+    faltam, lotes = calcular(movimentos, t0 + ANO + 3 * DIA)
+    assert [v["pontos"] for v in faltam] == [-100]  # vence so o credito, nao o ajuste
+    assert sum(lote.resta for lote in lotes) == 0
+
+
+def test_movimentacao_futura_nao_adianta_vencimento():
+    entrada = CORTE_DA_CARGA + DIA
+    agora = entrada + ANO - DIA  # um dia antes de vencer
+    movimentos = [credito(entrada, 300), saida(entrada + ANO + 30 * DIA, 10)]
+    faltam, _ = calcular(movimentos, agora)
+    assert faltam == []
