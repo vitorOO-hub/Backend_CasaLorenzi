@@ -111,12 +111,27 @@ class GeradorComLimite(GeradorFalso):
         return super().documentos(textos)
 
 
+class SemCommit:
+    """A conexao do teste, mas o commit de cada lote nao sai da transacao (desfeita no fim)."""
+
+    def __init__(self, conexao):
+        self._conexao = conexao
+        self.commits = 0
+
+    def commit(self):
+        self.commits += 1
+
+    def __getattr__(self, nome):
+        return getattr(self._conexao, nome)
+
+
 def test_gerar_em_lotes_pequenos_espera_o_limite_e_grava(sa_conn):
     ids = [_peca(sa_conn, f"Lote {i} {uuid4().hex[:6]}") for i in range(3)]
     pecas = [p for p in embeddings.pecas_pendentes(sa_conn) if p["id_produto"] in ids]
     esperas = []
+    conexao = SemCommit(sa_conn)
     feitas = embeddings.gerar(
-        sa_conn,
+        conexao,
         GeradorComLimite(),
         pecas,
         aplicar=True,
@@ -124,6 +139,7 @@ def test_gerar_em_lotes_pequenos_espera_o_limite_e_grava(sa_conn):
         pausa=5,
         dormir=esperas.append,
     )
+    assert conexao.commits == 2  # um commit por lote
     assert feitas == 3
     assert esperas == [60, 5]  # o limite do primeiro lote, depois a pausa antes do segundo
     gravadas = sa_conn.execute(

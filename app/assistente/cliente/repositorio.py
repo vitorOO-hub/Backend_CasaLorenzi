@@ -56,8 +56,10 @@ def mensagens_visiveis(conexao: Connection, id_conversa: UUID, limite: int) -> l
     linhas = conexao.execute(
         text(
             """
-            SELECT autor, texto, criada_em FROM (
-                SELECT autor, texto, criada_em, id_mensagem FROM mensagem_assistente
+            SELECT autor, texto, criada_em,
+                   COALESCE(dados->'ofertas', '[]'::jsonb) AS ofertas
+            FROM (
+                SELECT autor, texto, criada_em, dados, id_mensagem FROM mensagem_assistente
                 WHERE id_conversa = CAST(:c AS uuid) AND autor IN ('usuario', 'assistente')
                 ORDER BY criada_em DESC, id_mensagem DESC
                 LIMIT :limite
@@ -243,3 +245,30 @@ def buscar_produtos_semelhantes(
         {"vetor": vetor, "limite": limite, "distancia_maxima": distancia_maxima},
     ).mappings()
     return [dict(linha) for linha in linhas]
+
+
+def peca_para_oferta(conexao: Connection, sku: str) -> dict[str, Any] | None:
+    """O cartao que o chat mostra: peca ativa, a variacao (cor, tamanho, preco), a foto e quanto
+    ha em estoque nas lojas ativas. None se o SKU nao existe ou a peca saiu do catalogo."""
+    linha = (
+        conexao.execute(
+            text(
+                """
+                SELECT v.id_variacao, v.sku, p.nome AS produto, p.marca, v.cor, v.tamanho,
+                       v.preco_venda AS preco, p.imagem_url, p.imagem_alt, p.tecido,
+                       COALESCE((
+                           SELECT sum(GREATEST(e.quantidade, 0))
+                           FROM estoque e JOIN loja l ON l.id_loja = e.id_loja AND l.ativa
+                           WHERE e.id_variacao = v.id_variacao
+                       ), 0)::int AS estoque
+                FROM variacao_produto v
+                JOIN produto p ON p.id_produto = v.id_produto
+                WHERE upper(v.sku) = upper(:sku) AND v.ativa AND p.ativo
+                """
+            ),
+            {"sku": sku},
+        )
+        .mappings()
+        .first()
+    )
+    return dict(linha) if linha else None

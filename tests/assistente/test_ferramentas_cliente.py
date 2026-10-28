@@ -48,8 +48,8 @@ def test_ferramenta_desconhecida(ferramentas):
         ("consultar_estoque", {"sku": "abc; DROP TABLE"}),
         ("consultar_pontos", {"id_cliente": str(uuid4())}),
         ("consultar_pedidos", {"id_usuario": "outro"}),
-        ("montar_carrinho", {"sku": "VLT-1", "quantidade": 0}),
-        ("montar_carrinho", {"sku": "VLT-1", "quantidade": 500}),
+        ("oferecer_peca", {"sku": "VLT-1", "quantidade": 0}),
+        ("oferecer_peca", {"sku": "VLT-1", "quantidade": 500}),
         ("transferir_para_atendente", {"motivo": "oi", "resumo": "curto"}),
     ],
 )
@@ -149,32 +149,62 @@ def test_info_loja_mantem_horario_nulo(ferramentas, monkeypatch):
     assert loja["horario_funcionamento"] is None
 
 
-def test_montar_carrinho_com_sku_inexistente_nao_mexe_na_sacola(ferramentas, monkeypatch):
-    monkeypatch.setattr(modulo.repositorio, "variacao_ativa_pelo_sku", lambda conexao, sku: None)
-    assert ferramentas.executar("montar_carrinho", {"sku": "VLT-404"}) == {
-        "adicionado": False,
-        "motivo": "sku_nao_encontrado",
+def _peca(sku="VLT-1-AZ-M", estoque=3):
+    return {
+        "id_variacao": uuid4(),
+        "sku": sku,
+        "produto": "blazer alfaiataria",
+        "marca": "Casa Lorenzi",
+        "cor": "azul marinho",
+        "tamanho": "M",
+        "preco": 899,
+        "imagem_url": "/img/produtos/blazer.jpg",
+        "imagem_alt": "Blazer azul",
+        "tecido": "la fria",
+        "estoque": estoque,
     }
-    assert ferramentas.carrinho_alterado is False
 
 
-def test_montar_carrinho_adiciona_para_o_cliente_do_token(ferramentas, monkeypatch):
-    id_variacao = uuid4()
-    chamadas = []
-    monkeypatch.setattr(
-        modulo.repositorio, "variacao_ativa_pelo_sku", lambda conexao, sku: id_variacao
-    )
-    monkeypatch.setattr(
-        modulo.cliente,
-        "adicionar_item_carrinho",
-        lambda conexao, usuario, dados: chamadas.append((usuario, dados)),
-    )
-    assert (
-        ferramentas.executar("montar_carrinho", {"sku": "vlt-1", "quantidade": 2})["adicionado"]
-        is True
-    )
-    assert chamadas == [(CLIENTE, {"id_variacao": id_variacao, "quantidade": 2})]
-    assert ferramentas.carrinho_alterado is True
+def _nao_mexe_na_sacola(monkeypatch):
+    def proibido(*a, **k):
+        raise AssertionError("o assistente nao coloca nada na sacola")
+
+    monkeypatch.setattr(modulo.cliente, "adicionar_item_carrinho", proibido)
+
+
+def test_oferecer_peca_monta_o_cartao_sem_mexer_na_sacola(ferramentas, monkeypatch):
+    _nao_mexe_na_sacola(monkeypatch)
+    peca = _peca()
+    monkeypatch.setattr(modulo.repositorio, "peca_para_oferta", lambda conexao, sku: peca)
+    resultado = ferramentas.executar("oferecer_peca", {"sku": "vlt-1-az-m", "quantidade": 2})
+    assert resultado["oferecido"] is True and resultado["tamanho"] == "M"
+    (oferta,) = ferramentas.ofertas
+    assert oferta["id_variacao"] == peca["id_variacao"] and oferta["quantidade"] == 2
+    assert oferta["imagem_url"] == "/img/produtos/blazer.jpg"
+    # A mesma peca pedida duas vezes nao vira dois cartoes.
+    ferramentas.executar("oferecer_peca", {"sku": "VLT-1-AZ-M"})
+    assert len(ferramentas.ofertas) == 1
+
+
+@pytest.mark.parametrize(
+    ("peca", "motivo"),
+    [(None, "sku_nao_encontrado"), (_peca(estoque=0), "sem_estoque")],
+)
+def test_peca_inexistente_ou_sem_estoque_nao_vira_cartao(ferramentas, monkeypatch, peca, motivo):
+    _nao_mexe_na_sacola(monkeypatch)
+    monkeypatch.setattr(modulo.repositorio, "peca_para_oferta", lambda conexao, sku: peca)
+    assert ferramentas.executar("oferecer_peca", {"sku": "VLT-404"}) == {
+        "oferecido": False,
+        "motivo": motivo,
+    }
+    assert ferramentas.ofertas == []
+
+
+def test_no_maximo_tres_cartoes_por_resposta(ferramentas, monkeypatch):
+    monkeypatch.setattr(modulo.repositorio, "peca_para_oferta", lambda conexao, sku: _peca(sku=sku))
+    for i in range(4):
+        ferramentas.executar("oferecer_peca", {"sku": f"VLT-{i}"})
+    assert len(ferramentas.ofertas) == modulo.LIMITE_OFERTAS
 
 
 def test_mensagem_do_assistente_conta_como_escrita_sensivel_no_limite_por_ip():
