@@ -50,7 +50,7 @@ LIMITE_MENSAGENS_EXIBIDAS = 100
 MAX_TOKENS_SAIDA = 600
 MAX_RODADAS_FERRAMENTA = 4
 LIMITE_CARACTERES_RESPOSTA = 2000
-LIMITE_DIARIO_POR_CLIENTE = 40
+LIMITE_DIARIO_POR_CLIENTE = 30  # cota diaria gratuita do Groq, dividida com os outros chatbots
 
 FabricaProvedor = Callable[[DestinoModelo, Settings], Provedor]
 
