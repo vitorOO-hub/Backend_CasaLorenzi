@@ -264,7 +264,7 @@ def test_pergunta_incompleta_nao_chama_o_modelo(cena):
     conversa = _nova(http, como("cliente"))
     corpo = _enviar(http, como("cliente"), conversa, "tem essa peca na loja?").json()
     assert provedor.destinos == []
-    assert "qual peca" in corpo["resposta"]
+    assert "qual peça" in corpo["resposta"]
 
 
 def test_erro_do_provedor_responde_controlado_e_guarda_a_pergunta(cena):

@@ -63,17 +63,17 @@ pagamento ou problema com pedido, ou quando voce nao conseguir resolver.
 """
 
 TEXTO_ESCLARECER = (
-    "Para eu te ajudar, me diga qual peca (nome, cor ou o codigo SKU) ou o numero do pedido."
+    "Para eu te ajudar, me diga qual peça (nome, cor ou o código SKU) ou o número do pedido."
 )
 TEXTO_INDISPONIVEL = (
-    "O assistente esta indisponivel no momento. Se precisar, abra um chamado na area Atendimento."
+    "O assistente está indisponível no momento. Se precisar, abra um chamado na área Atendimento."
 )
 TEXTO_FALHA_PROVEDOR = (
-    "Nao consegui responder agora. Tente de novo em instantes ou abra um chamado na area "
+    "Não consegui responder agora. Tente de novo em instantes ou abra um chamado na área "
     "Atendimento."
 )
 TEXTO_SEM_RESPOSTA = (
-    "Nao consegui confirmar essa informacao. Posso passar sua conversa para a nossa equipe."
+    "Não consegui confirmar essa informação. Posso passar sua conversa para a nossa equipe."
 )
 
 

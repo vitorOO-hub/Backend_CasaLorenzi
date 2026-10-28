@@ -9,14 +9,14 @@ class ConversaNaoEncontrada(ErroDeNegocio):
     """Tambem cobre a conversa de outra pessoa: nao revela que ela existe."""
 
     status_code = status.HTTP_404_NOT_FOUND
-    detalhe = "Conversa nao encontrada"
+    detalhe = "Conversa não encontrada"
 
 
 class ConversaComAtendente(ErroDeNegocio):
     status_code = status.HTTP_409_CONFLICT
-    detalhe = "Esta conversa foi passada para um atendente; continue pelo atendimento"
+    detalhe = "Esta conversa foi passada para a nossa equipe; continue pelo Atendimento."
 
 
 class LimiteDiarioDoAssistente(ErroDeNegocio):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
-    detalhe = "Voce atingiu o limite de mensagens do assistente por hoje. Tente amanha."
+    detalhe = "Você atingiu o limite de mensagens do assistente por hoje. Tente de novo amanhã."
