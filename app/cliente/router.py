@@ -26,6 +26,8 @@ from app.cliente.schemas import (
     OpcoesChamadoCliente,
     PedidoCliente,
     PerfilCliente,
+    PreferenciasCliente,
+    PreferenciasGravadas,
     VultoMaisCliente,
 )
 from app.core.db import ExecutarDep
@@ -56,6 +58,17 @@ def listar_estoque_catalogo(executar: ExecutarDep):
 @router.get("/perfil", response_model=PerfilCliente, summary="Perfil do cliente logado")
 def obter_perfil(usuario: UsuarioDep, executar: ExecutarDep):
     return executar(lambda conexao: service.obter_perfil(conexao, usuario))
+
+
+@router.patch(
+    "/preferencias",
+    response_model=PreferenciasGravadas,
+    summary="Aceitar ou recusar avisos por e-mail e WhatsApp",
+)
+def alterar_preferencias(dados: PreferenciasCliente, usuario: UsuarioDep, executar: ExecutarDep):
+    return executar(
+        lambda conexao: service.alterar_preferencias(conexao, usuario, dados.aceita_mensagens)
+    )
 
 
 @router.get(

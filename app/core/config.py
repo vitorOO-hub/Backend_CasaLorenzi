@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     frontend_url: str = "https://projetocasalorenzi.vercel.app"
     # So para o Admin API do Auth (ativar a conta de cliente importado). Segredo do servidor.
     supabase_service_role_key: SecretStr | None = None
+    # Chave das automacoes (n8n), enviada no cabecalho X-Chave-Automacao. Sem ela, essas rotas
+    # respondem 503.
+    chave_automacao: SecretStr | None = None
+    # Provedores de LLM dos assistentes (Entrega 4). Opcionais: sem chave, o assistente nao liga.
+    gemini_api_key: SecretStr | None = None
+    groq_api_key: SecretStr | None = None
     cors_origins: Annotated[list[str], NoDecode] = []
     # /docs, /redoc e /openapi.json mostram o mapa inteiro da API: so ligam de proposito (dev).
     docs_habilitadas: bool = False

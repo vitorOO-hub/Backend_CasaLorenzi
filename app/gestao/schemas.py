@@ -18,6 +18,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.core.horario import HorarioFuncionamento
 from app.core.padroes import texto_padrao
 
 Cargo = Literal["atendente", "operador_estoque", "vendedor", "gerente_loja", "admin"]
@@ -126,9 +127,9 @@ class PecaAlterada(BaseModel):
     categoria: Categoria | None = None
     preco: Annotated[Decimal, Field(ge=0, le=Decimal("9999999.99"), decimal_places=2)] | None = None
     imagem_url: HttpUrl | None = None
-    imagem_alt: Annotated[
-        str, StringConstraints(strip_whitespace=True, max_length=300)
-    ] | None = None
+    imagem_alt: Annotated[str, StringConstraints(strip_whitespace=True, max_length=300)] | None = (
+        None
+    )
 
     @model_validator(mode="after")
     def _algo_para_mudar(self) -> "PecaAlterada":
@@ -318,3 +319,16 @@ class MapeamentoDeRegistro(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id_variacao: UUID
+
+
+class HorarioDaLoja(BaseModel):
+    """Horario novo da loja; null apaga (o site e o assistente passam a dizer que nao sabem)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    horario_funcionamento: HorarioFuncionamento | None
+
+
+class HorarioGravado(Saida):
+    id_loja: UUID
+    horario_funcionamento: HorarioFuncionamento | None

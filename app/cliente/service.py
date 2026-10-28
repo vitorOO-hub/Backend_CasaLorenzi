@@ -33,6 +33,15 @@ def obter_perfil(conexao, usuario: UsuarioAtual):
     return repositorio.perfil_cliente(conexao, id_cliente)
 
 
+def alterar_preferencias(conexao, usuario: UsuarioAtual, aceita_mensagens: bool):
+    id_cliente = _id_cliente(conexao, usuario)
+    return {
+        "aceita_mensagens": repositorio.gravar_aceita_mensagens(
+            conexao, id_cliente, aceita_mensagens
+        )
+    }
+
+
 def obter_vulto_mais(conexao, usuario: UsuarioAtual):
     """Lanca antes os vencimentos pendentes, para o saldo e o extrato ja virem em dia."""
     id_cliente = _id_cliente(conexao, usuario)

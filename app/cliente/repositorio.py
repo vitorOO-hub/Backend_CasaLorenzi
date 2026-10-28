@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from app.cliente import resgate_pontos
+from app.cliente import beneficios, resgate_pontos
 from app.cliente.erros import (
     CadastroClienteNaoEncontrado,
     ChamadoClienteFinalizado,
@@ -54,7 +54,7 @@ def listar_lojas(conexao) -> list[dict[str, object]]:
     linhas = buscar_todos(
         conexao,
         """
-        SELECT id_loja, nome, cidade, uf, endereco
+        SELECT id_loja, nome, cidade, uf, endereco, telefone, horario_funcionamento
         FROM loja
         WHERE ativa IS TRUE
         ORDER BY nome
@@ -127,7 +127,8 @@ def perfil_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, object]:
                 u.rua,
                 u.bairro,
                 u.numero_endereco,
-                u.complemento
+                u.complemento,
+                u.aceita_mensagens
             FROM usuario u
             CROSS JOIN resumo_pedidos rp
             CROSS JOIN resumo_chamados rc
@@ -143,6 +144,23 @@ def perfil_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, object]:
     if not linha:
         raise CadastroClienteNaoEncontrado
     return dict(linha)
+
+
+def gravar_aceita_mensagens(conexao: Connection, id_cliente: UUID, aceita: bool) -> bool:
+    """Escolha do proprio cliente: passa a valer sobre o padrao e sobre a planilha da Vulto."""
+    conexao.execute(
+        text(
+            """
+            UPDATE usuario
+            SET aceita_mensagens = :aceita, aceita_mensagens_origem = 'cliente',
+                aceita_mensagens_em = now(), atualizado_em = now()
+            WHERE id_usuario = CAST(:cliente AS uuid)
+            """
+        ),
+        {"cliente": str(id_cliente), "aceita": aceita},
+    )
+    conexao.commit()
+    return aceita
 
 
 # Tabelas de codigos que o checkout consulta. Nome de tabela e de coluna nunca vem da requisicao,
@@ -1356,7 +1374,7 @@ def criar_checkout(
         # Pontos Lorenzi+ viram desconto nas pecas (nunca no frete).
         pontos = int(dados.get("pontos_resgatados") or 0)
         desconto = Decimal("0.00")
-        nota_resgate = ""
+        nota_lorenzi_mais = ""
         if pontos:
             desconto = resgate_pontos.resgatar(
                 conexao,
@@ -1367,13 +1385,20 @@ def criar_checkout(
                 pontos=pontos,
                 valor_das_pecas=subtotal,
             )
-            nota_resgate = f" Resgate Lorenzi+: {pontos} pontos (R$ {desconto})."
+            nota_lorenzi_mais = f" Resgate Lorenzi+: {pontos} pontos (R$ {desconto})."
+        # Frete grátis pela categoria Lorenzi+ (ou pela regra da loja): vale o que o back calcula.
+        if dados["entrega"] == "casa" and frete > 0:
+            categoria = categoria_do_cliente(conexao, id_cliente)
+            com_beneficio = beneficios.frete_com_beneficio(categoria, frete, subtotal)
+            if com_beneficio != frete:
+                frete = _dinheiro(com_beneficio)
+                nota_lorenzi_mais += f" Frete grátis Lorenzi+ ({categoria})."
         total = _dinheiro(subtotal - desconto + frete)
         executar_sql(
             conexao,
             "UPDATE pedido SET valor_total = %s, valor_frete = %s, canal_venda = 'online', "
             "observacao = observacao || %s, atualizado_em = now() WHERE id_pedido = %s",
-            (total, frete, nota_resgate, id_pedido),
+            (total, frete, nota_lorenzi_mais, id_pedido),
         )
         executar_sql(
             conexao,
@@ -1406,35 +1431,64 @@ def criar_checkout(
     return obter_pedido_cliente(conexao, id_cliente, id_pedido)
 
 
-# Categoria pelos pontos creditados no ano (regra do programa Vulto+).
-CATEGORIAS_VULTO_MAIS = (("ouro", 5000), ("prata", 2000), ("bronze", 0))
+# Categoria pelos pontos creditados no ano (regra do programa Lorenzi+, antigo Vulto+).
+CATEGORIAS_VULTO_MAIS = (("black", 10000), ("ouro", 5000), ("prata", 2000), ("bronze", 0))
 EXTRATO_VULTO_MAIS = 8
 
+# Saldo e creditos do ano sobre `movimento_pontos`; compra cancelada (estorno ligado ao pedido)
+# desconta dos creditos. Usado pelo Lorenzi+ do cliente e pelas automacoes.
+SALDO_E_CREDITOS_NO_ANO = """
+    COALESCE(sum(pontos), 0)::int AS saldo,
+    COALESCE(sum(pontos) FILTER (
+        WHERE ((pontos > 0 AND tipo <> 'estorno')
+               OR (tipo = 'estorno' AND id_pedido IS NOT NULL AND pontos < 0))
+          AND ocorrido_em >= date_trunc('year', now() AT TIME ZONE 'America/Sao_Paulo')
+    ), 0)::int AS creditos_no_ano
+"""
 
-def vulto_mais_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, object]:
-    """Saldo e categoria do programa de pontos. O saldo e a soma do extrato (ja com os
-    vencimentos lancados); a categoria vem dos creditos do ano corrente."""
-    resumo = (
+
+def categoria_do_ano(creditos: int) -> str:
+    return next(nome for nome, minimo in CATEGORIAS_VULTO_MAIS if creditos >= minimo)
+
+
+def situacao_da_categoria(creditos: int) -> dict[str, object]:
+    """Categoria pelos creditos do ano, a proxima e quanto falta para ela."""
+    categoria = categoria_do_ano(creditos)
+    acima = [(nome, minimo) for nome, minimo in CATEGORIAS_VULTO_MAIS if minimo > creditos]
+    proxima = acima[-1] if acima else None
+    return {
+        "categoria": categoria,
+        "proxima_categoria": proxima[0] if proxima else None,
+        "faltam_para_proxima": proxima[1] - creditos if proxima else None,
+    }
+
+
+def categoria_do_cliente(conexao: Connection, id_cliente: UUID) -> str:
+    """Categoria do cliente agora (para o frete do checkout)."""
+    return categoria_do_ano(_resumo_de_pontos(conexao, id_cliente)["creditos_no_ano"])
+
+
+def _resumo_de_pontos(conexao: Connection, id_cliente: UUID):
+    return (
         conexao.execute(
             text(
-                """
-            SELECT
-                COALESCE(sum(pontos), 0)::int AS saldo,
-                COALESCE(sum(pontos) FILTER (
-                    -- creditos do ano; compra cancelada (estorno ligado ao pedido) desconta
-                    WHERE ((pontos > 0 AND tipo <> 'estorno')
-                           OR (tipo = 'estorno' AND id_pedido IS NOT NULL AND pontos < 0))
-                      AND ocorrido_em >= date_trunc('year', now() AT TIME ZONE 'America/Sao_Paulo')
-                ), 0)::int AS creditos_no_ano
+                f"""
+            SELECT {SALDO_E_CREDITOS_NO_ANO}
             FROM movimento_pontos
             WHERE id_usuario = CAST(:cliente AS uuid)
-            """
+            """  # nosec B608
             ),
             {"cliente": str(id_cliente)},
         )
         .mappings()
         .one()
     )
+
+
+def vulto_mais_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, object]:
+    """Saldo, categoria e benefícios do programa de pontos. O saldo e a soma do extrato (ja com os
+    vencimentos lancados); a categoria vem dos creditos do ano corrente."""
+    resumo = _resumo_de_pontos(conexao, id_cliente)
     extrato = conexao.execute(
         text(
             """
@@ -1448,15 +1502,15 @@ def vulto_mais_cliente(conexao: Connection, id_cliente: UUID) -> dict[str, objec
         {"cliente": str(id_cliente), "limite": EXTRATO_VULTO_MAIS},
     ).mappings()
     creditos = resumo["creditos_no_ano"]
-    categoria = next(nome for nome, minimo in CATEGORIAS_VULTO_MAIS if creditos >= minimo)
-    acima = [(nome, minimo) for nome, minimo in CATEGORIAS_VULTO_MAIS if minimo > creditos]
-    proxima = acima[-1] if acima else None
+    situacao = situacao_da_categoria(creditos)
+    categoria, proxima = situacao["categoria"], situacao["proxima_categoria"]
     return {
         "regras": resgate_pontos.regras(),
+        "beneficios": beneficios.beneficios(categoria),
+        "proximos_beneficios": beneficios.beneficios(proxima) if proxima else [],
+        "frete_gratis_a_partir": beneficios.frete_gratis_a_partir(categoria),
         "saldo": resumo["saldo"],
-        "categoria": categoria,
+        **situacao,
         "creditos_no_ano": creditos,
-        "proxima_categoria": proxima[0] if proxima else None,
-        "faltam_para_proxima": proxima[1] - creditos if proxima else None,
         "extrato": [dict(linha) for linha in extrato],
     }
