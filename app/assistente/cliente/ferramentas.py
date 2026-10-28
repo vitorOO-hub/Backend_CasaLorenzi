@@ -12,21 +12,30 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 from sqlalchemy.engine import Connection
 
-from app.assistente.cliente import passagem, repositorio
+from app.assistente.cliente import passagem, politicas, repositorio
 from app.assistente.cliente.provedor import Ferramenta
 from app.cliente import service as cliente
+from app.cliente.vencimento_pontos import SP
+from app.core.horario import aberta, descrever
 from app.core.papeis import UsuarioAtual
 
 log = logging.getLogger(__name__)
 
 LIMITE_PRODUTOS = 5
 LIMITE_PEDIDOS = 5
+# Palavras que o cliente fala mas que nao estao no nome da peca ("camisa DE linho"), como no
+# assistente do vendedor (app/assistente/vendedor/ferramentas.py).
+SEM_PESO = frozenset(
+    {"de", "da", "do", "das", "dos", "com", "sem", "para", "e", "a", "o", "em", "um", "uma"}
+)
+TEMAS_DE_POLITICA = tuple(politicas.todas())
 CATEGORIAS_DE_CHAMADO = (
     "pedido",
     "entrega",
@@ -58,6 +67,10 @@ class ConsultarEstoque(_Entrada):
         ),
     ]
     loja: Texto | None = None
+
+
+class ConsultarPolitica(_Entrada):
+    tema: Literal[TEMAS_DE_POLITICA]  # type: ignore[valid-type]
 
 
 class InfoLoja(_Entrada):
@@ -170,6 +183,18 @@ DECLARACOES = [
             "additionalProperties": False,
         },
     ),
+    Ferramenta(
+        "consultar_politica",
+        "Politicas oficiais da loja: trocas, devolucao, defeito, reembolso, cancelamento, "
+        "frete, prazo de entrega, retirada na loja, pagamento e parcelamento, ajustes e "
+        "agendamento, regras do Lorenzi+. Responda so com o texto devolvido.",
+        {
+            "type": "object",
+            "properties": {"tema": {"type": "string", "enum": list(TEMAS_DE_POLITICA)}},
+            "required": ["tema"],
+            "additionalProperties": False,
+        },
+    ),
 ]
 
 
@@ -187,6 +212,8 @@ class Ferramentas:
     ) -> None:
         self.conexao, self.usuario, self.id_conversa = conexao, usuario, id_conversa
         self.id_atendimento: UUID | None = None
+        # Loja do chamado (None = fila geral), para o aviso de horario da resposta.
+        self.id_loja_chamado: UUID | None = None
         self.carrinho_alterado = False
 
     def executar(self, nome: str, argumentos: dict[str, Any]) -> dict[str, Any]:
@@ -207,7 +234,8 @@ class Ferramentas:
 
     def _buscar_produto(self, argumentos: dict[str, Any]) -> dict[str, Any]:
         dados = BuscarProduto.model_validate(argumentos)
-        termos = [t for t in re.findall(r"[0-9a-zà-ÿ]{2,}", _normalizar(dados.descricao))][:6]
+        palavras = re.findall(r"[0-9a-zà-ÿ]{2,}", _normalizar(dados.descricao))
+        termos = [t for t in palavras if t not in SEM_PESO][:6]
         if not termos:
             return {"pecas": [], "observacao": "descricao sem termos de busca"}
         pecas = repositorio.buscar_produtos(self.conexao, termos, LIMITE_PRODUTOS)
@@ -250,7 +278,10 @@ class Ferramentas:
                     "uf": lj.get("uf"),
                     "telefone": lj.get("telefone"),
                     # Nulo = a loja nao tem horario cadastrado: o assistente deve dizer isso.
-                    "horario_funcionamento": lj.get("horario_funcionamento"),
+                    "horario_funcionamento": descrever(lj.get("horario_funcionamento")),
+                    "aberta_agora": aberta(lj.get("horario_funcionamento"), datetime.now(SP))
+                    if lj.get("horario_funcionamento")
+                    else None,
                 }
                 for lj in lojas
             ]
@@ -291,6 +322,17 @@ class Ferramentas:
             ]
         }
 
+    def _consultar_politica(self, argumentos: dict[str, Any]) -> dict[str, Any]:
+        dados = ConsultarPolitica.model_validate(argumentos)
+        politica = politicas.todas()[dados.tema]
+        resultado = {"tema": politica.codigo, "titulo": politica.titulo, "texto": politica.texto}
+        if politica.pendente:
+            resultado["orientacao"] = (
+                "ha ponto sem definicao oficial: nao informe esse ponto; ofereca transferir para a "
+                "equipe (transferir_para_atendente)"
+            )
+        return resultado
+
     # ---------------------------------------------------------------- acoes
 
     def _montar_carrinho(self, argumentos: dict[str, Any]) -> dict[str, Any]:
@@ -317,4 +359,9 @@ class Ferramentas:
             resumo=dados.resumo,
         )
         self.id_atendimento = UUID(str(chamado["id_atendimento"]))
-        return {"transferido": True, "protocolo": chamado.get("protocolo")}
+        self.id_loja_chamado = UUID(str(chamado["id_loja"])) if chamado.get("id_loja") else None
+        return {
+            "transferido": True,
+            "protocolo": chamado.get("protocolo"),
+            "equipe": chamado.get("loja_nome") or "atendimento geral",
+        }

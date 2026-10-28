@@ -1,5 +1,6 @@
 """Fluxo do assistente: repositorio em memoria e provedor falso (sem rede, sem banco)."""
 
+from datetime import datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -108,6 +109,8 @@ class ChamadosFalsos:
 def chamados(monkeypatch):
     falsos = ChamadosFalsos()
     monkeypatch.setattr(service.passagem.cliente, "criar_chamado", falsos.criar_chamado)
+    # Sem lojas cadastradas: chamado na fila geral e sem aviso de horario.
+    monkeypatch.setattr(service.cliente_repositorio, "listar_lojas", lambda conexao: [])
     return falsos
 
 
@@ -408,3 +411,91 @@ def test_transferencia_pedida_pelo_modelo_leva_resumo_e_conversa(repo, chamados)
     assert (chamado["assunto"], chamado["categoria"]) == ("Troca de tamanho", "troca_devolucao")
     assert "Resumo do assistente: Cliente quer trocar a camisa M por G." in chamado["descricao"]
     assert "Cliente: quero falar com uma pessoa" in chamado["descricao"]
+
+
+# ------------------------------------------------------------------ politicas, loja e horario
+
+
+def test_politica_respondida_de_memoria_vai_para_a_equipe(repo, chamados):
+    provedor = ProvedorFalso(RespostaProvedor(texto="Voce pode trocar em ate 60 dias."))
+    resposta, _, _ = _enviar(repo, "qual o prazo para troca?", provedor)
+    chamado = _passou_para_equipe(resposta, repo, chamados)
+    assert "60 dias" not in resposta["resposta"]
+    assert "politica da loja" in chamado["descricao"]
+
+
+def test_politica_respondida_com_o_documento_chega_ao_cliente(repo, chamados):
+    provedor = ProvedorFalso(
+        RespostaProvedor(texto="A troca pode ser feita em ate 30 dias."),
+        chamar=[("consultar_politica", {"tema": "trocas"})],
+    )
+    resposta, _, _ = _enviar(repo, "qual o prazo para troca?", provedor)
+    assert resposta["resposta"] == "A troca pode ser feita em ate 30 dias."
+    assert resposta["status"] == "ativa" and chamados.abertos == []
+
+
+SEMANA = {
+    d: {"abre": "10:00", "fecha": "19:00"} for d in ("seg", "ter", "qua", "qui", "sex", "sab")
+}
+
+
+@pytest.fixture
+def rede(monkeypatch):
+    lojas_da_rede = [
+        {"id_loja": uuid4(), "nome": "casa lorenzi ibirapuera", "horario_funcionamento": SEMANA},
+        {"id_loja": uuid4(), "nome": "vulto batel", "horario_funcionamento": SEMANA},
+    ]
+    monkeypatch.setattr(service.cliente_repositorio, "listar_lojas", lambda conexao: lojas_da_rede)
+    return lojas_da_rede
+
+
+class _Relogio:
+    def __init__(self, agora):
+        self.agora = agora
+
+    def now(self, tz=None):
+        return self.agora
+
+
+def test_chamado_vai_para_a_loja_que_o_cliente_citou(repo, chamados, rede, monkeypatch):
+    from app.cliente.vencimento_pontos import SP
+
+    monkeypatch.setattr(service, "datetime", _Relogio(datetime(2026, 10, 28, 12, 0, tzinfo=SP)))
+    provedor = ProvedorFalso(erro=ErroProvedor("groq", "tempo esgotado"))
+    resposta, _, _ = _enviar(repo, "comprei na loja do Ibirapuera e a peca veio rasgada", provedor)
+    chamado = _passou_para_equipe(resposta, repo, chamados)
+    assert chamado["id_loja"] == rede[0]["id_loja"]
+    assert "Loja: casa lorenzi ibirapuera (citada pelo cliente)" in chamado["descricao"]
+
+
+def test_sem_loja_citada_vai_para_a_fila_geral(repo, chamados, rede, monkeypatch):
+    from app.cliente.vencimento_pontos import SP
+
+    monkeypatch.setattr(service, "datetime", _Relogio(datetime(2026, 10, 28, 12, 0, tzinfo=SP)))
+    provedor = ProvedorFalso(erro=ErroProvedor("groq", "tempo esgotado"))
+    resposta, _, _ = _enviar(repo, "minha peca veio rasgada", provedor)
+    chamado = _passou_para_equipe(resposta, repo, chamados)
+    assert "id_loja" not in chamado
+    assert "Loja: nao identificada (fila geral)" in chamado["descricao"]
+
+
+def test_fora_do_horario_a_resposta_diz_quando_a_equipe_volta(repo, chamados, rede, monkeypatch):
+    from app.cliente.vencimento_pontos import SP
+
+    monkeypatch.setattr(service, "datetime", _Relogio(datetime(2026, 10, 28, 22, 0, tzinfo=SP)))
+    provedor = ProvedorFalso(erro=ErroProvedor("groq", "tempo esgotado"))
+    resposta, _, _ = _enviar(repo, "minha peca veio rasgada", provedor)
+    assert resposta["resposta"].startswith(service.TEXTO_PASSADO_PARA_EQUIPE)
+    assert resposta["resposta"].endswith("responde amanhã a partir das 10:00.")
+    assert resposta["status"] == "com_atendente"
+
+
+def test_pergunta_de_volta_sem_numero_pode_seguir_mesmo_em_tema_de_politica(repo, chamados):
+    provedor = ProvedorFalso(RespostaProvedor(texto="Poxa! Qual o numero do pedido?"))
+    resposta, _, _ = _enviar(repo, "minha camisa veio com defeito", provedor)
+    assert resposta["resposta"] == "Poxa! Qual o numero do pedido?"
+    assert chamados.abertos == []
+    # Afirmar sem consultar continua indo para a equipe, com ou sem numero.
+    provedor = ProvedorFalso(RespostaProvedor(texto="Sim, aceitamos Pix."))
+    resposta, _, _ = _enviar(repo, "aceita pix?", provedor)
+    assert resposta["status"] == "com_atendente"

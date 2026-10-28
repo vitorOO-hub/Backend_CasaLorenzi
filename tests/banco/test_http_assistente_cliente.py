@@ -324,3 +324,22 @@ def test_limite_diario_por_cliente(cena, monkeypatch):
     outra = _nova(http, como("cliente"))
     assert _enviar(http, como("cliente"), outra, "oi").status_code == 429
     assert _enviar(http, como("outro"), _nova(http, como("outro")), "oi").status_code == 200
+
+
+def test_chamado_vai_para_a_loja_que_o_cliente_citou(cena):
+    http, como, provedor, pg, ids = cena
+    conversa = _nova(http, como("cliente"))
+    provedor.erro = ErroProvedor("groq", "tempo esgotado")
+    texto = f"comprei na loja assistente {ids['sufixo']} e a peca veio com defeito"
+    corpo = _enviar(http, como("cliente"), conversa, texto).json()
+    assert corpo["status"] == "com_atendente"
+    loja = pg.execute(
+        "SELECT id_loja FROM atendimento WHERE id_atendimento = %s", (corpo["id_atendimento"],)
+    ).fetchone()[0]
+    assert loja == ids["loja"]
+    # A equipe da loja ve o chamado e le de onde ele veio.
+    lidas = http.get(
+        f"/api/v1/painel/chat/conversas/{corpo['id_atendimento']}/mensagens",
+        headers=como("atendente"),
+    ).json()
+    assert "(citada pelo cliente)" in lidas["mensagens"][0]["texto"]

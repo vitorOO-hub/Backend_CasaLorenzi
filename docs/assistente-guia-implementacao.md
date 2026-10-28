@@ -53,6 +53,18 @@ ainda é por texto (nome, categoria, cor, tecido, marca) enquanto os embeddings 
 Sem modelo configurado, ele só avisa que está indisponível; nos demais casos em que não consegue
 responder com segurança, passa a conversa para a equipe com o resumo.
 
+Atualizações do assistente do cliente:
+
+- Só para cliente logado (o visitante não vê o assistente). Login do site aceita e-mail ou CPF
+  (`/api/v1/acesso/entrar-cpf`).
+- Políticas oficiais (trocas, devolução, frete, pagamento, retirada, ajustes, Lorenzi+) ficam em
+  `app/assistente/cliente/politicas.md`, lidas pela ferramenta `consultar_politica`. Tema marcado
+  como `PENDENTE` faz o assistente passar para a equipe. Um teste confere os números do documento
+  contra o código (frete, pontos, categorias).
+- Ao passar para a equipe, o chamado vai para a loja que o cliente citou na conversa
+  (`app/assistente/cliente/lojas.py`); sem loja clara, fila geral. Fora do horário cadastrado das
+  lojas (`loja.horario_funcionamento`), a resposta diz quando a equipe volta.
+
 ## 3. Ferramentas: o que cada uma chama
 
 O modelo escolhe a ferramenta e os argumentos de negócio. **Quem é o usuário, o papel e a loja vêm
