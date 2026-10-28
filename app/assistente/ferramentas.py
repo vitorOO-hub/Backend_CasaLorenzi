@@ -18,7 +18,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 from sqlalchemy.engine import Connection
 
-from app.assistente import repositorio
+from app.assistente import passagem, repositorio
 from app.assistente.provedor import Ferramenta
 from app.cliente import service as cliente
 from app.core.papeis import UsuarioAtual
@@ -182,8 +182,10 @@ class Ferramentas:
     """Executa as ferramentas para o cliente do token. Guarda o que o fluxo precisa saber depois
     (chamado aberto, sacola alterada)."""
 
-    def __init__(self, conexao: Connection, usuario: UsuarioAtual) -> None:
-        self.conexao, self.usuario = conexao, usuario
+    def __init__(
+        self, conexao: Connection, usuario: UsuarioAtual, id_conversa: UUID | None = None
+    ) -> None:
+        self.conexao, self.usuario, self.id_conversa = conexao, usuario, id_conversa
         self.id_atendimento: UUID | None = None
         self.carrinho_alterado = False
 
@@ -301,10 +303,15 @@ class Ferramentas:
 
     def _transferir_para_atendente(self, argumentos: dict[str, Any]) -> dict[str, Any]:
         dados = TransferirParaAtendente.model_validate(argumentos)
-        chamado = cliente.criar_chamado(
+        # O atendente recebe o resumo do modelo e a conversa inteira: o cliente nao repete nada.
+        chamado = passagem.abrir_chamado_da_conversa(
             self.conexao,
             self.usuario,
-            {"assunto": dados.motivo, "categoria": dados.categoria, "descricao": dados.resumo},
+            self.id_conversa,
+            assunto=dados.motivo,
+            motivo=dados.motivo,
+            categoria=dados.categoria,
+            resumo=dados.resumo,
         )
         self.id_atendimento = UUID(str(chamado["id_atendimento"]))
         return {"transferido": True, "protocolo": chamado.get("protocolo")}

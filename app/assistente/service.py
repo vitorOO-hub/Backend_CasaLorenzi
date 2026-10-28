@@ -4,10 +4,13 @@
 2. Aplica o limite diario por cliente e grava a pergunta (confirmada antes de chamar o modelo).
 3. Pede o plano a `planejar_pergunta` (fonte unica da classificacao e do modelo):
    - esclarecer: pede o que falta, sem chamar modelo;
-   - modelo_nao_configurado / configuracao_invalida / provedor_sem_chave: resposta controlada, sem
-     trocar de modelo;
+   - modelo_nao_configurado / configuracao_invalida / provedor_sem_chave: sem trocar de modelo,
+     passa a conversa para a equipe;
    - pronto: chama o provedor e o modelo escolhidos, com as ferramentas do cliente.
-4. Grava cada ferramenta usada, a resposta, o modelo e os tokens.
+4. Quando o assistente nao consegue responder com seguranca (erro do provedor, resposta vazia ou
+   interrompida, dado atual sem consulta, consulta que falhou), a conversa vai para um atendente
+   com o resumo e a transcricao (app.assistente.passagem): o cliente nao repete o problema.
+5. Grava cada ferramenta usada, a resposta, o modelo e os tokens.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from uuid import UUID
 
 from sqlalchemy.engine import Connection
 
-from app.assistente import repositorio
+from app.assistente import passagem, repositorio
 from app.assistente.erros import (
     ConversaComAtendente,
     ConversaNaoEncontrada,
@@ -65,15 +68,13 @@ pagamento ou problema com pedido, ou quando voce nao conseguir resolver.
 TEXTO_ESCLARECER = (
     "Para eu te ajudar, me diga qual peça (nome, cor ou o código SKU) ou o número do pedido."
 )
-TEXTO_INDISPONIVEL = (
-    "O assistente está indisponível no momento. Se precisar, abra um chamado na área Atendimento."
+TEXTO_PASSADO_PARA_EQUIPE = (
+    "Não consegui resolver isso por aqui, então passei sua conversa para a nossa equipe, com o "
+    "resumo do que falamos. Você não precisa repetir nada: a resposta chega pela área Atendimento."
 )
-TEXTO_FALHA_PROVEDOR = (
+TEXTO_FALHA = (
     "Não consegui responder agora. Tente de novo em instantes ou abra um chamado na área "
     "Atendimento."
-)
-TEXTO_SEM_RESPOSTA = (
-    "Não consegui confirmar essa informação. Posso passar sua conversa para a nossa equipe."
 )
 
 
@@ -130,16 +131,18 @@ def enviar_mensagem(
     if plano.estado == "esclarecer":
         return _responder(conexao, id_conversa, plano, TEXTO_ESCLARECER)
     if plano.estado != "pronto" or plano.destino is None:
-        # Configuracao do servidor: nada de fallback silencioso para outro modelo.
+        # Configuracao do servidor: nada de fallback silencioso para outro modelo; vai para pessoa.
         log.warning("assistente do cliente sem modelo utilizavel: %s", plano.estado)
-        return _responder(conexao, id_conversa, plano, TEXTO_INDISPONIVEL, sem_resposta=True)
+        return _passar_para_equipe(
+            conexao, usuario, id_conversa, plano, texto, motivo="assistente indisponivel"
+        )
 
     destino = plano.destino
     rotulo_modelo = f"{destino.provedor}:{destino.modelo}"
     historico = [{"papel": m["autor"], "texto": m["texto"]} for m in anteriores] + [
         {"papel": "usuario", "texto": texto}
     ]
-    ferramentas = Ferramentas(conexao, usuario)
+    ferramentas = Ferramentas(conexao, usuario, id_conversa)
     try:
         resposta = fabrica(destino, configuracoes).responder(
             modelo=destino.modelo,
@@ -152,12 +155,13 @@ def enviar_mensagem(
         )
     except ErroProvedor as erro:
         log.warning("provedor do assistente falhou: %s", erro)
-        return _responder(
+        return _passar_para_equipe(
             conexao,
+            usuario,
             id_conversa,
             plano,
-            TEXTO_FALHA_PROVEDOR,
-            sem_resposta=True,
+            texto,
+            motivo="o assistente ficou sem resposta do modelo",
             modelo=rotulo_modelo,
             dados={"erro": erro.motivo, "status_http": erro.status},
             ferramentas=ferramentas,
@@ -173,23 +177,94 @@ def enviar_mensagem(
         )
 
     texto_final = resposta.texto.strip()[:LIMITE_CARACTERES_RESPOSTA]
-    # Pergunta que dependia de dado atual e foi respondida sem consulta: marcada para revisao.
-    sem_resposta = (
-        not texto_final
-        or not resposta.concluida
-        or (plano.classificacao.requer_ferramenta and not resposta.chamadas)
-    )
-    if not texto_final or not resposta.concluida:
-        texto_final = TEXTO_SEM_RESPOSTA
+    tokens = (resposta.tokens_entrada, resposta.tokens_saida)
+    motivo = _motivo_para_passar(resposta, texto_final, plano)
+    if motivo and ferramentas.id_atendimento is None:
+        # Resposta sem base confiavel nao chega ao cliente: a equipe assume com o contexto.
+        return _passar_para_equipe(
+            conexao,
+            usuario,
+            id_conversa,
+            plano,
+            texto,
+            motivo=motivo,
+            modelo=rotulo_modelo,
+            tokens=tokens,
+            ferramentas=ferramentas,
+        )
     return _responder(
         conexao,
         id_conversa,
         plano,
-        texto_final,
-        sem_resposta=sem_resposta,
+        texto_final or TEXTO_PASSADO_PARA_EQUIPE,
+        sem_resposta=bool(motivo),
         modelo=rotulo_modelo,
-        tokens=(resposta.tokens_entrada, resposta.tokens_saida),
+        tokens=tokens,
         ferramentas=ferramentas,
+    )
+
+
+def _motivo_para_passar(resposta: Any, texto_final: str, plano: PlanoRoteamento) -> str | None:
+    """Por que esta resposta nao serve ao cliente (None = serve)."""
+    if not texto_final:
+        return "o modelo nao devolveu texto"
+    if not resposta.concluida:
+        return "o modelo passou do limite de consultas"
+    if any(c.resultado.get("erro") == "nao_foi_possivel_consultar" for c in resposta.chamadas):
+        return "uma consulta ao sistema falhou"
+    if plano.classificacao.requer_ferramenta and not resposta.chamadas:
+        # Estoque, pontos, pedido, preco ou horario sem consulta: poderia ser inventado.
+        return "a pergunta pedia um dado do sistema e o assistente nao o consultou"
+    return None
+
+
+def _passar_para_equipe(
+    conexao: Connection,
+    usuario: UsuarioAtual,
+    id_conversa: UUID,
+    plano: PlanoRoteamento,
+    pergunta: str,
+    *,
+    motivo: str,
+    modelo: str | None = None,
+    dados: dict[str, Any] | None = None,
+    tokens: tuple[int, int] | None = None,
+    ferramentas: Ferramentas | None = None,
+) -> dict[str, Any]:
+    """Abre o chamado com a conversa e avisa que a equipe assumiu. Se falhar, pede para abrir."""
+    try:
+        chamado = passagem.abrir_chamado_da_conversa(
+            conexao,
+            usuario,
+            id_conversa,
+            assunto=f"Assistente do site: {pergunta}",
+            motivo=motivo,
+        )
+    except Exception as erro:  # noqa: BLE001 - o cliente recebe a orientacao de abrir o chamado
+        log.warning("passagem automatica para a equipe falhou: %s", type(erro).__name__)
+        conexao.rollback()
+        return _responder(
+            conexao,
+            id_conversa,
+            plano,
+            TEXTO_FALHA,
+            sem_resposta=True,
+            modelo=modelo,
+            dados={**(dados or {}), "motivo_passagem": motivo, "passagem": "falhou"},
+            tokens=tokens,
+            ferramentas=ferramentas,
+        )
+    return _responder(
+        conexao,
+        id_conversa,
+        plano,
+        TEXTO_PASSADO_PARA_EQUIPE,
+        sem_resposta=True,
+        modelo=modelo,
+        dados={**(dados or {}), "motivo_passagem": motivo},
+        tokens=tokens,
+        ferramentas=ferramentas,
+        id_atendimento=UUID(str(chamado["id_atendimento"])),
     )
 
 
@@ -204,8 +279,9 @@ def _responder(
     dados: dict[str, Any] | None = None,
     tokens: tuple[int, int] | None = None,
     ferramentas: Ferramentas | None = None,
+    id_atendimento: UUID | None = None,
 ) -> dict[str, Any]:
-    id_atendimento = ferramentas.id_atendimento if ferramentas else None
+    id_atendimento = id_atendimento or (ferramentas.id_atendimento if ferramentas else None)
     if id_atendimento is not None:
         repositorio.passar_para_atendente(conexao, id_conversa, id_atendimento)
     repositorio.gravar_mensagem(

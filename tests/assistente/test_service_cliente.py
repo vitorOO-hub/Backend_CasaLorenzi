@@ -4,7 +4,6 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.assistente import ferramentas as modulo_ferramentas
 from app.assistente import service
 from app.assistente.erros import (
     ConversaComAtendente,
@@ -90,8 +89,30 @@ class ProvedorFalso:
         return resposta
 
 
+class ChamadosFalsos:
+    """Faz o papel de app.cliente.service.criar_chamado e guarda o que a equipe receberia."""
+
+    def __init__(self):
+        self.abertos: list[dict] = []
+        self.quebrar = False
+
+    def criar_chamado(self, conexao, usuario, dados):
+        if self.quebrar:
+            raise RuntimeError("banco fora")
+        chamado = {"id_atendimento": uuid4(), "protocolo": f"AT-{len(self.abertos) + 1}"}
+        self.abertos.append({"usuario": usuario, **dados, **chamado})
+        return chamado
+
+
 @pytest.fixture
-def repo(monkeypatch):
+def chamados(monkeypatch):
+    falsos = ChamadosFalsos()
+    monkeypatch.setattr(service.passagem.cliente, "criar_chamado", falsos.criar_chamado)
+    return falsos
+
+
+@pytest.fixture
+def repo(monkeypatch, chamados):
     falso = RepositorioFalso()
     for nome in (
         "criar_conversa",
@@ -194,24 +215,67 @@ def test_resposta_do_modelo_e_cortada_no_limite(repo):
     assert len(resposta["resposta"]) == service.LIMITE_CARACTERES_RESPOSTA
 
 
-def test_resposta_que_dependia_de_dado_sem_consulta_fica_marcada(repo):
+def _passou_para_equipe(resposta, repo, chamados):
+    assert resposta["resposta"] == service.TEXTO_PASSADO_PARA_EQUIPE
+    assert resposta["status"] == "com_atendente" and resposta["sem_resposta"] is True
+    (chamado,) = chamados.abertos
+    assert resposta["id_atendimento"] == chamado["id_atendimento"]
+    conversa = repo.conversas[resposta["id_conversa"]]
+    assert (conversa["status"], conversa["id_atendimento"]) == (
+        "com_atendente",
+        chamado["id_atendimento"],
+    )
+    return chamado
+
+
+def test_dado_sem_consulta_nao_chega_ao_cliente_e_vai_para_a_equipe(repo, chamados):
     provedor = ProvedorFalso(RespostaProvedor(texto="Voce tem uns 300 pontos."))
     resposta, _, _ = _enviar(repo, "quantos pontos eu tenho?", provedor)
-    assert resposta["sem_resposta"] is True
-    assert _assistente(repo)["sem_resposta"] is True
+    chamado = _passou_para_equipe(resposta, repo, chamados)
+    assert "300" not in resposta["resposta"]
+    assert "nao o consultou" in chamado["descricao"]
+    assert "Cliente: quantos pontos eu tenho?" in chamado["descricao"]
+    assert chamado["usuario"] is CLIENTE
 
 
-def test_resposta_vazia_ou_rodadas_esgotadas_viram_texto_controlado(repo):
-    for resposta_modelo in (
-        RespostaProvedor(texto="  "),
-        RespostaProvedor(texto="x", concluida=False),
-    ):
-        resposta, _, _ = _enviar(repo, "oi", ProvedorFalso(resposta_modelo))
-        assert resposta["resposta"] == service.TEXTO_SEM_RESPOSTA
-        assert resposta["sem_resposta"] is True
+@pytest.mark.parametrize(
+    "resposta_modelo",
+    [RespostaProvedor(texto="  "), RespostaProvedor(texto="x", concluida=False)],
+)
+def test_resposta_vazia_ou_rodadas_esgotadas_vao_para_a_equipe(repo, chamados, resposta_modelo):
+    resposta, _, _ = _enviar(repo, "oi", ProvedorFalso(resposta_modelo))
+    _passou_para_equipe(resposta, repo, chamados)
 
 
-# ------------------------------------------------------------------ estados do roteador
+def test_consulta_que_falhou_vai_para_a_equipe(repo, chamados, monkeypatch):
+    def quebra(self, args):
+        raise RuntimeError("banco fora")
+
+    monkeypatch.setattr(Ferramentas, "_consultar_pedidos", quebra)
+    provedor = ProvedorFalso(
+        RespostaProvedor(texto="Nao consegui ver seus pedidos."), chamar=[("consultar_pedidos", {})]
+    )
+    resposta, _, _ = _enviar(repo, "cade meu pedido?", provedor)
+    chamado = _passou_para_equipe(resposta, repo, chamados)
+    assert "consulta ao sistema falhou" in chamado["descricao"]
+
+
+def test_a_equipe_recebe_a_conversa_inteira(repo, chamados):
+    conexao = ConexaoFalsa()
+    conversa = service.iniciar_conversa(conexao, CLIENTE)["id_conversa"]
+    repo.gravar_mensagem(conexao, conversa, "usuario", "Comprei uma camisa azul M no dia 10.")
+    repo.gravar_mensagem(conexao, conversa, "assistente", "Entendi. Qual o problema?")
+    provedor = ProvedorFalso(erro=ErroProvedor("gemini", "tempo esgotado"))
+    resposta, _, _ = _enviar(repo, "Ela veio com a costura aberta.", provedor, conversa=conversa)
+    chamado = _passou_para_equipe(resposta, repo, chamados)
+    descricao = chamado["descricao"]
+    assert (
+        descricao.index("Cliente: Comprei uma camisa azul M")
+        < descricao.index("Assistente: Entendi.")
+        < descricao.index("Cliente: Ela veio com a costura aberta.")
+    )
+    assert chamado["assunto"] == "Assistente do site: Ela veio com a costura aberta."
+    assert chamado["categoria"] == "outro"
 
 
 def test_pergunta_incompleta_pede_esclarecimento_sem_chamar_modelo(repo):
@@ -234,29 +298,28 @@ def test_pergunta_incompleta_pede_esclarecimento_sem_chamar_modelo(repo):
         (_settings(groq_api_key="   "), "provedor_sem_chave"),
     ],
 )
-def test_configuracao_quebrada_responde_controlado_sem_fallback(repo, configuracoes, estado):
+def test_configuracao_quebrada_passa_para_a_equipe_sem_fallback(
+    repo, chamados, configuracoes, estado
+):
     # A chave do Gemini existe, mas a rota rapida nao pode cair nele em silencio.
     resposta, fabricados, _ = _enviar(repo, "oi, tudo bem?", configuracoes=configuracoes)
     assert fabricados == []
-    assert resposta["resposta"] == service.TEXTO_INDISPONIVEL
-    assert resposta["sem_resposta"] is True
+    _passou_para_equipe(resposta, repo, chamados)
     assert _assistente(repo)["dados"]["estado"] == estado
 
 
-def test_erro_do_provedor_vira_resposta_controlada_sem_trocar_de_modelo(repo):
+def test_erro_do_provedor_passa_para_a_equipe_sem_trocar_de_modelo(repo, chamados):
     provedor = ProvedorFalso(erro=ErroProvedor("groq", "resposta de erro do provedor", 503))
     resposta, fabricados, _ = _enviar(repo, "oi, tudo bem?", provedor)
     assert len(fabricados) == 1
-    assert resposta["resposta"] == service.TEXTO_FALHA_PROVEDOR
-    assert resposta["sem_resposta"] is True
+    _passou_para_equipe(resposta, repo, chamados)
     gravada = _assistente(repo)
     assert gravada["dados"]["erro"] == "resposta de erro do provedor"
     assert gravada["dados"]["status_http"] == 503
-    # A pergunta continua registrada.
     assert [m["autor"] for m in repo.mensagens] == ["usuario", "assistente"]
 
 
-def test_chave_ausente_na_fabrica_tambem_e_controlada(repo):
+def test_chave_ausente_na_fabrica_tambem_passa_para_a_equipe(repo, chamados):
     conexao = ConexaoFalsa()
     conversa = service.iniciar_conversa(conexao, CLIENTE)["id_conversa"]
 
@@ -266,10 +329,17 @@ def test_chave_ausente_na_fabrica_tambem_e_controlada(repo):
     resposta = service.enviar_mensagem(
         conexao, CLIENTE, conversa, "oi", configuracoes=_settings(), fabrica=fabrica
     )
-    assert resposta["resposta"] == service.TEXTO_FALHA_PROVEDOR
+    _passou_para_equipe(resposta, repo, chamados)
 
 
-# ------------------------------------------------------------------ permissoes e escopo
+def test_se_nem_o_chamado_abre_o_cliente_e_orientado(repo, chamados):
+    chamados.quebrar = True
+    provedor = ProvedorFalso(erro=ErroProvedor("groq", "tempo esgotado"))
+    resposta, _, conexao = _enviar(repo, "oi, tudo bem?", provedor)
+    assert resposta["resposta"] == service.TEXTO_FALHA
+    assert resposta["status"] == "ativa" and resposta["id_atendimento"] is None
+    assert _assistente(repo)["dados"]["passagem"] == "falhou"
+    assert conexao.rollbacks == 1
 
 
 @pytest.mark.parametrize("papel", list(Papel))
@@ -314,15 +384,7 @@ def test_limite_diario_por_cliente(repo):
     assert repo.mensagens == []
 
 
-def test_transferencia_passa_a_conversa_para_o_atendente(repo, monkeypatch):
-    id_atendimento = uuid4()
-    recebidos = {}
-
-    def criar_chamado(conexao, usuario, dados):
-        recebidos.update(usuario=usuario, dados=dados)
-        return {"id_atendimento": id_atendimento, "protocolo": "AT-1"}
-
-    monkeypatch.setattr(modulo_ferramentas.cliente, "criar_chamado", criar_chamado)
+def test_transferencia_pedida_pelo_modelo_leva_resumo_e_conversa(repo, chamados):
     argumentos = {
         "motivo": "Troca de tamanho",
         "resumo": "Cliente quer trocar a camisa M por G.",
@@ -334,13 +396,11 @@ def test_transferencia_passa_a_conversa_para_o_atendente(repo, monkeypatch):
     )
     resposta, _, _ = _enviar(repo, "quero falar com uma pessoa", provedor)
     assert resposta["status"] == "com_atendente"
-    assert resposta["id_atendimento"] == id_atendimento
-    conversa = repo.conversas[resposta["id_conversa"]]
-    assert (conversa["status"], conversa["id_atendimento"]) == ("com_atendente", id_atendimento)
+    assert resposta["resposta"] == "Passei para a equipe."
+    (chamado,) = chamados.abertos
+    assert resposta["id_atendimento"] == chamado["id_atendimento"]
     # O chamado e aberto para o cliente do token, nao para quem o modelo disser.
-    assert recebidos["usuario"] is CLIENTE
-    assert recebidos["dados"] == {
-        "assunto": "Troca de tamanho",
-        "categoria": "troca_devolucao",
-        "descricao": argumentos["resumo"],
-    }
+    assert chamado["usuario"] is CLIENTE
+    assert (chamado["assunto"], chamado["categoria"]) == ("Troca de tamanho", "troca_devolucao")
+    assert "Resumo do assistente: Cliente quer trocar a camisa M por G." in chamado["descricao"]
+    assert "Cliente: quero falar com uma pessoa" in chamado["descricao"]

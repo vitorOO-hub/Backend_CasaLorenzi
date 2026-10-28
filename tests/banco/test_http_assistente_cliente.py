@@ -267,17 +267,36 @@ def test_pergunta_incompleta_nao_chama_o_modelo(cena):
     assert "qual peça" in corpo["resposta"]
 
 
-def test_erro_do_provedor_responde_controlado_e_guarda_a_pergunta(cena):
+def test_erro_do_provedor_passa_para_a_equipe_que_le_a_conversa(cena):
     http, como, provedor, pg, _ = cena
     conversa = _nova(http, como("cliente"))
+    provedor.texto = "Qual o numero do pedido?"
+    assert (
+        _enviar(http, como("cliente"), conversa, "minha camisa veio com defeito").status_code == 200
+    )
     provedor.erro = ErroProvedor("groq", "resposta de erro do provedor", 500)
-    r = _enviar(http, como("cliente"), conversa, "oi, tudo bem?")
+    r = _enviar(http, como("cliente"), conversa, "pedido PD-77, costura aberta na manga")
     assert r.status_code == 200
-    assert r.json()["sem_resposta"] is True
+    corpo = r.json()
+    assert corpo["status"] == "com_atendente" and corpo["sem_resposta"] is True
     assert "chave" not in r.text.lower()
     registros = _registros(pg, conversa)
-    assert [x[0] for x in registros] == ["usuario", "assistente"]
+    assert [x[0] for x in registros] == ["usuario", "assistente", "usuario", "assistente"]
     assert registros[-1][3]["status_http"] == 500 and registros[-1][4] is True
+    # O chamado sem loja cai na fila geral: o atendente le a conversa sem o cliente repetir nada.
+    id_ = corpo["id_atendimento"]
+    lidas = http.get(f"/api/v1/painel/chat/conversas/{id_}/mensagens", headers=como("atendente"))
+    assert lidas.status_code == 200, lidas.text
+    (primeira,) = [m["texto"] for m in lidas.json()["mensagens"]]
+    assert primeira.startswith("Chamado aberto pelo assistente do site.")
+    for trecho in (
+        "Cliente: minha camisa veio com defeito",
+        "Assistente: Qual o numero do pedido?",
+        "Cliente: pedido PD-77, costura aberta na manga",
+    ):
+        assert trecho in primeira
+    # A conversa travou: o cliente continua pelo chamado.
+    assert _enviar(http, como("cliente"), conversa, "e ai?").status_code == 409
 
 
 def test_limite_diario_por_cliente(cena, monkeypatch):
