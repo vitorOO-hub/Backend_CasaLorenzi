@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from app.api import health
 from app.assistente.cliente.router import router as assistente_cliente_router
 from app.assistente.router import router as assistente_router
+from app.assistente.vendedor.router import router as assistente_vendedor_router
 from app.ativacao.router import router as ativacao_router
 from app.automacoes.router import router as automacoes_router
 from app.chamados.router import router as chamados_router
@@ -37,6 +38,8 @@ api_router.include_router(assistente_cliente_router, prefix="/api/v1")
 # Unica area publica de escrita: o cliente importado ainda nao tem login (ver app/ativacao).
 api_router.include_router(ativacao_router, prefix="/api/v1")
 api_router.include_router(clientes_router, prefix="/api/v1")
+# Assistente do vendedor (chat com IA, so leitura na loja do token).
+api_router.include_router(assistente_vendedor_router, prefix="/api/v1")
 # Automacoes do n8n: sem login de pessoa, com a chave do cabecalho X-Chave-Automacao.
 api_router.include_router(automacoes_router, prefix="/api/v1")
 api_router.include_router(assistente_router, prefix="/api/v1")
