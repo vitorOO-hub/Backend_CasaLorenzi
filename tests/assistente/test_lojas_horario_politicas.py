@@ -178,14 +178,13 @@ def test_ferramenta_devolve_o_texto_e_orienta_nos_pendentes():
     assert "30 dias" in trocas["texto"] and "orientacao" not in trocas
     prazo = f.executar("consultar_politica", {"tema": "prazo_entrega"})
     assert "transferir_para_atendente" in prazo["orientacao"]
-    assert f.executar("consultar_politica", {"tema": "inventado"}) == {
-        "erro": "argumentos_invalidos"
-    }
-    assert (
-        set(
-            next(d for d in ferramentas.DECLARACOES if d.nome == "consultar_politica").parametros[
-                "properties"
-            ]["tema"]["enum"]
-        )
-        == TEMAS
-    )
+    # Tema fora da lista volta ao modelo com os temas validos (nao derruba a conversa).
+    errado = f.executar("consultar_politica", {"tema": "inventado"})
+    assert errado["erro"] == "tema_desconhecido" and set(errado["temas_validos"]) == TEMAS
+    # Variacoes do nome do tema valem quando apontam um tema so.
+    assert f.executar("consultar_politica", {"tema": "troca"})["tema"] == "trocas"
+    assert f.executar("consultar_politica", {"tema": "Prazo de entrega"})["tema"] == "prazo_entrega"
+    # Sem enum no esquema: o Groq recusaria a chamada inteira (HTTP 400) num valor errado.
+    for declaracao in ferramentas.DECLARACOES:
+        for campo in declaracao.parametros["properties"].values():
+            assert "enum" not in campo

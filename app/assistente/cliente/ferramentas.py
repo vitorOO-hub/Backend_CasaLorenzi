@@ -13,7 +13,7 @@ import logging
 import re
 import unicodedata
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
@@ -70,7 +70,9 @@ class ConsultarEstoque(_Entrada):
 
 
 class ConsultarPolitica(_Entrada):
-    tema: Literal[TEMAS_DE_POLITICA]  # type: ignore[valid-type]
+    # Sem enum no esquema enviado ao modelo: o Groq recusa a chamada inteira (HTTP 400) quando o
+    # modelo erra o valor. A validacao fica aqui, e o erro volta ao modelo com os temas validos.
+    tema: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=40)]
 
 
 class InfoLoja(_Entrada):
@@ -94,7 +96,8 @@ class MontarCarrinho(_Entrada):
 class TransferirParaAtendente(_Entrada):
     motivo: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=200)]
     resumo: Annotated[str, StringConstraints(strip_whitespace=True, min_length=10, max_length=1500)]
-    categoria: Literal[CATEGORIAS_DE_CHAMADO] = "outro"  # type: ignore[valid-type]
+    # Categoria fora da lista vira "outro" (o chamado nao se perde por um rotulo errado).
+    categoria: Annotated[str, StringConstraints(strip_whitespace=True, max_length=40)] = "outro"
 
 
 DECLARACOES = [
@@ -177,7 +180,10 @@ DECLARACOES = [
                     "type": "string",
                     "description": "2 ou 3 linhas com o essencial da conversa",
                 },
-                "categoria": {"type": "string", "enum": list(CATEGORIAS_DE_CHAMADO)},
+                "categoria": {
+                    "type": "string",
+                    "description": "Uma de: " + ", ".join(CATEGORIAS_DE_CHAMADO),
+                },
             },
             "required": ["motivo", "resumo"],
             "additionalProperties": False,
@@ -190,7 +196,9 @@ DECLARACOES = [
         "agendamento, regras do Lorenzi+. Responda so com o texto devolvido.",
         {
             "type": "object",
-            "properties": {"tema": {"type": "string", "enum": list(TEMAS_DE_POLITICA)}},
+            "properties": {
+                "tema": {"type": "string", "description": "Um de: " + ", ".join(TEMAS_DE_POLITICA)}
+            },
             "required": ["tema"],
             "additionalProperties": False,
         },
@@ -201,6 +209,16 @@ DECLARACOES = [
 def _normalizar(texto: str) -> str:
     sem_acento = unicodedata.normalize("NFKD", texto.casefold())
     return "".join(c for c in sem_acento if not unicodedata.combining(c)).strip()
+
+
+def _tema_da_politica(tema: str) -> str | None:
+    """'troca', 'Trocas' ou 'prazo de entrega' tambem valem: o codigo exato, se houver um so."""
+    palavras = re.findall(r"[a-z]+", _normalizar(tema))
+    alvo = "_".join(p for p in palavras if p not in {"de", "da", "do", "e", "a", "o"})
+    if alvo in TEMAS_DE_POLITICA:
+        return alvo
+    parecidos = [t for t in TEMAS_DE_POLITICA if t.startswith(alvo) or alvo.startswith(t)]
+    return parecidos[0] if len(parecidos) == 1 else None
 
 
 class Ferramentas:
@@ -324,7 +342,10 @@ class Ferramentas:
 
     def _consultar_politica(self, argumentos: dict[str, Any]) -> dict[str, Any]:
         dados = ConsultarPolitica.model_validate(argumentos)
-        politica = politicas.todas()[dados.tema]
+        codigo = _tema_da_politica(dados.tema)
+        if codigo is None:
+            return {"erro": "tema_desconhecido", "temas_validos": list(TEMAS_DE_POLITICA)}
+        politica = politicas.todas()[codigo]
         resultado = {"tema": politica.codigo, "titulo": politica.titulo, "texto": politica.texto}
         if politica.pendente:
             resultado["orientacao"] = (
@@ -355,7 +376,7 @@ class Ferramentas:
             self.id_conversa,
             assunto=dados.motivo,
             motivo=dados.motivo,
-            categoria=dados.categoria,
+            categoria=dados.categoria if dados.categoria in CATEGORIAS_DE_CHAMADO else "outro",
             resumo=dados.resumo,
         )
         self.id_atendimento = UUID(str(chamado["id_atendimento"]))

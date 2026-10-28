@@ -499,3 +499,11 @@ def test_pergunta_de_volta_sem_numero_pode_seguir_mesmo_em_tema_de_politica(repo
     provedor = ProvedorFalso(RespostaProvedor(texto="Sim, aceitamos Pix."))
     resposta, _, _ = _enviar(repo, "aceita pix?", provedor)
     assert resposta["status"] == "com_atendente"
+
+
+def test_limite_do_provedor_pede_para_tentar_depois_sem_abrir_chamado(repo, chamados):
+    erro = ErroProvedor("groq", "resposta de erro do provedor", 429, "rate_limit_exceeded")
+    resposta, _, _ = _enviar(repo, "oi, tudo bem?", ProvedorFalso(erro=erro))
+    assert resposta["resposta"] == service.TEXTO_OCUPADO
+    assert resposta["status"] == "ativa" and chamados.abertos == []
+    assert _assistente(repo)["dados"]["codigo"] == "rate_limit_exceeded"

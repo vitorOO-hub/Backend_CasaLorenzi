@@ -5,6 +5,7 @@ import json
 import httpx
 import pytest
 
+from app.assistente.cliente import provedor as provedor_modulo
 from app.assistente.cliente.provedor import (
     ErroProvedor,
     Ferramenta,
@@ -87,6 +88,11 @@ def _groq_ferramenta(nome="consultar_pontos", argumentos="{}"):
     )
 
 
+@pytest.fixture(autouse=True)
+def _sem_espera_real(monkeypatch):
+    monkeypatch.setattr(provedor_modulo, "_dormir", lambda segundos: None)
+
+
 def _sem_chave(requisicao: httpx.Request) -> None:
     assert CHAVE not in str(requisicao.url)
     assert CHAVE not in requisicao.content.decode()
@@ -162,7 +168,8 @@ def test_groq_para_quando_passa_do_limite_de_rodadas():
     ],
 )
 def test_groq_erro_vira_erro_provedor_sem_repetir_o_corpo(resposta, motivo, status):
-    provedor = ProvedorGroq(CHAVE, _cliente([resposta], []))
+    # Duas respostas iguais: o 429 tenta de novo uma vez antes de desistir.
+    provedor = ProvedorGroq(CHAVE, _cliente([resposta, resposta], []))
     with pytest.raises(ErroProvedor) as erro:
         _responder(provedor)
     assert (erro.value.provedor, erro.value.motivo, erro.value.status) == ("groq", motivo, status)
@@ -244,3 +251,46 @@ def test_criar_provedor_escolhe_pelo_destino_sem_fallback():
 def test_criar_provedor_sem_a_chave_do_destino_recusa_em_vez_de_trocar():
     with pytest.raises(ErroProvedor, match="chave ausente"):
         criar_provedor(DestinoModelo("gemini", "b"), _settings(groq_api_key="g"))
+
+
+# ------------------------------------------------------------------ limite por minuto (429)
+
+
+def test_429_com_espera_curta_espera_e_tenta_de_novo(monkeypatch):
+    esperas = []
+    monkeypatch.setattr(provedor_modulo, "_dormir", esperas.append)
+    pedidos = []
+    limite = httpx.Response(
+        429, headers={"retry-after": "2"}, json={"error": {"code": "rate_limit_exceeded"}}
+    )
+    resposta = _responder(ProvedorGroq(CHAVE, _cliente([limite, _groq_texto("Oi!")], pedidos)))
+    assert resposta.texto == "Oi!" and esperas == [2.0] and len(pedidos) == 2
+
+
+def test_429_que_persiste_vira_erro_de_limite_com_o_codigo(monkeypatch):
+    monkeypatch.setattr(provedor_modulo, "_dormir", lambda s: None)
+    limite = httpx.Response(
+        429, json={"error": {"code": "rate_limit_exceeded", "message": f"org {CHAVE}"}}
+    )
+    with pytest.raises(ErroProvedor) as erro:
+        _responder(ProvedorGroq(CHAVE, _cliente([limite, limite], [])))
+    assert erro.value.limite_de_uso and erro.value.codigo == "rate_limit_exceeded"
+    assert CHAVE not in str(erro.value)
+
+
+def test_429_com_espera_longa_nao_segura_o_cliente(monkeypatch):
+    esperas = []
+    monkeypatch.setattr(provedor_modulo, "_dormir", esperas.append)
+    limite = httpx.Response(429, headers={"retry-after": "40"}, json={})
+    with pytest.raises(ErroProvedor):
+        _responder(ProvedorGroq(CHAVE, _cliente([limite], [])))
+    assert esperas == []
+
+
+def test_codigo_do_erro_400_fica_registrado_sem_a_mensagem():
+    falha = httpx.Response(
+        400, json={"error": {"code": "tool_use_failed", "message": "geracao falhou"}}
+    )
+    with pytest.raises(ErroProvedor) as erro:
+        _responder(ProvedorGroq(CHAVE, _cliente([falha], [])))
+    assert erro.value.codigo == "tool_use_failed" and "geracao" not in str(erro.value)

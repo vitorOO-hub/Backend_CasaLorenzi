@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -57,9 +58,21 @@ Executar = Callable[[str, dict[str, Any]], dict[str, Any]]
 
 
 class ErroProvedor(RuntimeError):
-    def __init__(self, provedor: str, motivo: str, status: int | None = None) -> None:
-        self.provedor, self.motivo, self.status = provedor, motivo, status
-        super().__init__(f"{provedor}: {motivo}" + (f" (HTTP {status})" if status else ""))
+    """`codigo` e o codigo de erro do provedor (ex.: rate_limit_exceeded), nunca o corpo inteiro."""
+
+    def __init__(
+        self, provedor: str, motivo: str, status: int | None = None, codigo: str | None = None
+    ) -> None:
+        self.provedor, self.motivo, self.status, self.codigo = provedor, motivo, status, codigo
+        super().__init__(
+            f"{provedor}: {motivo}"
+            + (f" (HTTP {status})" if status else "")
+            + (f" [{codigo}]" if codigo else "")
+        )
+
+    @property
+    def limite_de_uso(self) -> bool:
+        return self.status == 429
 
 
 class Provedor(Protocol):
@@ -87,16 +100,53 @@ def _cliente_http() -> httpx.Client:
     return _CLIENTE_HTTP
 
 
-def _postar(cliente: httpx.Client, provedor: str, url: str, cabecalhos: dict, corpo: dict) -> dict:
+# Limite por minuto do provedor (429): espera o que ele pedir, se for pouco, e tenta uma vez.
+ESPERA_MAXIMA_SEGUNDOS = 6.0
+_dormir = time.sleep
+
+
+def _codigo_do_erro(resposta: httpx.Response) -> str | None:
+    """So o codigo do erro (Groq: error.code; Gemini: error.status). A mensagem nao sai daqui."""
     try:
-        resposta = cliente.post(url, headers=cabecalhos, json=corpo, timeout=TEMPO_LIMITE_SEGUNDOS)
-    except httpx.TimeoutException as erro:
-        raise ErroProvedor(provedor, "tempo esgotado") from erro
-    except httpx.HTTPError as erro:
-        raise ErroProvedor(provedor, "falha de conexao") from erro
+        erro = resposta.json().get("error")
+    except (ValueError, AttributeError):
+        return None
+    if not isinstance(erro, dict):
+        return None
+    codigo = erro.get("code") or erro.get("status") or erro.get("type")
+    return str(codigo)[:60] if codigo is not None else None
+
+
+def _espera_pedida(resposta: httpx.Response) -> float:
+    try:
+        return float(resposta.headers.get("retry-after", "2"))
+    except ValueError:
+        return 2.0
+
+
+def _postar(cliente: httpx.Client, provedor: str, url: str, cabecalhos: dict, corpo: dict) -> dict:
+    for tentativa in range(2):
+        try:
+            resposta = cliente.post(
+                url, headers=cabecalhos, json=corpo, timeout=TEMPO_LIMITE_SEGUNDOS
+            )
+        except httpx.TimeoutException as erro:
+            raise ErroProvedor(provedor, "tempo esgotado") from erro
+        except httpx.HTTPError as erro:
+            raise ErroProvedor(provedor, "falha de conexao") from erro
+        espera = _espera_pedida(resposta)
+        if resposta.status_code == 429 and tentativa == 0 and espera <= ESPERA_MAXIMA_SEGUNDOS:
+            _dormir(espera)
+            continue
+        break
     if resposta.is_error:
-        # O corpo do erro nao e repetido: pode trazer detalhes da conta.
-        raise ErroProvedor(provedor, "resposta de erro do provedor", resposta.status_code)
+        # O corpo do erro nao e repetido: pode trazer detalhes da conta. So o codigo vai adiante.
+        raise ErroProvedor(
+            provedor,
+            "resposta de erro do provedor",
+            resposta.status_code,
+            _codigo_do_erro(resposta),
+        )
     try:
         dados = resposta.json()
     except ValueError as erro:

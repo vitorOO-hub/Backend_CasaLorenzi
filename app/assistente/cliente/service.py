@@ -85,6 +85,7 @@ TEXTO_PASSADO_PARA_EQUIPE = (
 TEXTO_INDISPONIVEL = (
     "O assistente está indisponível no momento. Se precisar, abra um chamado na área Atendimento."
 )
+TEXTO_OCUPADO = "Estou recebendo muitas mensagens agora. Tente de novo em um minuto, por favor."
 TEXTO_FALHA = (
     "Não consegui responder agora. Tente de novo em instantes ou abra um chamado na área "
     "Atendimento."
@@ -167,6 +168,17 @@ def enviar_mensagem(
         )
     except ErroProvedor as erro:
         log.warning("provedor do assistente falhou: %s", erro)
+        if erro.limite_de_uso:
+            # Limite por minuto do provedor: e capacidade, nao duvida do cliente; nao abre chamado.
+            return _responder(
+                conexao,
+                id_conversa,
+                plano,
+                TEXTO_OCUPADO,
+                sem_resposta=True,
+                modelo=rotulo_modelo,
+                dados={"erro": erro.motivo, "status_http": erro.status, "codigo": erro.codigo},
+            )
         if erro.motivo == "chave ausente":
             # Mesmo caso da configuracao acima, pego na fabrica do provedor.
             return _responder(
@@ -186,7 +198,7 @@ def enviar_mensagem(
             texto,
             motivo="o assistente ficou sem resposta do modelo",
             modelo=rotulo_modelo,
-            dados={"erro": erro.motivo, "status_http": erro.status},
+            dados={"erro": erro.motivo, "status_http": erro.status, "codigo": erro.codigo},
             ferramentas=ferramentas,
         )
 
