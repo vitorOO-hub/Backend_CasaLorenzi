@@ -532,3 +532,115 @@ def test_resposta_sai_em_texto_simples(repo, chamados):
     )
     resposta, _, _ = _enviar(repo, "aceita pix?", provedor)
     assert resposta["resposta"] == "Pagamento\n\nAceitamos Pix."
+
+
+# ------------------------------------------------------------------ cartoes: peca exata e opcoes
+
+
+def _encontrada(nome, *variacoes):
+    return {
+        "nome": nome,
+        "categoria": "blazers",
+        "marca": "Casa Lorenzi",
+        "preco_base": 899,
+        "imagem_url": f"/img/{nome}.jpg",
+        "imagem_alt": nome,
+        "tecido": "la",
+        "variacoes": [
+            {
+                "id_variacao": uuid4(),
+                "sku": f"{nome}-{cor}-{t}",
+                "cor": cor,
+                "tamanho": t,
+                "preco": 899,
+            }
+            for cor, t in variacoes
+        ],
+    }
+
+
+@pytest.fixture
+def catalogo(monkeypatch):
+    from app.assistente.cliente import ferramentas as modulo
+
+    achadas = [
+        _encontrada("blazer azul", ("azul", "M"), ("azul", "G")),
+        _encontrada("blazer cinza", ("cinza", "P")),
+        _encontrada("blazer linho", ("bege", "M")),
+        _encontrada("blazer veludo", ("preto", "M")),
+    ]
+    monkeypatch.setattr(modulo.repositorio, "buscar_produtos", lambda c, termos, limite: achadas)
+    return achadas
+
+
+def test_pedido_vago_vira_ate_tres_cartoes_de_opcao(repo, chamados, catalogo):
+    provedor = ProvedorFalso(
+        RespostaProvedor(texto="Separei algumas opcoes de blazer."),
+        chamar=[("buscar_produto", {"descricao": "blazer"})],
+    )
+    resposta, _, _ = _enviar(repo, "quero um blazer", provedor)
+    opcoes = resposta["ofertas"]
+    assert [o["produto"] for o in opcoes] == ["blazer azul", "blazer cinza", "blazer linho"]
+    azul = opcoes[0]
+    assert [(v["cor"], v["tamanho"]) for v in azul["variacoes"]] == [("azul", "M"), ("azul", "G")]
+    assert (
+        azul["imagem_url"] == "/img/blazer azul.jpg"
+        and azul["id_variacao"] == azul["variacoes"][0]["id_variacao"]
+    )
+    # Os cartoes voltam com a conversa.
+    assert _assistente(repo)["dados"]["ofertas"] == opcoes
+    # O modelo nao recebe foto nem ids (so o que precisa para responder).
+    (pecas,) = [c.resultado["pecas"] for c in provedor.resposta.chamadas]
+    assert "imagem_url" not in pecas[0] and "id_variacao" not in pecas[0]["variacoes"][0]
+
+
+def test_peca_exata_mostra_so_ela(repo, chamados, catalogo, monkeypatch):
+    from app.assistente.cliente import ferramentas as modulo
+
+    exata = {
+        "id_variacao": uuid4(),
+        "sku": "BLZ-AZ-M",
+        "produto": "blazer azul",
+        "marca": "m",
+        "cor": "azul",
+        "tamanho": "M",
+        "preco": 899,
+        "imagem_url": None,
+        "imagem_alt": None,
+        "tecido": None,
+        "estoque": 2,
+    }
+    monkeypatch.setattr(modulo.repositorio, "peca_para_oferta", lambda c, sku: exata)
+    provedor = ProvedorFalso(
+        RespostaProvedor(texto="Aqui esta o blazer azul M."),
+        chamar=[
+            ("buscar_produto", {"descricao": "blazer azul"}),
+            ("oferecer_peca", {"sku": "BLZ-AZ-M"}),
+        ],
+    )
+    resposta, _, _ = _enviar(repo, "quero o blazer azul M", provedor)
+    (oferta,) = resposta["ofertas"]
+    assert oferta["sku"] == "BLZ-AZ-M" and len(oferta["variacoes"]) == 1
+
+
+def test_conversa_passada_para_a_equipe_nao_mostra_cartoes(repo, chamados, catalogo):
+    argumentos = {"motivo": "Troca", "resumo": "Cliente quer trocar o blazer por outro tamanho."}
+    provedor = ProvedorFalso(
+        RespostaProvedor(texto="Passei para a equipe."),
+        chamar=[
+            ("buscar_produto", {"descricao": "blazer"}),
+            ("transferir_para_atendente", argumentos),
+        ],
+    )
+    resposta, _, _ = _enviar(repo, "quero trocar meu blazer", provedor)
+    assert resposta["status"] == "com_atendente" and resposta["ofertas"] == []
+
+
+def test_limite_diario_e_de_30_mensagens_por_cliente(repo):
+    # Decisao de 28/10/2026: a cota gratuita do Groq e dividida com os outros chatbots.
+    assert service.LIMITE_DIARIO_POR_CLIENTE == 30
+    repo.hoje = 29
+    _enviar(repo, "oi")  # a 30a do dia passa
+    repo.hoje = 30
+    with pytest.raises(LimiteDiarioDoAssistente):
+        _enviar(repo, "mais uma")

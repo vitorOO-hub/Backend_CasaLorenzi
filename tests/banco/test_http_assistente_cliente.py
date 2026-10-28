@@ -62,6 +62,10 @@ def _usuario(pg, tipo, nome, loja=None):
 
 @pytest.fixture
 def cena(banco_migrado, monkeypatch):
+    from app.assistente.cliente import embeddings
+
+    # Sem chamada real ao Gemini: a busca semantica tem teste proprio com vetor falso.
+    monkeypatch.setattr(embeddings, "vetorizador", lambda configuracoes: None)
     monkeypatch.setattr(vigencia, "ATIVA", True)
     vigencia._conferidos.clear()
     sufixo = uuid4().hex[:6].upper()
@@ -188,6 +192,10 @@ def test_busca_e_estoque_reais_com_ferramentas_registradas(cena):
     assert [v["sku"] for v in busca["pecas"][0]["variacoes"]] == [ids["sku"]]
     assert estoque["total"] == 4
     assert loja["lojas"][0]["horario_funcionamento"] is None
+    # Sem peca exata oferecida, a busca vira cartao de opcao com a variacao em estoque.
+    (opcao,) = corpo["ofertas"]
+    assert [v["sku"] for v in opcao["variacoes"]] == [ids["sku"]]
+    assert opcao["variacoes"][0]["id_variacao"] == str(ids["variacao"])
     autores = [(a, f) for a, _, f, *_ in _registros(pg, conversa)]
     assert autores == [
         ("usuario", None),
@@ -215,12 +223,28 @@ def test_pontos_e_pedidos_sao_so_do_cliente_do_token(cena):
     assert pedidos == {"pedidos": []}
 
 
-def test_montar_carrinho_coloca_na_sacola_do_cliente(cena):
+def test_assistente_oferece_a_peca_e_quem_poe_na_sacola_e_o_cliente(cena):
     http, como, provedor, pg, ids = cena
     conversa = _nova(http, como("cliente"))
-    provedor.roteiro = [("montar_carrinho", {"sku": ids["sku"].lower(), "quantidade": 2})]
-    corpo = _enviar(http, como("cliente"), conversa, "coloca na sacola por favor").json()
-    assert corpo["carrinho_alterado"] is True
+    provedor.roteiro = [("oferecer_peca", {"sku": ids["sku"].lower(), "quantidade": 2})]
+    corpo = _enviar(http, como("cliente"), conversa, "quero comprar a camisa azul M").json()
+    (oferta,) = corpo["ofertas"]
+    assert oferta["id_variacao"] == str(ids["variacao"]) and oferta["quantidade"] == 2
+    assert (oferta["cor"], oferta["tamanho"]) == ("azul", "M") and float(oferta["preco"]) == 199
+    # O assistente nao mexeu na sacola.
+    sacola = http.get("/api/v1/cliente/carrinho", headers=como("cliente")).json()
+    assert sacola["itens"] == []
+    # O cartao volta quando a conversa e reaberta.
+    mensagens = http.get(f"{BASE}/{conversa}", headers=como("cliente")).json()["mensagens"]
+    assert mensagens[-1]["ofertas"][0]["sku"] == ids["sku"]
+    assert mensagens[0]["ofertas"] == []
+    # O botao "Adicionar a sacola" usa a rota de sempre da sacola.
+    r = http.post(
+        "/api/v1/cliente/carrinho/itens",
+        json={"id_variacao": oferta["id_variacao"], "quantidade": oferta["quantidade"]},
+        headers=como("cliente"),
+    )
+    assert r.status_code in (200, 201), r.text
     sacola = http.get("/api/v1/cliente/carrinho", headers=como("cliente")).json()
     assert [(i["id_variacao"], i["quantidade"]) for i in sacola["itens"]] == [
         (str(ids["variacao"]), 2)
@@ -355,3 +379,67 @@ def test_chamado_vai_para_a_loja_que_o_cliente_citou(cena):
         headers=como("atendente"),
     ).json()
     assert "(citada pelo cliente)" in lidas["mensagens"][0]["texto"]
+
+
+# ------------------------------------------------------------------ historico, arquivar e avaliar
+
+
+def test_historico_lista_so_as_conversas_do_cliente_com_titulo(cena):
+    http, como, provedor, pg, _ = cena
+    primeira = _nova(http, como("cliente"))
+    _enviar(http, como("cliente"), primeira, "qual o prazo de troca?")
+    vazia = _nova(http, como("cliente"))
+    alheia = _nova(http, como("outro"))
+    lista = http.get(BASE, headers=como("cliente")).json()
+    por_id = {c["id_conversa"]: c for c in lista}
+    assert por_id[primeira]["titulo"] == "qual o prazo de troca?"
+    assert por_id[vazia]["titulo"] == "Nova conversa"
+    assert alheia not in por_id
+
+
+def test_arquivar_some_do_historico_e_bloqueia_novas_mensagens(cena):
+    http, como, provedor, pg, _ = cena
+    conversa = _nova(http, como("cliente"))
+    r = http.patch(f"{BASE}/{conversa}", json={"arquivada": True}, headers=como("cliente"))
+    assert r.status_code == 200 and r.json()["status"] == "encerrada"
+    assert conversa not in {
+        c["id_conversa"] for c in http.get(BASE, headers=como("cliente")).json()
+    }
+    assert _enviar(http, como("cliente"), conversa, "oi").status_code == 409
+    # Outro cliente nao arquiva o que nao e dele.
+    assert (
+        http.patch(
+            f"{BASE}/{conversa}", json={"arquivada": False}, headers=como("outro")
+        ).status_code
+        == 404
+    )
+    r = http.patch(f"{BASE}/{conversa}", json={"arquivada": False}, headers=como("cliente"))
+    assert r.json()["status"] == "ativa"
+
+
+def test_avaliar_resposta_do_assistente(cena):
+    http, como, provedor, pg, _ = cena
+    conversa = _nova(http, como("cliente"))
+    enviada = _enviar(http, como("cliente"), conversa, "oi, tudo bem?").json()
+    pergunta, resposta = http.get(f"{BASE}/{conversa}", headers=como("cliente")).json()["mensagens"]
+    # O id da resposta ja vem no envio, para avaliar sem recarregar.
+    assert enviada["id_mensagem"] == resposta["id_mensagem"]
+    url = f"{BASE}/{conversa}/mensagens/{resposta['id_mensagem']}/avaliacao"
+    assert http.put(url, json={"avaliacao": "util"}, headers=como("cliente")).status_code == 200
+    assert (
+        http.get(f"{BASE}/{conversa}", headers=como("cliente")).json()["mensagens"][1]["avaliacao"]
+        == "util"
+    )
+    assert http.put(url, json={"avaliacao": None}, headers=como("cliente")).status_code == 200
+    assert (
+        http.get(f"{BASE}/{conversa}", headers=como("cliente")).json()["mensagens"][1]["avaliacao"]
+        is None
+    )
+    # So resposta do assistente, e so na conversa do proprio cliente.
+    da_pergunta = f"{BASE}/{conversa}/mensagens/{pergunta['id_mensagem']}/avaliacao"
+    assert (
+        http.put(da_pergunta, json={"avaliacao": "util"}, headers=como("cliente")).status_code
+        == 404
+    )
+    assert http.put(url, json={"avaliacao": "util"}, headers=como("outro")).status_code == 404
+    assert http.put(url, json={"avaliacao": "otima"}, headers=como("cliente")).status_code == 422

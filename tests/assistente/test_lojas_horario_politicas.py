@@ -139,7 +139,8 @@ TEMAS = {
 def test_documento_tem_todos_os_temas_e_marca_os_pendentes():
     todas = politicas.todas()
     assert set(todas) == TEMAS
-    assert {c for c, p in todas.items() if p.pendente} == {"prazo_entrega", "ajustes"}
+    # Todos os pontos ja tem definicao oficial (prazo de entrega e valor do ajuste em 28/10/2026).
+    assert {c for c, p in todas.items() if p.pendente} == set()
     assert all(p.texto for p in todas.values())
 
 
@@ -177,7 +178,8 @@ def test_ferramenta_devolve_o_texto_e_orienta_nos_pendentes():
     trocas = f.executar("consultar_politica", {"tema": "trocas"})
     assert "30 dias" in trocas["texto"] and "orientacao" not in trocas
     prazo = f.executar("consultar_politica", {"tema": "prazo_entrega"})
-    assert "transferir_para_atendente" in prazo["orientacao"]
+    assert "7 dias úteis" in prazo["texto"] and "orientacao" not in prazo
+    assert "R$ 100" in f.executar("consultar_politica", {"tema": "ajustes"})["texto"]
     # Tema fora da lista volta ao modelo com os temas validos (nao derruba a conversa).
     errado = f.executar("consultar_politica", {"tema": "inventado"})
     assert errado["erro"] == "tema_desconhecido" and set(errado["temas_validos"]) == TEMAS

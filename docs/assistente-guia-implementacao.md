@@ -48,8 +48,8 @@ Rotas sugeridas:
 
 Como ficou: o chatbot administrativo usa `/assistente/conversas` (só admin) e o do cliente usa
 `/assistente/cliente/conversas` (só cliente), cada um com o próprio contrato. O do cliente tem limite
-de 40 mensagens por cliente por dia e conta como escrita sensível no limite por IP. Busca de produto
-ainda é por texto (nome, categoria, cor, tecido, marca) enquanto os embeddings não forem gerados.
+de 30 mensagens por cliente por dia e conta como escrita sensível no limite por IP. A busca de produto
+junta palavras (nome, categoria, cor, tecido, marca) e semelhança por embeddings (ver abaixo).
 Sem modelo configurado, ele só avisa que está indisponível; nos demais casos em que não consegue
 responder com segurança, passa a conversa para a equipe com o resumo.
 
@@ -61,6 +61,11 @@ Atualizações do assistente do cliente:
   `app/assistente/cliente/politicas.md`, lidas pela ferramenta `consultar_politica`. Tema marcado
   como `PENDENTE` faz o assistente passar para a equipe. Um teste confere os números do documento
   contra o código (frete, pontos, categorias).
+- Busca semântica: `gemini-embedding-2` com 768 dimensões em `produto.embedding`, o mesmo modelo
+  do chatbot do admin (os dois usam a mesma coluna; vetores de modelos diferentes não se comparam)
+  (`app/assistente/cliente/embeddings.py`). `scripts/gerar_embeddings_produtos.py` gera os vetores
+  das peças sem embedding ou editadas depois dele; rodar de novo após importar ou editar o catálogo.
+  Sem embedding (ou com o Gemini fora), a busca por palavras continua sozinha.
 - Ao passar para a equipe, o chamado vai para a loja que o cliente citou na conversa
   (`app/assistente/cliente/lojas.py`); sem loja clara, fila geral. Fora do horário cadastrado das
   lojas (`loja.horario_funcionamento`), a resposta diz quando a equipe volta.

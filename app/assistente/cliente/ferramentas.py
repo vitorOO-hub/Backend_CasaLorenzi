@@ -19,7 +19,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 from sqlalchemy.engine import Connection
 
-from app.assistente.cliente import passagem, politicas, repositorio
+from app.assistente.cliente import embeddings, passagem, politicas, repositorio
 from app.assistente.cliente.provedor import Ferramenta
 from app.cliente import service as cliente
 from app.cliente.vencimento_pontos import SP
@@ -30,6 +30,13 @@ log = logging.getLogger(__name__)
 
 LIMITE_PRODUTOS = 5
 LIMITE_PEDIDOS = 5
+LIMITE_OFERTAS = 3
+MAX_VARIACOES = 12  # por peca, na resposta ao modelo e no seletor do cartao
+# Busca semantica (distancia de cosseno, 0 = identica). Com o gemini-embedding-2 o que tem a ver
+# fica em ~0,42-0,48 e o resto em ~0,51-0,60, mas a ordem e boa: entram so as pecas perto da
+# melhor, com um teto absoluto.
+DISTANCIA_MAXIMA = 0.60
+MARGEM_DA_MELHOR = 0.04
 # Palavras que o cliente fala mas que nao estao no nome da peca ("camisa DE linho"), como no
 # assistente do vendedor (app/assistente/vendedor/ferramentas.py).
 SEM_PESO = frozenset(
@@ -83,7 +90,7 @@ class SemArgumentos(_Entrada):
     pass
 
 
-class MontarCarrinho(_Entrada):
+class OferecerPeca(_Entrada):
     sku: Annotated[
         str,
         StringConstraints(
@@ -154,13 +161,15 @@ DECLARACOES = [
         {"type": "object", "properties": {}, "additionalProperties": False},
     ),
     Ferramenta(
-        "montar_carrinho",
-        "Coloca um SKU na sacola do cliente logado. Use so quando o cliente pedir para comprar ou "
-        "separar a peca.",
+        "oferecer_peca",
+        "Mostra no chat o cartao da peca (foto, cor, tamanho e preco) com o botao Adicionar a "
+        "sacola. Use quando o cliente quiser comprar ou escolher uma peca e voce souber o SKU da "
+        "cor e do tamanho certos (pegue de buscar_produto; se faltar cor ou tamanho, pergunte "
+        "antes). Voce nao coloca nada na sacola: quem decide e o cliente, no botao. Ate 3 pecas.",
         {
             "type": "object",
             "properties": {
-                "sku": {"type": "string"},
+                "sku": {"type": "string", "description": "SKU da variacao, ex.: VLT-CAM-013-OLI-G"},
                 "quantidade": {"type": "integer", "description": "De 1 a 10 (padrao 1)"},
             },
             "required": ["sku"],
@@ -226,13 +235,22 @@ class Ferramentas:
     (chamado aberto, sacola alterada)."""
 
     def __init__(
-        self, conexao: Connection, usuario: UsuarioAtual, id_conversa: UUID | None = None
+        self,
+        conexao: Connection,
+        usuario: UsuarioAtual,
+        id_conversa: UUID | None = None,
+        vetorizar: embeddings.Vetorizar | None = None,
     ) -> None:
         self.conexao, self.usuario, self.id_conversa = conexao, usuario, id_conversa
+        # Busca semantica (embedding da pergunta); None = so a busca por palavras.
+        self.vetorizar = vetorizar
         self.id_atendimento: UUID | None = None
         # Loja do chamado (None = fila geral), para o aviso de horario da resposta.
         self.id_loja_chamado: UUID | None = None
-        self.carrinho_alterado = False
+        # Cartoes que o chat mostra com o botao "Adicionar a sacola" (o cliente decide).
+        self.ofertas: list[dict[str, Any]] = []
+        # Pecas achadas nas buscas desta resposta: viram opcoes se nenhuma exata for oferecida.
+        self.pecas_encontradas: list[dict[str, Any]] = []
 
     def executar(self, nome: str, argumentos: dict[str, Any]) -> dict[str, Any]:
         metodo = getattr(self, f"_{nome}", None) if nome in {d.nome for d in DECLARACOES} else None
@@ -254,10 +272,85 @@ class Ferramentas:
         dados = BuscarProduto.model_validate(argumentos)
         palavras = re.findall(r"[0-9a-zà-ÿ]{2,}", _normalizar(dados.descricao))
         termos = [t for t in palavras if t not in SEM_PESO][:6]
-        if not termos:
-            return {"pecas": [], "observacao": "descricao sem termos de busca"}
-        pecas = repositorio.buscar_produtos(self.conexao, termos, LIMITE_PRODUTOS)
-        return {"pecas": [{**p, "variacoes": p["variacoes"][:12]} for p in pecas]}
+        # Primeiro o que bate pelas palavras; depois o que se parece pelo sentido ("algo para
+        # casamento", "blusa" para camisa), sem repetir peca.
+        pecas = repositorio.buscar_produtos(self.conexao, termos, LIMITE_PRODUTOS) if termos else []
+        for peca in self._semelhantes(dados.descricao):
+            if len(pecas) >= LIMITE_PRODUTOS:
+                break
+            if all(peca["nome"] != p["nome"] for p in pecas):
+                pecas.append(peca)
+        for peca in pecas:
+            if all(peca["nome"] != p["nome"] for p in self.pecas_encontradas):
+                self.pecas_encontradas.append(peca)
+        # O modelo recebe o essencial; foto e ids ficam para os cartoes do chat.
+        return {
+            "pecas": [
+                {
+                    "nome": p["nome"],
+                    "categoria": p["categoria"],
+                    "marca": p["marca"],
+                    "preco_base": p["preco_base"],
+                    "tecido": p.get("tecido"),
+                    "variacoes": [
+                        {k: v for k, v in variacao.items() if k != "id_variacao"}
+                        for variacao in p["variacoes"][:MAX_VARIACOES]
+                    ],
+                }
+                for p in pecas
+            ]
+        }
+
+    def opcoes_da_busca(self) -> list[dict[str, Any]]:
+        """Cartoes de opcao (ate 3) com as pecas encontradas, quando nenhuma peca exata foi
+        oferecida: o cliente escolhe cor e tamanho no proprio cartao."""
+        opcoes = []
+        for peca in self.pecas_encontradas[:LIMITE_OFERTAS]:
+            variacoes = [
+                {
+                    "id_variacao": v["id_variacao"],
+                    "sku": v["sku"],
+                    "cor": v["cor"],
+                    "tamanho": v["tamanho"],
+                    "preco": v["preco"],
+                }
+                for v in peca["variacoes"][:MAX_VARIACOES]
+            ]
+            if not variacoes:
+                continue
+            primeira = variacoes[0]
+            opcoes.append(
+                {
+                    **primeira,
+                    "produto": peca["nome"],
+                    "imagem_url": peca.get("imagem_url"),
+                    "imagem_alt": peca.get("imagem_alt"),
+                    "tecido": peca.get("tecido"),
+                    "quantidade": 1,
+                    "variacoes": variacoes,
+                }
+            )
+        return opcoes
+
+    def _semelhantes(self, descricao: str) -> list[dict[str, Any]]:
+        if self.vetorizar is None:
+            return []
+        try:
+            vetor = self.vetorizar(descricao)
+        except Exception as erro:  # noqa: BLE001 - sem embedding, a busca por palavras continua
+            log.warning("busca semantica indisponivel: %s", type(erro).__name__)
+            return []
+        achadas = repositorio.buscar_produtos_semelhantes(
+            self.conexao, embeddings.vetor_sql(vetor), LIMITE_PRODUTOS, DISTANCIA_MAXIMA
+        )
+        if not achadas:
+            return []
+        melhor = min(float(p["distancia"]) for p in achadas)
+        return [
+            {k: v for k, v in p.items() if k != "distancia"}
+            for p in achadas
+            if float(p["distancia"]) <= melhor + MARGEM_DA_MELHOR
+        ]
 
     def _consultar_estoque(self, argumentos: dict[str, Any]) -> dict[str, Any]:
         dados = ConsultarEstoque.model_validate(argumentos)
@@ -365,16 +458,49 @@ class Ferramentas:
 
     # ---------------------------------------------------------------- acoes
 
-    def _montar_carrinho(self, argumentos: dict[str, Any]) -> dict[str, Any]:
-        dados = MontarCarrinho.model_validate(argumentos)
-        id_variacao = repositorio.variacao_ativa_pelo_sku(self.conexao, dados.sku)
-        if id_variacao is None:
-            return {"adicionado": False, "motivo": "sku_nao_encontrado"}
-        cliente.adicionar_item_carrinho(
-            self.conexao, self.usuario, {"id_variacao": id_variacao, "quantidade": dados.quantidade}
-        )
-        self.carrinho_alterado = True
-        return {"adicionado": True, "sku": dados.sku.upper(), "quantidade": dados.quantidade}
+    def _oferecer_peca(self, argumentos: dict[str, Any]) -> dict[str, Any]:
+        dados = OferecerPeca.model_validate(argumentos)
+        peca = repositorio.peca_para_oferta(self.conexao, dados.sku)
+        if peca is None:
+            return {"oferecido": False, "motivo": "sku_nao_encontrado"}
+        if peca["estoque"] <= 0:
+            return {"oferecido": False, "motivo": "sem_estoque"}
+        if len(self.ofertas) >= LIMITE_OFERTAS:
+            return {"oferecido": False, "motivo": "limite_de_pecas_por_resposta"}
+        if all(o["sku"] != peca["sku"] for o in self.ofertas):
+            self.ofertas.append(
+                {
+                    "id_variacao": peca["id_variacao"],
+                    "sku": peca["sku"],
+                    "produto": peca["produto"],
+                    "cor": peca["cor"],
+                    "tamanho": peca["tamanho"],
+                    "preco": peca["preco"],
+                    "imagem_url": peca["imagem_url"],
+                    "imagem_alt": peca["imagem_alt"],
+                    "tecido": peca["tecido"],
+                    "quantidade": dados.quantidade,
+                    # Peca exata: uma variacao so (o cartao nao pede cor nem tamanho).
+                    "variacoes": [
+                        {
+                            "id_variacao": peca["id_variacao"],
+                            "sku": peca["sku"],
+                            "cor": peca["cor"],
+                            "tamanho": peca["tamanho"],
+                            "preco": peca["preco"],
+                        }
+                    ],
+                }
+            )
+        # O texto diz ao cliente que e so tocar no botao; nada foi para a sacola ainda.
+        return {
+            "oferecido": True,
+            "peca": peca["produto"],
+            "cor": peca["cor"],
+            "tamanho": peca["tamanho"],
+            "preco": str(peca["preco"]),
+            "observacao": "o cliente ve o cartao com o botao Adicionar a sacola",
+        }
 
     def _transferir_para_atendente(self, argumentos: dict[str, Any]) -> dict[str, Any]:
         dados = TransferirParaAtendente.model_validate(argumentos)
