@@ -8,6 +8,7 @@ esquecer isso.
 from fastapi import APIRouter
 
 from app.api import health
+from app.assistente.router import router as assistente_router
 from app.ativacao.router import router as ativacao_router
 from app.automacoes.router import router as automacoes_router
 from app.chamados.router import router as chamados_router
@@ -36,3 +37,4 @@ api_router.include_router(ativacao_router, prefix="/api/v1")
 api_router.include_router(clientes_router, prefix="/api/v1")
 # Automacoes do n8n: sem login de pessoa, com a chave do cabecalho X-Chave-Automacao.
 api_router.include_router(automacoes_router, prefix="/api/v1")
+api_router.include_router(assistente_router, prefix="/api/v1")
