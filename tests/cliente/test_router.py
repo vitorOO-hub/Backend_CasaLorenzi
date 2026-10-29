@@ -361,6 +361,26 @@ def test_criar_agendamento_do_cliente_responde_201(app, cliente):
     assert resposta.json()["protocolo"] == "AT-2026-0001"
 
 
+def test_ajuste_exige_item_de_pedido(app, cliente):
+    usar_cliente(app)
+    usar_executor(app, devolve(CHAMADO))
+    dados = {
+        "tipo": "ajuste",
+        "id_loja": ID_LOJA,
+        "data": "2026-10-30",
+        "horario": "14:00",
+        "nome": "Cliente",
+        "telefone": "(11) 99999-0000",
+    }
+    resposta = cliente.post("/api/v1/cliente/agendamentos", json=dados)
+    assert resposta.status_code == 422
+
+    resposta = cliente.post(
+        "/api/v1/cliente/agendamentos", json={**dados, "id_item_pedido": ID_ITEM}
+    )
+    assert resposta.status_code == 201
+
+
 def test_agendamento_nao_aceita_identidade_no_corpo(app, cliente):
     usar_cliente(app)
     resposta = cliente.post(

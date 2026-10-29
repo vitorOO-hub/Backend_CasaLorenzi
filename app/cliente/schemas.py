@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.core.horario import HorarioFuncionamento
 
@@ -260,6 +260,13 @@ class AgendamentoCriacao(EntradaRestrita):
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)] | None
     ) = None
     peca_nome: TextoCurto | None = None
+    id_item_pedido: UUID | None = None
+
+    @model_validator(mode="after")
+    def ajuste_exige_item_comprado(self):
+        if self.tipo == "ajuste" and self.id_item_pedido is None:
+            raise ValueError("Selecione uma peca de um pedido entregue para agendar o ajuste")
+        return self
 
 
 class MensagemChamadoCriacao(EntradaRestrita):
