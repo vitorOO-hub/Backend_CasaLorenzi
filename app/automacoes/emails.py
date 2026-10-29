@@ -95,10 +95,23 @@ def _base(configuracoes: Settings, tipo: str, nome: str, email: str) -> dict[str
 # ------------------------------------------------------------------ resumo da compra
 
 
+def _imagem(configuracoes: Settings, caminho: str | None) -> str | None:
+    """Foto da peca com endereco completo (o catalogo guarda o caminho no site, /img/...)."""
+    if not caminho:
+        return None
+    if caminho.startswith(("http://", "https://")):
+        return caminho
+    return f"{configuracoes.frontend_url}/{caminho.lstrip('/')}"
+
+
 def mensagem_da_compra(configuracoes: Settings, compra: dict[str, Any]) -> dict[str, Any]:
     itens = [
         {
             "produto": " ".join(str(x) for x in (i["produto"], i["cor"], i["tamanho"]) if x),
+            "nome": i["produto"],
+            "cor": i["cor"],
+            "tamanho": i["tamanho"],
+            "imagem": _imagem(configuracoes, i.get("imagem_url")),
             "quantidade": int(i["quantidade"]),
             "preco_unitario": _dinheiro(i["preco_unitario"]),
             "total": _dinheiro(Decimal(str(i["preco_unitario"])) * int(i["quantidade"])),
@@ -111,6 +124,10 @@ def mensagem_da_compra(configuracoes: Settings, compra: dict[str, Any]) -> dict[
             "numero": compra["numero_pedido"],
             "data": _iso(compra["criado_em"]),
             "loja": compra["loja"],
+            "loja_endereco": ", ".join(
+                str(x) for x in (compra.get("loja_endereco"), compra.get("loja_cidade")) if x
+            )
+            or None,
             "canal": compra["canal_venda"],
             "pagamento": compra["pagamento"],
             "itens": itens,
@@ -159,10 +176,15 @@ def _proxima(categoria_atual: dict[str, Any]) -> dict[str, Any] | None:
     proxima = categoria_atual["proxima_categoria"]
     if not proxima:
         return None
+    # Quanto do caminho entre a categoria atual e a proxima ja foi feito (barra do e-mail).
+    inicio = MINIMO_DA_CATEGORIA[categoria_atual["categoria"]]
+    fim = MINIMO_DA_CATEGORIA[proxima]
+    feito = fim - categoria_atual["faltam_para_proxima"] - inicio
     return {
         "codigo": proxima,
         "nome": NOME_DA_CATEGORIA.get(proxima, proxima),
         "faltam": categoria_atual["faltam_para_proxima"],
+        "progresso": round(100 * feito / (fim - inicio)) if fim > inicio else 100,
         "beneficios": beneficios(proxima),
     }
 

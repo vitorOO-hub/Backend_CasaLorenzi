@@ -86,7 +86,8 @@ def dados_da_compra(conexao: Connection, id_pedido: UUID) -> dict[str, Any] | No
             text(
                 """
                 SELECT p.id_pedido, p.numero_pedido, p.criado_em, p.valor_total, p.valor_frete,
-                       p.canal_venda, l.nome AS loja, u.id_usuario, u.nome, u.email,
+                       p.canal_venda, l.nome AS loja, l.endereco AS loja_endereco,
+                       l.cidade AS loja_cidade, u.id_usuario, u.nome, u.email,
                        (SELECT mp.nome FROM pagamento g
                          JOIN metodo_pagamento mp
                            ON mp.id_metodo_pagamento = g.id_metodo_pagamento
@@ -113,7 +114,8 @@ def dados_da_compra(conexao: Connection, id_pedido: UUID) -> dict[str, Any] | No
     itens = conexao.execute(
         text(
             """
-            SELECT pr.nome AS produto, va.cor, va.tamanho, ip.quantidade, ip.preco_unitario
+            SELECT pr.nome AS produto, pr.imagem_url, va.cor, va.tamanho, ip.quantidade,
+                   ip.preco_unitario
             FROM item_pedido ip
             JOIN variacao_produto va ON va.id_variacao = ip.id_variacao
             JOIN produto pr ON pr.id_produto = va.id_produto

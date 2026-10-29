@@ -75,6 +75,7 @@ COMPRA = {
             "tamanho": "M",
             "quantidade": 3,
             "preco_unitario": Decimal("149.90"),
+            "imagem_url": "/img/produtos/CL-0101.jpg",
         }
     ],
 }
@@ -144,9 +145,11 @@ def test_resumo_da_compra_tem_itens_totais_e_pontos():
     m = emails.mensagem_da_compra(configuracoes(), COMPRA)
     assert m["tipo"] == "pos_compra"
     assert m["para"] == {"nome": "ana souza", "primeiro_nome": "Ana", "email": "ana@exemplo.com"}
-    assert m["pedido"]["itens"] == [
-        {"produto": "camisa linho azul M", "quantidade": 3, "preco_unitario": 149.9, "total": 449.7}
-    ]
+    item = m["pedido"]["itens"][0]
+    assert item["produto"] == "camisa linho azul M" and item["nome"] == "camisa linho"
+    assert (item["quantidade"], item["preco_unitario"], item["total"]) == (3, 149.9, 449.7)
+    # Foto do catalogo com o endereco completo do site.
+    assert item["imagem"] == "https://projetocasalorenzi.vercel.app/img/produtos/CL-0101.jpg"
     assert m["pedido"]["total"] == 449.7
     assert m["pontos"] == {"ganhos": 449, "saldo": 1200}
 
