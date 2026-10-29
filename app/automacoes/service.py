@@ -292,7 +292,7 @@ def relatorios_estoque(
     conexao: Connection,
     *,
     semanal: str,
-    painel_url: str,
+    site: str,
     horas: int,
     dias: int,
     dias_parado: int,
@@ -327,7 +327,7 @@ def relatorios_estoque(
         email(
             "diario",
             loja,
-            emails_estoque.diario(loja, do_dia["criterios"], hoje, painel_url, limite),
+            emails_estoque.diario(loja, hoje, site, limite, horas=horas, dias=dias),
         )
         for loja in do_dia["lojas"]
         if loja["tem_pendencias"]
@@ -338,7 +338,7 @@ def relatorios_estoque(
             email(
                 "semanal",
                 loja,
-                emails_estoque.semanal(loja, parado["dias"], parado["criterio"], hoje, painel_url),
+                emails_estoque.semanal(loja, parado["dias"], hoje, site),
             )
             for loja in parado["lojas"]
             if loja["total_itens"]

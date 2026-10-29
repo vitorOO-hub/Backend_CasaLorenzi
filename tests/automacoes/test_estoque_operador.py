@@ -136,7 +136,7 @@ def test_relatorios_usam_padroes_e_o_painel_do_front(cliente, relatorios):
     assert resposta.status_code == 200
     [chamada] = relatorios
     assert chamada["semanal"] == "auto" and chamada["limite"] == 30
-    assert chamada["painel_url"].endswith("/painel/estoque")
+    assert chamada["site"].startswith("https://") and not chamada["site"].endswith("/")
 
 
 def test_relatorios_aceitam_forcar_o_semanal(cliente, relatorios):

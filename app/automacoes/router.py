@@ -103,12 +103,13 @@ def relatorios_estoque(
     dias_parado: Annotated[int, Query(ge=7, le=365)] = 60,
     limite: Annotated[int, Query(ge=1, le=100)] = 30,
 ):
-    painel_url = request.app.state.settings.frontend_url.rstrip("/") + "/painel/estoque"
+    # O logo e o link do painel nos e-mails saem do endereco do front.
+    site = request.app.state.settings.frontend_url.rstrip("/")
     return executar(
         lambda conexao: service.relatorios_estoque(
             conexao,
             semanal=semanal,
-            painel_url=painel_url,
+            site=site,
             horas=horas_sem_resposta,
             dias=dias_em_transito,
             dias_parado=dias_parado,

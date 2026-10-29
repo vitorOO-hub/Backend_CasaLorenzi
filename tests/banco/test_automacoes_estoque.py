@@ -147,14 +147,14 @@ def test_estoque_do_dia_continua_com_todas_as_lojas_ativas(sa_conn, cena):
 # ---------------------------------------------------------------- relatorios (um fluxo so)
 
 SEGUNDA, SEXTA = date(2026, 11, 2), date(2026, 10, 30)
-PAINEL = "https://exemplo.test/painel/estoque"
+SITE = "https://exemplo.test"
 
 
 def _relatorios(sa_conn, semanal, hoje, limite=30):
     return service.relatorios_estoque(
         sa_conn,
         semanal=semanal,
-        painel_url=PAINEL,
+        site=SITE,
         horas=24,
         dias=3,
         dias_parado=60,
@@ -207,7 +207,8 @@ def test_email_do_dia_tem_assunto_html_e_limite(sa_conn, cena):
 
     email = diarios[cena.a]
     assert email["assunto"].endswith("3 itens para resolver")  # minimo, pedido e ajuste
-    assert "Abaixo do mínimo (1)" in email["html"]
-    assert PAINEL in email["html"] and "30/10/2026" in email["html"]
+    assert "Abaixo do mínimo · 1" in email["html"]
+    assert SITE + "/painel/estoque" in email["html"] and "30/10/2026" in email["html"]
+    assert SITE + "/img/logo-casa-lorenzi.png" in email["html"]
     semanal = _das_lojas(_relatorios(sa_conn, "sim", SEXTA, limite=1), cena, "semanal")
-    assert "E mais 2 no painel" in semanal[cena.a]["html"]
+    assert "E mais 2 no" in semanal[cena.a]["html"]
