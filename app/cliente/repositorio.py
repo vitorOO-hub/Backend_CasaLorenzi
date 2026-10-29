@@ -9,6 +9,7 @@ from sqlalchemy.engine import Connection
 
 from app.cliente import beneficios, resgate_pontos
 from app.cliente.erros import (
+    AjustePedidoNaoEntregue,
     CadastroClienteNaoEncontrado,
     ChamadoClienteFinalizado,
     ChamadoClienteNaoEncontrado,
@@ -968,12 +969,47 @@ def criar_chamado_cliente(
     return obter_chamado_cliente(conexao, id_cliente, id_atendimento)
 
 
+def _item_comprado_para_ajuste(
+    conexao: Connection, id_cliente: UUID, id_item_pedido: UUID
+) -> dict[str, object]:
+    item = (
+        conexao.execute(
+            text(
+                """
+                SELECT ip.id_item_pedido, p.id_pedido, sp.codigo AS status,
+                       v.sku, produto.nome AS peca_nome
+                FROM item_pedido ip
+                JOIN pedido p ON p.id_pedido = ip.id_pedido
+                JOIN status_pedido sp ON sp.id_status_pedido = p.id_status_pedido
+                JOIN variacao_produto v ON v.id_variacao = ip.id_variacao
+                JOIN produto ON produto.id_produto = v.id_produto
+                WHERE ip.id_item_pedido = CAST(:item AS uuid)
+                  AND p.id_cliente = CAST(:cliente AS uuid)
+                """
+            ),
+            {"item": str(id_item_pedido), "cliente": str(id_cliente)},
+        )
+        .mappings()
+        .first()
+    )
+    if item is None:
+        raise PedidoClienteNaoEncontrado
+    if item["status"] != "entregue":
+        raise AjustePedidoNaoEntregue
+    return dict(item)
+
+
 def criar_agendamento_cliente(
     conexao: Connection,
     id_cliente: UUID,
     dados: dict[str, object],
 ) -> dict[str, object]:
     try:
+        item = (
+            _item_comprado_para_ajuste(conexao, id_cliente, dados["id_item_pedido"])
+            if dados["tipo"] == "ajuste"
+            else None
+        )
         horario = str(dados["horario"])
         slot = (
             conexao.execute(
@@ -1032,6 +1068,7 @@ def criar_agendamento_cliente(
                 INSERT INTO atendimento (
                     id_cliente,
                     id_loja,
+                    id_pedido,
                     id_canal_atendimento,
                     id_categoria_atendimento,
                     id_prioridade_atendimento,
@@ -1041,6 +1078,7 @@ def criar_agendamento_cliente(
                 VALUES (
                     CAST(:cliente AS uuid),
                     CAST(:loja AS uuid),
+                    CAST(:pedido AS uuid),
                     CAST(:canal AS uuid),
                     CAST(:categoria AS uuid),
                     CAST(:prioridade AS uuid),
@@ -1053,6 +1091,7 @@ def criar_agendamento_cliente(
             {
                 "cliente": str(id_cliente),
                 "loja": str(dados["id_loja"]),
+                "pedido": str(item["id_pedido"]) if item else None,
                 "canal": str(id_canal),
                 "categoria": str(id_categoria),
                 "prioridade": str(id_prioridade),
@@ -1060,6 +1099,16 @@ def criar_agendamento_cliente(
                 "assunto": assunto,
             },
         ).scalar_one()
+        if item:
+            conexao.execute(
+                text(
+                    """
+                    INSERT INTO atendimento_item (id_atendimento, id_item_pedido)
+                    VALUES (CAST(:atendimento AS uuid), CAST(:item AS uuid))
+                    """
+                ),
+                {"atendimento": str(id_atendimento), "item": str(item["id_item_pedido"])},
+            )
         conexao.execute(
             text(
                 """
@@ -1100,8 +1149,8 @@ def criar_agendamento_cliente(
                 "horario": horario,
                 "nome": texto_padrao(dados["nome"]),
                 "telefone": telefone_padrao(dados["telefone"]),
-                "peca_sku": dados.get("peca_sku"),
-                "peca_nome": texto_padrao(dados.get("peca_nome")),
+                "peca_sku": item["sku"] if item else dados.get("peca_sku"),
+                "peca_nome": item["peca_nome"] if item else texto_padrao(dados.get("peca_nome")),
                 "observacao": dados.get("observacao"),
             },
         )
@@ -1111,8 +1160,9 @@ def criar_agendamento_cliente(
                 f"{tipo_rotulo} marcada para {dados['data']} às {horario}.",
                 f"Contato: {dados['nome']}, {dados['telefone']}.",
                 (
-                    f"Peça: {dados.get('peca_nome')} ({dados.get('peca_sku')})."
-                    if dados.get("peca_sku")
+                    f"Peça: {item['peca_nome'] if item else dados.get('peca_nome')} "
+                    f"({item['sku'] if item else dados.get('peca_sku')})."
+                    if item or dados.get("peca_sku")
                     else ""
                 ),
                 f"Observação: {dados.get('observacao')}" if dados.get("observacao") else "",

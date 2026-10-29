@@ -20,6 +20,11 @@ class PedidoClienteNaoEncontrado(ErroDeNegocio):
     detalhe = "Pedido nao encontrado na sua conta"
 
 
+class AjustePedidoNaoEntregue(ErroDeNegocio):
+    status_code = status.HTTP_409_CONFLICT
+    detalhe = "O ajuste so pode ser agendado para uma peca de pedido entregue"
+
+
 class VariacaoIndisponivel(ErroDeNegocio):
     status_code = status.HTTP_404_NOT_FOUND
     detalhe = "Peca nao encontrada no catalogo"
