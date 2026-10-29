@@ -14,6 +14,8 @@ from app.automacoes.schemas import (
     AvisosGravados,
     Canal,
     ClientesAAvisar,
+    EstoqueDoDia,
+    EstoqueParadoPorLoja,
     ResumoSemanal,
 )
 from app.core.db import ExecutarDep
@@ -45,3 +47,35 @@ def avisos_pontos(dados: AvisosEnviados, executar: ExecutarDep):
 @router.get("/resumo-semanal", response_model=ResumoSemanal, summary="Numeros da semana")
 def resumo_semanal(executar: ExecutarDep):
     return executar(service.resumo_semanal)
+
+
+@router.get(
+    "/estoque-do-dia",
+    response_model=EstoqueDoDia,
+    summary="Por loja: pecas abaixo do minimo e pendencias paradas",
+)
+def estoque_do_dia(
+    executar: ExecutarDep,
+    horas_sem_resposta: Annotated[int, Query(ge=1, le=720)] = 24,
+    dias_em_transito: Annotated[int, Query(ge=1, le=90)] = 3,
+):
+    return executar(
+        lambda conexao: service.estoque_do_dia(
+            conexao, horas=horas_sem_resposta, dias=dias_em_transito
+        )
+    )
+
+
+@router.get(
+    "/estoque-parado",
+    response_model=EstoqueParadoPorLoja,
+    summary="Por loja: pecas sem venda ha N dias",
+)
+def estoque_parado(
+    executar: ExecutarDep,
+    dias: Annotated[int, Query(ge=7, le=365)] = 60,
+    limite: Annotated[int, Query(ge=1, le=100)] = 20,
+):
+    return executar(
+        lambda conexao: service.estoque_parado_por_loja(conexao, dias=dias, limite=limite)
+    )

@@ -27,6 +27,15 @@ CRITERIO_VENDAS = (
 DIAS_PARADO = 60
 PECAS_PARADAS_NO_RESUMO = 10
 DIAS_DOS_PONTOS_NO_RESUMO = 30
+CRITERIO_MINIMO = (
+    "Pecas ativas com saldo igual ou abaixo do estoque minimo definido pela loja (so onde ha "
+    "minimo). Lojas com sobra: ate 3 outras lojas ativas com saldo acima do minimo delas."
+)
+CRITERIO_TRANSFERENCIAS = (
+    "Transferencias solicitadas sem resposta ha mais de {horas} horas e aceitas (em transito) "
+    "sem confirmacao de recebimento ha mais de {dias} dias."
+)
+CRITERIO_AJUSTES = "Ajustes de inventario ainda pendentes de aprovacao, de qualquer data."
 
 
 def clientes_a_avisar(conexao: Connection, *, dias: int, canal: str) -> dict[str, Any]:
@@ -134,4 +143,113 @@ def resumo_semanal(conexao: Connection, hoje: date | None = None) -> dict[str, A
             conexao, rede, dias=DIAS_PARADO, limite=PECAS_PARADAS_NO_RESUMO
         ),
         "pontos_a_vencer": gerencia.montar_pontos_a_vencer(conexao, dias=DIAS_DOS_PONTOS_NO_RESUMO),
+    }
+
+
+# ---------------------------------------------------------------- estoque (operador)
+
+
+def _transferencia(linha: dict[str, Any]) -> dict[str, Any]:
+    return {
+        k: linha[k]
+        for k in (
+            "id_transferencia",
+            "tipo",
+            "status",
+            "origem",
+            "destino",
+            "sku",
+            "produto",
+            "cor",
+            "tamanho",
+            "quantidade",
+            "solicitada_em",
+            "aceita_em",
+        )
+    }
+
+
+def estoque_do_dia(conexao: Connection, *, horas: int, dias: int) -> dict[str, Any]:
+    """O que cada loja precisa resolver hoje: reposicao e pendencias paradas.
+
+    Uma transferencia aparece para a loja que precisa agir (origem responde, destino confirma o
+    recebimento) e, quando ninguem respondeu, tambem para quem pediu.
+    """
+    lojas = {
+        loja["id_loja"]: {
+            "id_loja": loja["id_loja"],
+            "loja": loja["nome"],
+            "abaixo_do_minimo": [],
+            "para_responder": [],
+            "pedidos_sem_resposta": [],
+            "a_receber": [],
+            "ajustes_pendentes": [],
+        }
+        for loja in repositorio.lojas_ativas(conexao)
+    }
+    for peca in repositorio.abaixo_do_minimo(conexao):
+        if peca["id_loja"] in lojas:
+            lojas[peca["id_loja"]]["abaixo_do_minimo"].append(
+                {k: v for k, v in peca.items() if k != "id_loja"}
+            )
+    for linha in repositorio.transferencias_paradas(conexao, horas=horas, dias=dias):
+        destino = lojas.get(linha["id_loja_destino"])
+        if linha["status"] == "aceita":
+            if destino:
+                destino["a_receber"].append(_transferencia(linha))
+            continue
+        origem = lojas.get(linha["id_loja_origem"])
+        if origem:
+            origem["para_responder"].append(_transferencia(linha))
+        if destino:
+            destino["pedidos_sem_resposta"].append(_transferencia(linha))
+    for ajuste in repositorio.ajustes_pendentes(conexao):
+        if ajuste["id_loja"] in lojas:
+            lojas[ajuste["id_loja"]]["ajustes_pendentes"].append(
+                {k: v for k, v in ajuste.items() if k != "id_loja"}
+            )
+    listas = (
+        "abaixo_do_minimo",
+        "para_responder",
+        "pedidos_sem_resposta",
+        "a_receber",
+        "ajustes_pendentes",
+    )
+    resultado = [
+        {**loja, "tem_pendencias": any(loja[nome] for nome in listas)} for loja in lojas.values()
+    ]
+    return {
+        "gerado_em": datetime.now(UTC),
+        "criterios": {
+            "abaixo_do_minimo": CRITERIO_MINIMO,
+            "transferencias": CRITERIO_TRANSFERENCIAS.format(horas=horas, dias=dias),
+            "ajustes": CRITERIO_AJUSTES,
+        },
+        "lojas_com_pendencias": sum(1 for loja in resultado if loja["tem_pendencias"]),
+        "lojas": resultado,
+    }
+
+
+def estoque_parado_por_loja(conexao: Connection, *, dias: int, limite: int) -> dict[str, Any]:
+    """A mesma conta do painel da gerencia, loja a loja (cada loja recebe a sua lista)."""
+    lojas = []
+    for loja in repositorio.lojas_ativas(conexao):
+        parado = gerencia.montar_estoque_parado(
+            conexao, Filtro(id_loja=loja["id_loja"]), dias=dias, limite=limite
+        )
+        lojas.append(
+            {
+                "id_loja": loja["id_loja"],
+                "loja": loja["nome"],
+                "total_itens": parado["total_itens"],
+                "total_unidades": parado["total_unidades"],
+                "total_valor": parado["total_valor"],
+                "itens": parado["itens"],
+            }
+        )
+    return {
+        "dias": dias,
+        "criterio": gerencia.CRITERIO_PARADO.format(dias=dias),
+        "lojas_com_estoque_parado": sum(1 for loja in lojas if loja["total_itens"]),
+        "lojas": lojas,
     }
