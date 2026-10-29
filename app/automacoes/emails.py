@@ -17,6 +17,7 @@ Quem falhou entra de novo no proximo disparo (ate `MAX_TENTATIVAS`). O log nunca
 
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -54,6 +55,14 @@ def _iso(valor: Any) -> str:
 
 
 # ------------------------------------------------------------------ envio
+
+
+# E-mail com cara de e-mail (usuario@dominio.tld): cadastro com lixo nao vira tentativa de envio.
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[a-z]{2,}$", re.IGNORECASE)
+
+
+def email_valido(email: str | None) -> bool:
+    return bool(email and _EMAIL.match(email.strip()))
 
 
 def configurado(configuracoes: Settings) -> bool:
@@ -143,7 +152,7 @@ def enviar_resumo_da_compra(conexao: Connection, configuracoes: Settings, id_ped
     compra = repositorio.dados_da_compra(conexao, id_pedido)
     if compra is None:
         return "pedido_inexistente"
-    if not compra["email"]:
+    if not email_valido(compra["email"]):
         return "sem_email"
     id_aviso = repositorio.reservar_aviso(
         conexao, compra["id_usuario"], "pos_compra", str(id_pedido)
@@ -241,7 +250,8 @@ def _avisos_de_pontos(
 ) -> dict[str, Any]:
     clientes = service.clientes_a_avisar(
         conexao, dias=configuracoes.emails_dias_aviso_pontos, canal="email"
-    )["clientes"][:limite]
+    )["clientes"]
+    clientes = [c for c in clientes if email_valido(c["email"])][:limite]
     feito = {"candidatos": len(clientes), "enviados": 0, "falhas": 0, "clientes": []}
     for cliente in clientes:
         feito["clientes"].append(str(cliente["id_cliente"]))
@@ -283,6 +293,8 @@ def _avisos_de_categoria(
 ) -> dict[str, Any]:
     candidatos = []
     for cliente in repositorio.clientes_com_email(conexao):
+        if not email_valido(cliente["email"]):
+            continue
         situacao = situacao_da_categoria(cliente["creditos_no_ano"])
         if perto_da_proxima(situacao):
             candidatos.append((cliente, _chave_da_categoria(situacao["proxima_categoria"])))

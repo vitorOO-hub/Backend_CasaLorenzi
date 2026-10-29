@@ -285,3 +285,25 @@ def test_disparo_exige_a_chave_e_o_n8n_configurado(par, monkeypatch):  # noqa: F
     assert simulado.json() == {"simulado": True}
     com_n8n = montar_cliente(par, chave_automacao=CHAVE, n8n_webhook_emails=URL)
     assert com_n8n.post(AUTOMACOES + "/disparar-emails", headers=cabecalho).status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("email", "valido"),
+    [
+        ("ana@exemplo.com", True),
+        ("Ana.Souza+loja@Exemplo.com.br", True),
+        ("", False),
+        (None, False),
+        ("sem-arroba.com", False),
+        ("ana@semponto", False),
+        ("ana @exemplo.com", False),
+    ],
+)
+def test_so_envia_para_email_valido(email, valido):
+    assert emails.email_valido(email) is valido
+
+
+def test_email_invalido_no_cadastro_nao_tenta_enviar(n8n, avisos, monkeypatch):
+    monkeypatch.setattr(repositorio, "dados_da_compra", lambda c, i: {**COMPRA, "email": "ana@"})
+    assert emails.enviar_resumo_da_compra(ConexaoFalsa(), configuracoes(), uuid4()) == "sem_email"
+    assert n8n.recebidos == []
