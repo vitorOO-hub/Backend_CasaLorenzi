@@ -1,0 +1,217 @@
+{
+  "name": "Relatórios de estoque (operador)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "5ead6424-b7db-4f78-ad12-8113d52e7b0c",
+      "name": "Todo dia às 8h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "ea5587ad-1e9a-411f-bd08-443cc0fbf2e6",
+      "name": "Testar agora",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a0f96a87-4066-4b28-a435-8688cff51d4b",
+              "name": "api_url",
+              "value": "https://backend-casalorenzi.onrender.com",
+              "type": "string"
+            },
+            {
+              "id": "62be92c8-4bd2-4e90-908e-438d2b1e4bca",
+              "name": "semanal",
+              "value": "auto",
+              "type": "string"
+            },
+            {
+              "id": "03c86ff3-49c7-4412-93d6-34a95df7c9a3",
+              "name": "enviar_para",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3a667aab-6d18-44a5-a7b8-02c9e8776b9f",
+      "name": "Configuração",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.api_url }}/api/v1/automacoes/relatorios-estoque",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "semanal",
+              "value": "={{ $json.semanal }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "e11ba985-04fa-4904-b010-1cbbd92ff7c9",
+      "name": "Relatórios do dia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "API Casa Lorenzi"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Um item por e-mail. Em modo de teste (enviar_para preenchido), tudo vai para esse endereco e o\n// topo do e-mail mostra para quem iria de verdade. Loja sem destinatario nao recebe nada.\nconst config = $('Configuração').first().json;\nconst teste = String(config.enviar_para || '').trim();\nconst esc = (t) => String(t).replace(/[&<>\"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' })[c]);\nconst saida = [];\nfor (const email of $input.first().json.emails) {\n  const reais = email.destinatarios.join(', ');\n  const para = teste || reais;\n  if (!para) continue;\n  const aviso = teste\n    ? `<p style=\"font-family:Arial,sans-serif;font-size:12px;background:#f5e6dc;color:#99533a;padding:8px 12px;margin:0 0 16px\">Modo de teste. Em produção este e-mail iria para: ${esc(reais || 'nenhum operador de estoque cadastrado nesta loja')}</p>`\n    : '';\n  saida.push({ json: { para, assunto: email.assunto, html: aviso + email.html, tipo: email.tipo, loja: email.loja } });\n}\nreturn saida;\n"
+      },
+      "id": "38021e16-3cf1-4886-b889-eef7ca93290b",
+      "name": "Um item por e-mail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.para }}",
+        "subject": "={{ $json.assunto }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "a5efccee-1965-4908-aaa7-24ce91807dc3",
+      "name": "Enviar pelo Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        960,
+        100
+      ],
+      "webhookId": "16eb4a8b-3321-4bed-8027-33359c84c6b6"
+    },
+    {
+      "parameters": {
+        "content": "## Relatórios de estoque\nO backend decide o que vai em cada dia: **diário** sempre; **semanal** (estoque parado) às segundas.\n\n**Configuração**\n- `semanal`: `auto` (só segunda), `sim` (força hoje, ex.: apresentação), `nao`.\n- `enviar_para`: preenchido = modo de teste, tudo vai para esse e-mail. Vazio = vai para os operadores de estoque de cada loja, cadastrados no banco.\n- `api_url`: endereço da API.\n\n**Credenciais**: *API Casa Lorenzi* (Header Auth `X-Chave-Automacao`) e a conta do Gmail.\n\nO Render (plano grátis) pode levar ~1 min para acordar: a consulta espera até 2 min e tenta 3 vezes.",
+        "height": 380,
+        "width": 480
+      },
+      "id": "7e2162bf-e12e-4c2a-812f-bb751bb9e007",
+      "name": "Leia antes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -420
+      ]
+    }
+  ],
+  "connections": {
+    "Todo dia às 8h": {
+      "main": [
+        [
+          {
+            "node": "Configuração",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Testar agora": {
+      "main": [
+        [
+          {
+            "node": "Configuração",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuração": {
+      "main": [
+        [
+          {
+            "node": "Relatórios do dia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relatórios do dia": {
+      "main": [
+        [
+          {
+            "node": "Um item por e-mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Um item por e-mail": {
+      "main": [
+        [
+          {
+            "node": "Enviar pelo Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "pinData": {}
+}
