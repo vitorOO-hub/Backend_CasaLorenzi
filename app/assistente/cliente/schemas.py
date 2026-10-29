@@ -28,6 +28,8 @@ class Oferta(BaseModel):
     id_variacao: UUID
     sku: str
     produto: str
+    # Sem foto, o cartao mostra o quadro da marca (como o catalogo: "Vulto · foto em breve").
+    marca: str | None = None
     cor: str
     tamanho: str
     preco: Decimal
