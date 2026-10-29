@@ -7,7 +7,7 @@ Sao as mesmas contas do painel e do Lorenzi+, para os tres canais darem sempre o
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.automacoes import emails, service
 from app.automacoes.schemas import (
@@ -15,7 +15,11 @@ from app.automacoes.schemas import (
     AvisosGravados,
     Canal,
     ClientesAAvisar,
+    EstoqueDoDia,
+    EstoqueParadoPorLoja,
+    RelatoriosDeEstoque,
     ResumoSemanal,
+    Semanal,
 )
 from app.core.config import Settings, get_settings
 from app.core.db import ExecutarDep
@@ -51,6 +55,66 @@ def resumo_semanal(executar: ExecutarDep, id_loja: UUID | None = None):
         return executar(lambda conexao: service.resumo_semanal(conexao, id_loja=id_loja))
     except service.LojaDoResumoNaoEncontrada as erro:
         raise HTTPException(status_code=404, detail="Loja ativa não encontrada") from erro
+
+
+@router.get(
+    "/estoque-do-dia",
+    response_model=EstoqueDoDia,
+    summary="Por loja: pecas abaixo do minimo e pendencias paradas",
+)
+def estoque_do_dia(
+    executar: ExecutarDep,
+    horas_sem_resposta: Annotated[int, Query(ge=1, le=720)] = 24,
+    dias_em_transito: Annotated[int, Query(ge=1, le=90)] = 3,
+):
+    return executar(
+        lambda conexao: service.estoque_do_dia(
+            conexao, horas=horas_sem_resposta, dias=dias_em_transito
+        )
+    )
+
+
+@router.get(
+    "/estoque-parado",
+    response_model=EstoqueParadoPorLoja,
+    summary="Por loja: pecas sem venda ha N dias",
+)
+def estoque_parado(
+    executar: ExecutarDep,
+    dias: Annotated[int, Query(ge=7, le=365)] = 60,
+    limite: Annotated[int, Query(ge=1, le=100)] = 20,
+):
+    return executar(
+        lambda conexao: service.estoque_parado_por_loja(conexao, dias=dias, limite=limite)
+    )
+
+
+@router.get(
+    "/relatorios-estoque",
+    response_model=RelatoriosDeEstoque,
+    summary="E-mails do dia para os operadores de estoque (diario; semanal as segundas)",
+)
+def relatorios_estoque(
+    request: Request,
+    executar: ExecutarDep,
+    semanal: Semanal = "auto",
+    horas_sem_resposta: Annotated[int, Query(ge=1, le=720)] = 24,
+    dias_em_transito: Annotated[int, Query(ge=1, le=90)] = 3,
+    dias_parado: Annotated[int, Query(ge=7, le=365)] = 60,
+    limite: Annotated[int, Query(ge=1, le=100)] = 30,
+):
+    painel_url = request.app.state.settings.frontend_url.rstrip("/") + "/painel/estoque"
+    return executar(
+        lambda conexao: service.relatorios_estoque(
+            conexao,
+            semanal=semanal,
+            painel_url=painel_url,
+            horas=horas_sem_resposta,
+            dias=dias_em_transito,
+            dias_parado=dias_parado,
+            limite=limite,
+        )
+    )
 
 
 class EmailsIndisponiveis(ErroDeNegocio):
