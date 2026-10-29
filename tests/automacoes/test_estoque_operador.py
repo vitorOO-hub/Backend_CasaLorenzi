@@ -107,3 +107,50 @@ def test_estoque_parado_usa_padroes(cliente, chamadas):
 
     assert resposta.status_code == 200
     assert chamadas == [("estoque_parado_por_loja", {"dias": 60, "limite": 20})]
+
+
+RELATORIOS = {
+    "data": "2026-10-30",
+    "semanal": True,
+    "motivo_semanal": "x",
+    "total": 0,
+    "emails": [],
+}
+
+
+@pytest.fixture
+def relatorios(monkeypatch):
+    registro = []
+
+    def chamar(conexao, **kwargs):
+        registro.append(kwargs)
+        return RELATORIOS
+
+    monkeypatch.setattr(automacoes, "relatorios_estoque", chamar)
+    return registro
+
+
+def test_relatorios_usam_padroes_e_o_painel_do_front(cliente, relatorios):
+    resposta = cliente.get(AUTOMACOES + "/relatorios-estoque", headers=COM_CHAVE)
+
+    assert resposta.status_code == 200
+    [chamada] = relatorios
+    assert chamada["semanal"] == "auto" and chamada["limite"] == 30
+    assert chamada["painel_url"].endswith("/painel/estoque")
+
+
+def test_relatorios_aceitam_forcar_o_semanal(cliente, relatorios):
+    resposta = cliente.get(AUTOMACOES + "/relatorios-estoque?semanal=sim", headers=COM_CHAVE)
+    assert resposta.status_code == 200
+    assert relatorios[0]["semanal"] == "sim"
+    assert (
+        cliente.get(
+            AUTOMACOES + "/relatorios-estoque?semanal=talvez", headers=COM_CHAVE
+        ).status_code
+        == 422
+    )
+
+
+def test_relatorios_sem_chave_e_401(cliente, relatorios):
+    assert cliente.get(AUTOMACOES + "/relatorios-estoque").status_code == 401
+    assert relatorios == []

@@ -9,7 +9,7 @@ from typing import Any
 
 from sqlalchemy.engine import Connection
 
-from app.automacoes import repositorio
+from app.automacoes import emails_estoque, repositorio
 from app.cliente.repositorio import situacao_da_categoria
 from app.cliente.vencimento_pontos import SP, pontos_a_vencer_da_base
 from app.gerencia import repositorio as vendas
@@ -254,4 +254,77 @@ def estoque_parado_por_loja(conexao: Connection, *, dias: int, limite: int) -> d
         "criterio": gerencia.CRITERIO_PARADO.format(dias=dias) + CRITERIO_SO_FISICAS,
         "lojas_com_estoque_parado": sum(1 for loja in lojas if loja["total_itens"]),
         "lojas": lojas,
+    }
+
+
+SEGUNDA = 0
+MOTIVO_SEMANAL = {
+    "auto_sim": "segunda-feira: o relatorio semanal vai junto com o diario",
+    "auto_nao": "o relatorio semanal so sai as segundas-feiras",
+    "sim": "relatorio semanal pedido para hoje (fora da segunda)",
+    "nao": "relatorio semanal desligado neste envio",
+}
+
+
+def relatorios_estoque(
+    conexao: Connection,
+    *,
+    semanal: str,
+    painel_url: str,
+    horas: int,
+    dias: int,
+    dias_parado: int,
+    limite: int,
+    hoje: date | None = None,
+) -> dict[str, Any]:
+    """Os e-mails do dia para os operadores de estoque, ja prontos (o n8n so envia).
+
+    O diario sai todo dia, para cada loja com algo a resolver. O semanal (estoque parado) sai as
+    segundas; `semanal` = "sim" ou "nao" forca o envio ou o corte (por exemplo, numa demonstracao).
+    """
+    hoje = hoje or datetime.now(UTC).astimezone(SP).date()
+    if semanal == "auto":
+        incluir = hoje.weekday() == SEGUNDA
+        motivo = MOTIVO_SEMANAL["auto_sim" if incluir else "auto_nao"]
+    else:
+        incluir = semanal == "sim"
+        motivo = MOTIVO_SEMANAL[semanal]
+    operadores = repositorio.operadores_de_estoque(conexao)
+
+    def email(tipo: str, loja: dict[str, Any], conteudo: dict[str, str]) -> dict[str, Any]:
+        return {
+            "tipo": tipo,
+            "id_loja": loja["id_loja"],
+            "loja": loja["loja"],
+            "destinatarios": operadores.get(loja["id_loja"], []),
+            **conteudo,
+        }
+
+    do_dia = estoque_do_dia(conexao, horas=horas, dias=dias)
+    emails = [
+        email(
+            "diario",
+            loja,
+            emails_estoque.diario(loja, do_dia["criterios"], hoje, painel_url, limite),
+        )
+        for loja in do_dia["lojas"]
+        if loja["tem_pendencias"]
+    ]
+    if incluir:
+        parado = estoque_parado_por_loja(conexao, dias=dias_parado, limite=limite)
+        emails += [
+            email(
+                "semanal",
+                loja,
+                emails_estoque.semanal(loja, parado["dias"], parado["criterio"], hoje, painel_url),
+            )
+            for loja in parado["lojas"]
+            if loja["total_itens"]
+        ]
+    return {
+        "data": hoje,
+        "semanal": incluir,
+        "motivo_semanal": motivo,
+        "total": len(emails),
+        "emails": emails,
     }

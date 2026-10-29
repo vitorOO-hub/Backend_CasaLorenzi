@@ -1,6 +1,7 @@
 """Automacoes do operador de estoque (n8n) contra um Postgres real: reposicao, pendencias paradas e
 estoque parado, cada uma na loja certa."""
 
+from datetime import date
 from types import SimpleNamespace
 
 import pytest
@@ -141,3 +142,72 @@ def test_estoque_do_dia_continua_com_todas_as_lojas_ativas(sa_conn, cena):
     lojas = _por_loja(service.estoque_do_dia(sa_conn, horas=24, dias=3))
 
     assert cena.cd in lojas
+
+
+# ---------------------------------------------------------------- relatorios (um fluxo so)
+
+SEGUNDA, SEXTA = date(2026, 11, 2), date(2026, 10, 30)
+PAINEL = "https://exemplo.test/painel/estoque"
+
+
+def _relatorios(sa_conn, semanal, hoje, limite=30):
+    return service.relatorios_estoque(
+        sa_conn,
+        semanal=semanal,
+        painel_url=PAINEL,
+        horas=24,
+        dias=3,
+        dias_parado=60,
+        limite=limite,
+        hoje=hoje,
+    )
+
+
+def _das_lojas(resposta, cena, tipo):
+    minhas = {cena.a, cena.b, cena.d, cena.cd}
+    return {
+        e["id_loja"]: e for e in resposta["emails"] if e["tipo"] == tipo and e["id_loja"] in minhas
+    }
+
+
+def test_semanal_sai_so_na_segunda(sa_conn, cena):
+    sexta = _relatorios(sa_conn, "auto", SEXTA)
+    segunda = _relatorios(sa_conn, "auto", SEGUNDA)
+
+    assert sexta["semanal"] is False and _das_lojas(sexta, cena, "semanal") == {}
+    assert set(_das_lojas(sexta, cena, "diario")) == {cena.a, cena.b, cena.d}
+    assert segunda["semanal"] is True
+    # Estoque parado so das lojas fisicas; o CD fica de fora.
+    assert set(_das_lojas(segunda, cena, "semanal")) == {cena.a, cena.b, cena.d}
+
+
+def test_semanal_pode_ser_forcado_ou_cortado(sa_conn, cena):
+    forcado = _relatorios(sa_conn, "sim", SEXTA)
+    cortado = _relatorios(sa_conn, "nao", SEGUNDA)
+
+    assert forcado["semanal"] is True and _das_lojas(forcado, cena, "semanal")
+    assert "fora da segunda" in forcado["motivo_semanal"]
+    assert cortado["semanal"] is False and _das_lojas(cortado, cena, "semanal") == {}
+
+
+def test_email_vai_para_os_operadores_da_loja(sa_conn, cena, fab_sa):
+    fab_sa.usuario("operador_estoque", loja=cena.b)
+    fab_sa.usuario("operador_estoque", loja=cena.b, ativo=False)
+    fab_sa.usuario("vendedor", loja=cena.b)
+
+    diarios = _das_lojas(_relatorios(sa_conn, "auto", SEXTA), cena, "diario")
+
+    assert len(diarios[cena.a]["destinatarios"]) == 1  # o op_a da cena
+    assert len(diarios[cena.b]["destinatarios"]) == 1  # so o operador ativo
+    assert diarios[cena.d]["destinatarios"] == []
+
+
+def test_email_do_dia_tem_assunto_html_e_limite(sa_conn, cena):
+    diarios = _das_lojas(_relatorios(sa_conn, "auto", SEXTA, limite=1), cena, "diario")
+
+    email = diarios[cena.a]
+    assert email["assunto"].endswith("3 itens para resolver")  # minimo, pedido e ajuste
+    assert "Abaixo do mínimo (1)" in email["html"]
+    assert PAINEL in email["html"] and "30/10/2026" in email["html"]
+    semanal = _das_lojas(_relatorios(sa_conn, "sim", SEXTA, limite=1), cena, "semanal")
+    assert "E mais 2 no painel" in semanal[cena.a]["html"]

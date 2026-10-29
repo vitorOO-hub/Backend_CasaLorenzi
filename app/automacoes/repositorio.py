@@ -169,3 +169,23 @@ ORDER BY a.solicitado_em
 
 def ajustes_pendentes(conexao: Connection) -> list[dict[str, Any]]:
     return [dict(linha) for linha in conexao.execute(text(AJUSTES_PENDENTES)).mappings()]
+
+
+def operadores_de_estoque(conexao: Connection) -> dict[UUID, list[str]]:
+    """E-mails dos operadores de estoque ativos de cada loja (quem recebe os relatorios)."""
+    linhas = conexao.execute(
+        text(
+            """
+            SELECT u.id_loja, u.email
+            FROM usuario u
+            JOIN tipo_usuario t
+                ON t.id_tipo_usuario = u.id_tipo_usuario AND t.codigo = 'operador_estoque'
+            WHERE u.ativo AND u.id_loja IS NOT NULL AND COALESCE(u.email, '') <> ''
+            ORDER BY u.email
+            """
+        )
+    ).all()
+    por_loja: dict[UUID, list[str]] = {}
+    for linha in linhas:
+        por_loja.setdefault(linha.id_loja, []).append(linha.email)
+    return por_loja

@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.gerencia.schemas import EstoqueParado, PecaParada, PontosAVencer
 
 Canal = Literal["email", "whatsapp"]
+# auto: semanal so as segundas; sim/nao forcam (por exemplo, numa demonstracao).
+Semanal = Literal["auto", "sim", "nao"]
 
 
 class Saida(BaseModel):
@@ -181,3 +183,21 @@ class EstoqueParadoPorLoja(Saida):
     criterio: str
     lojas_com_estoque_parado: int
     lojas: list[EstoqueParadoDaLoja]
+
+
+class EmailDeEstoque(Saida):
+    tipo: Literal["diario", "semanal"]
+    id_loja: UUID
+    loja: str
+    # Operadores de estoque ativos da loja. Vazio: a loja nao tem operador com e-mail.
+    destinatarios: list[str]
+    assunto: str
+    html: str
+
+
+class RelatoriosDeEstoque(Saida):
+    data: date
+    semanal: bool
+    motivo_semanal: str
+    total: int
+    emails: list[EmailDeEstoque]

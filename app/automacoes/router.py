@@ -6,7 +6,7 @@ Sao as mesmas contas do painel e do Lorenzi+, para os tres canais darem sempre o
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.automacoes import service
 from app.automacoes.schemas import (
@@ -16,7 +16,9 @@ from app.automacoes.schemas import (
     ClientesAAvisar,
     EstoqueDoDia,
     EstoqueParadoPorLoja,
+    RelatoriosDeEstoque,
     ResumoSemanal,
+    Semanal,
 )
 from app.core.db import ExecutarDep
 from app.core.security import requer_automacao
@@ -78,4 +80,32 @@ def estoque_parado(
 ):
     return executar(
         lambda conexao: service.estoque_parado_por_loja(conexao, dias=dias, limite=limite)
+    )
+
+
+@router.get(
+    "/relatorios-estoque",
+    response_model=RelatoriosDeEstoque,
+    summary="E-mails do dia para os operadores de estoque (diario; semanal as segundas)",
+)
+def relatorios_estoque(
+    request: Request,
+    executar: ExecutarDep,
+    semanal: Semanal = "auto",
+    horas_sem_resposta: Annotated[int, Query(ge=1, le=720)] = 24,
+    dias_em_transito: Annotated[int, Query(ge=1, le=90)] = 3,
+    dias_parado: Annotated[int, Query(ge=7, le=365)] = 60,
+    limite: Annotated[int, Query(ge=1, le=100)] = 30,
+):
+    painel_url = request.app.state.settings.frontend_url.rstrip("/") + "/painel/estoque"
+    return executar(
+        lambda conexao: service.relatorios_estoque(
+            conexao,
+            semanal=semanal,
+            painel_url=painel_url,
+            horas=horas_sem_resposta,
+            dias=dias_em_transito,
+            dias_parado=dias_parado,
+            limite=limite,
+        )
     )
