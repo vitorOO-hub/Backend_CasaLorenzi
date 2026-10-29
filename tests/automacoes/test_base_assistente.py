@@ -172,6 +172,46 @@ def test_vendas_da_semana_compara_e_mostra_loja_sem_venda():
     ]
 
 
+def test_resumo_semanal_da_loja_filtra_estoque_e_omite_pontos(monkeypatch):
+    filtros_vendas = []
+    filtros_estoque = []
+    monkeypatch.setattr(
+        automacoes.repositorio,
+        "nome_da_loja_ativa",
+        lambda conexao, id_loja: "Barra" if id_loja == LOJA_A else None,
+    )
+
+    def vendas_por_loja(conexao, filtro, inicio, fim):
+        filtros_vendas.append(filtro)
+        return [{"id_loja": LOJA_A, "faturamento": 1200, "pedidos": 12}]
+
+    def estoque_parado(conexao, filtro, **kwargs):
+        filtros_estoque.append(filtro)
+        return PARADO
+
+    monkeypatch.setattr(automacoes.vendas, "vendas_por_loja", vendas_por_loja)
+    monkeypatch.setattr(gerencia, "montar_estoque_parado", estoque_parado)
+    monkeypatch.setattr(
+        gerencia,
+        "montar_pontos_a_vencer",
+        lambda *args, **kwargs: pytest.fail("Relatório individual não deve incluir pontos da rede"),
+    )
+
+    resumo = automacoes.resumo_semanal(None, date(2026, 10, 27), id_loja=LOJA_A)
+
+    assert [filtro.id_loja for filtro in filtros_vendas] == [LOJA_A, LOJA_A]
+    assert filtros_estoque[0].id_loja == LOJA_A
+    assert [loja["loja"] for loja in resumo["lojas"]] == ["Barra"]
+    assert resumo["pontos_a_vencer"] is None
+
+
+def test_resumo_semanal_rejeita_loja_inativa_ou_desconhecida(monkeypatch):
+    monkeypatch.setattr(automacoes.repositorio, "nome_da_loja_ativa", lambda *args: None)
+
+    with pytest.raises(automacoes.LojaDoResumoNaoEncontrada):
+        automacoes.resumo_semanal(None, date(2026, 10, 27), id_loja=LOJA_A)
+
+
 # ---------------------------------------------------------------- consultas da gerencia
 
 
