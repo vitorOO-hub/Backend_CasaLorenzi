@@ -213,3 +213,10 @@ def avisos_de_categoria(conexao: Connection, chaves: list[str]) -> set[tuple[UUI
         {"chaves": chaves},
     ).all()
     return {(linha.id_usuario, linha.chave) for linha in linhas}
+
+
+def nome_da_loja_ativa(conexao: Connection, id_loja: UUID) -> str | None:
+    return conexao.execute(
+        text("SELECT nome FROM loja WHERE id_loja = :id_loja AND ativa"),
+        {"id_loja": str(id_loja)},
+    ).scalar_one_or_none()

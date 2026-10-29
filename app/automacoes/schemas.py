@@ -88,4 +88,4 @@ class ResumoSemanal(Saida):
     faturamento_anterior: float
     lojas: list[VendasDaLoja]
     estoque_parado: EstoqueParado
-    pontos_a_vencer: PontosAVencer
+    pontos_a_vencer: PontosAVencer | None

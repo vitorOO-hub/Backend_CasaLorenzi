@@ -6,6 +6,7 @@ Nada de LLM aqui: horario e regra fixos. O n8n so busca, monta a mensagem e devo
 import json
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.engine import Connection
 
@@ -111,17 +112,36 @@ def _vendas_da_semana(
     return lojas
 
 
-def resumo_semanal(conexao: Connection, hoje: date | None = None) -> dict[str, Any]:
+class LojaDoResumoNaoEncontrada(Exception):
+    pass
+
+
+def resumo_semanal(
+    conexao: Connection, hoje: date | None = None, *, id_loja: UUID | None = None
+) -> dict[str, Any]:
     hoje = hoje or datetime.now(UTC).astimezone(SP).date()
     inicio, fim = semana_fechada(hoje)
     inicio_ant, fim_ant = inicio - timedelta(days=7), fim - timedelta(days=7)
-    rede = Filtro()
+    escopo = Filtro(id_loja=id_loja)
 
     def por_loja(de: date, ate: date) -> dict[Any, dict[str, Any]]:
-        return {linha["id_loja"]: linha for linha in vendas.vendas_por_loja(conexao, rede, de, ate)}
+        return {
+            linha["id_loja"]: linha for linha in vendas.vendas_por_loja(conexao, escopo, de, ate)
+        }
 
-    lojas = _vendas_da_semana(
-        por_loja(inicio, fim), por_loja(inicio_ant, fim_ant), repositorio.nomes_das_lojas(conexao)
+    if id_loja is not None:
+        nome_loja = repositorio.nome_da_loja_ativa(conexao, id_loja)
+        if nome_loja is None:
+            raise LojaDoResumoNaoEncontrada
+        nomes = {id_loja: nome_loja}
+    else:
+        nomes = repositorio.nomes_das_lojas(conexao)
+
+    lojas = _vendas_da_semana(por_loja(inicio, fim), por_loja(inicio_ant, fim_ant), nomes)
+    if id_loja is not None and not lojas:
+        lojas = _vendas_da_semana({id_loja: {}}, {}, nomes)
+    estoque_parado = gerencia.montar_estoque_parado(
+        conexao, escopo, dias=DIAS_PARADO, limite=PECAS_PARADAS_NO_RESUMO
     )
     return {
         "semana": {"inicio": inicio, "fim": fim},
@@ -130,8 +150,10 @@ def resumo_semanal(conexao: Connection, hoje: date | None = None) -> dict[str, A
         "faturamento": round(sum(loja["faturamento"] for loja in lojas), 2),
         "faturamento_anterior": round(sum(loja["faturamento_anterior"] for loja in lojas), 2),
         "lojas": lojas,
-        "estoque_parado": gerencia.montar_estoque_parado(
-            conexao, rede, dias=DIAS_PARADO, limite=PECAS_PARADAS_NO_RESUMO
+        "estoque_parado": estoque_parado,
+        "pontos_a_vencer": (
+            gerencia.montar_pontos_a_vencer(conexao, dias=DIAS_DOS_PONTOS_NO_RESUMO)
+            if id_loja is None
+            else None
         ),
-        "pontos_a_vencer": gerencia.montar_pontos_a_vencer(conexao, dias=DIAS_DOS_PONTOS_NO_RESUMO),
     }

@@ -7,7 +7,7 @@ Sao as mesmas contas do painel e do Lorenzi+, para os tres canais darem sempre o
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.automacoes import emails, service
 from app.automacoes.schemas import (
@@ -46,8 +46,11 @@ def avisos_pontos(dados: AvisosEnviados, executar: ExecutarDep):
 
 
 @router.get("/resumo-semanal", response_model=ResumoSemanal, summary="Numeros da semana")
-def resumo_semanal(executar: ExecutarDep):
-    return executar(service.resumo_semanal)
+def resumo_semanal(executar: ExecutarDep, id_loja: UUID | None = None):
+    try:
+        return executar(lambda conexao: service.resumo_semanal(conexao, id_loja=id_loja))
+    except service.LojaDoResumoNaoEncontrada as erro:
+        raise HTTPException(status_code=404, detail="Loja ativa não encontrada") from erro
 
 
 class EmailsIndisponiveis(ErroDeNegocio):
