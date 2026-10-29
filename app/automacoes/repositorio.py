@@ -77,9 +77,18 @@ def nomes_das_lojas(conexao: Connection) -> dict[UUID, str]:
 # ---------------------------------------------------------------- estoque (operador)
 
 
-def lojas_ativas(conexao: Connection) -> list[dict[str, Any]]:
+def lojas_ativas(conexao: Connection, *, so_fisicas: bool = False) -> list[dict[str, Any]]:
+    """`so_fisicas`: so as lojas de rua e shopping, que tem horario de atendimento cadastrado (CD,
+    e-commerce e app nao tem)."""
     linhas = conexao.execute(
-        text("SELECT id_loja, nome FROM loja WHERE ativa ORDER BY nome")
+        text(
+            """
+            SELECT id_loja, nome FROM loja
+            WHERE ativa AND (NOT :so_fisicas OR horario_funcionamento IS NOT NULL)
+            ORDER BY nome
+            """
+        ),
+        {"so_fisicas": so_fisicas},
     ).mappings()
     return [dict(linha) for linha in linhas]
 

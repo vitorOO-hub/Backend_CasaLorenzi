@@ -35,6 +35,7 @@ CRITERIO_TRANSFERENCIAS = (
     "Transferencias solicitadas sem resposta ha mais de {horas} horas e aceitas (em transito) "
     "sem confirmacao de recebimento ha mais de {dias} dias."
 )
+CRITERIO_SO_FISICAS = " So lojas fisicas (com horario de atendimento cadastrado)."
 CRITERIO_AJUSTES = "Ajustes de inventario ainda pendentes de aprovacao, de qualquer data."
 
 
@@ -231,9 +232,10 @@ def estoque_do_dia(conexao: Connection, *, horas: int, dias: int) -> dict[str, A
 
 
 def estoque_parado_por_loja(conexao: Connection, *, dias: int, limite: int) -> dict[str, Any]:
-    """A mesma conta do painel da gerencia, loja a loja (cada loja recebe a sua lista)."""
+    """A mesma conta do painel da gerencia, loja a loja (cada loja recebe a sua lista). So lojas
+    fisicas: no CD e no e-commerce, peca guardada por meses e o normal, nao um alerta."""
     lojas = []
-    for loja in repositorio.lojas_ativas(conexao):
+    for loja in repositorio.lojas_ativas(conexao, so_fisicas=True):
         parado = gerencia.montar_estoque_parado(
             conexao, Filtro(id_loja=loja["id_loja"]), dias=dias, limite=limite
         )
@@ -249,7 +251,7 @@ def estoque_parado_por_loja(conexao: Connection, *, dias: int, limite: int) -> d
         )
     return {
         "dias": dias,
-        "criterio": gerencia.CRITERIO_PARADO.format(dias=dias),
+        "criterio": gerencia.CRITERIO_PARADO.format(dias=dias) + CRITERIO_SO_FISICAS,
         "lojas_com_estoque_parado": sum(1 for loja in lojas if loja["total_itens"]),
         "lojas": lojas,
     }

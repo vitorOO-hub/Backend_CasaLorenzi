@@ -16,6 +16,12 @@ def cena(fab_sa):
     c = fab.conn
     a, b, d = fab.loja(), fab.loja(), fab.loja()
     fechada = fab.loja(ativa=False)
+    cd = fab.loja()  # sem horario de atendimento: CD / e-commerce
+    for fisica in (a, b, d):
+        c.execute(
+            'UPDATE loja SET horario_funcionamento = \'{"seg": "10:00-22:00"}\' WHERE id_loja = %s',
+            (fisica,),
+        )
     op_a = fab.usuario("operador_estoque", loja=a)
     camisa, calca, blazer = fab.variacao(), fab.variacao(), fab.variacao()
 
@@ -33,6 +39,7 @@ def cena(fab_sa):
     estoque(a, calca, 5, 0)  # sem minimo definido: nao alerta, e tudo e sobra
     estoque(b, calca, 2, 2)  # no minimo: alerta
     estoque(a, blazer, 4, 1)  # acima do minimo
+    estoque(cd, blazer, 40, 0)  # parado no CD: normal, nao vai para o semanal
 
     def transferencia(origem, destino, status, solicitada, aceita=None):
         tipo = "transferencia" if origem else "reposicao_rede"
@@ -63,7 +70,7 @@ def cena(fab_sa):
         "motivo) VALUES (%s, %s, %s, -1, 'peca avariada')",
         (a, blazer, op_a.id),
     )
-    return SimpleNamespace(a=a, b=b, d=d, fechada=fechada)
+    return SimpleNamespace(a=a, b=b, d=d, fechada=fechada, cd=cd)
 
 
 def _por_loja(resposta):
@@ -126,4 +133,11 @@ def test_estoque_parado_vem_separado_por_loja(sa_conn, cena):
     assert {i["loja"] for i in lojas[cena.a]["itens"]} == {lojas[cena.a]["loja"]}
     assert lojas[cena.b]["total_itens"] == 2
     assert cena.fechada not in lojas
-    assert "60 dias" in resposta["criterio"]
+    assert cena.cd not in lojas
+    assert "60 dias" in resposta["criterio"] and "lojas fisicas" in resposta["criterio"]
+
+
+def test_estoque_do_dia_continua_com_todas_as_lojas_ativas(sa_conn, cena):
+    lojas = _por_loja(service.estoque_do_dia(sa_conn, horas=24, dias=3))
+
+    assert cena.cd in lojas
