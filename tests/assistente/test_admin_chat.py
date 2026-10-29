@@ -295,6 +295,14 @@ def test_encaminha_para_area_responsavel_sem_inventar_nome():
     assert "gerente da unidade" in mensagem
 
 
+def test_falta_de_evidencia_de_catalogo_encaminha_para_administrador_do_catalogo():
+    mensagem = service.mensagem_sem_confirmacao(
+        "Quais produtos indexados são de linho?", "a consulta não encontrou registros."
+    )
+
+    assert "administrador responsável pelo catálogo" in mensagem
+
+
 def test_pergunta_de_dado_sem_chamada_de_ferramenta_abstem(monkeypatch):
     _preparar_persistencia(monkeypatch)
     monkeypatch.setattr(

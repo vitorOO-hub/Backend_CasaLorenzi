@@ -8,6 +8,7 @@ from sqlalchemy.engine import Connection
 
 from app.chamados import service as chamados_service
 from app.clientes import service as clientes_service
+from app.core.config import Settings
 from app.core.papeis import Papel, UsuarioAtual
 from app.gerencia import service as gerencia_service
 from app.gerencia.repositorio import Filtro
@@ -194,7 +195,9 @@ FERRAMENTAS: list[dict[str, Any]] = [
     },
     {
         "name": "consultar_catalogo",
-        "description": "Busca peças do catálogo, seus SKUs, preços e estoque total na rede.",
+        "description": (
+            "Busca peças do catálogo por nome, SKU ou descrição semântica, com preços e estoque."
+        ),
         "parameters": {
             "type": "object",
             "properties": {"busca": {"type": "string"}},
@@ -262,7 +265,11 @@ def _somente_admin(usuario: UsuarioAtual) -> None:
 
 
 def executar(
-    conexao: Connection, usuario: UsuarioAtual, nome: str, argumentos: dict[str, Any]
+    conexao: Connection,
+    usuario: UsuarioAtual,
+    nome: str,
+    argumentos: dict[str, Any],
+    configuracoes: Settings | None = None,
 ) -> dict[str, Any] | list[Any]:
     """Executa uma função allowlisted. Nunca interpreta SQL ou nomes vindos do modelo."""
     _somente_admin(usuario)
@@ -405,7 +412,22 @@ def executar(
     if nome == "consultar_equipe":
         return gestao_service.montar_equipe(conexao, usuario)
     if nome == "consultar_catalogo":
-        return catalogo.listar(conexao, usuario, busca=argumentos.get("busca"), limit=30, offset=0)
+        busca = argumentos.get("busca")
+        resultado = catalogo.listar_para_assistente(
+            conexao, usuario, busca=busca, limit=30, offset=0
+        )
+        chave = configuracoes.gemini_api_key if configuracoes else None
+        if (
+            resultado["itens"]
+            or not busca
+            or chave is None
+            or not catalogo.tem_embeddings(conexao, usuario)
+        ):
+            return resultado
+        from app.assistente import embeddings
+
+        vetor = embeddings.gerar(busca, chave)
+        return catalogo.buscar_semantico(conexao, usuario, vetor, limite=5)
     if nome == "buscar_cliente":
         escopo = clientes_service.montar_escopo(conexao, usuario, None)
         return clientes_service.listar(

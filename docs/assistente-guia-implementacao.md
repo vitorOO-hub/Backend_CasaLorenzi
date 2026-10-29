@@ -98,6 +98,13 @@ sempre do token** (`UsuarioAtual`), nunca de argumento do modelo. Nenhuma ferram
 | `reposicao()` | `app.gerencia.service.montar_reposicao` | idem ao de vendas |
 | `lojas()` | `app.gerencia.service.montar_lojas` | idem |
 
+O chatbot do gerente reutiliza `produto.embedding` nas consultas de reposição e estoque parado:
+primeiro tenta localizar o texto nos atributos do catálogo e, sem correspondência, usa similaridade
+semântica. Os candidatos e as consultas de estoque são sempre restritos a produtos com registro de
+estoque na loja do token; não há acesso do gerente à ferramenta de catálogo global do admin. A chave
+`GEMINI_API_KEY` é usada somente no servidor para gerar o vetor da consulta; os embeddings dos produtos
+são compartilhados com o chatbot admin e não precisam ser gerados novamente.
+
 O chatbot administrativo foi separado das consultas de gerente e só aceita `Papel.ADMIN`. Ele pode
 consultar vendas, estoque/saldo, movimentações, ajustes, transferências, mínimos, reposição, estoque
 parado, lojas, pendências, chamados e mensagens, equipe, catálogo, clientes/fichas, auditoria, integrações,
@@ -141,10 +148,21 @@ textos prontos ficam em `CRITERIO_*` de `app/gerencia/service.py` e `app/automac
   mudam as regras do prompt.
 - **Limite por usuário:** o limitador de `app/core/protecoes.py` é por IP. Para o custo do LLM,
   contar mensagens do usuário no dia em `mensagem_assistente` e responder 429 acima do teto.
-- **Embeddings:** 768 dimensões (a coluna é `vector(768)`). Configurar o modelo de embedding para
-  essa dimensão; se trocar de modelo, a coluna e o índice mudam numa migração nova. Um script deve
-  gerar o embedding de `nome + categoria + cores + tecido + descricao` dos produtos ativos e gravar
-  `embedding_em`; regerar quando `produto.atualizado_em > embedding_em`.
+- **Embeddings do admin:** a busca de catálogo tenta primeiro nome/SKU e, sem resultados, usa
+  similaridade semântica em `produto.embedding vector(768)`. Os vetores consideram nome, marca,
+  categoria, coleção, tipo, cores e detalhes de tecido; são regenerados quando
+  `produto.atualizado_em > embedding_em`. A carga inicial é manual e usa `GEMINI_API_KEY`.
+  No PowerShell, simule a leitura (sem chamadas à API ou gravações) e depois aplique em lotes
+  pequenos para controlar uso e custo:
+
+  ```powershell
+  $env:PYTHONPATH = "."
+  python scripts/gerar_embeddings_catalogo.py --limite 5
+  python scripts/gerar_embeddings_catalogo.py --limite 5 --aplicar
+  ```
+
+  A busca semântica só chama Gemini quando já existem produtos indexados. Alterar o modelo ou a
+  dimensão requer migração nova.
 - **Testes:** nunca chamar o LLM de verdade. Usar um provedor falso que devolve chamadas de
   ferramenta prontas, no estilo de `tests/automacoes/test_base_assistente.py`.
 

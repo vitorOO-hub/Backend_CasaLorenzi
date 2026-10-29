@@ -141,8 +141,16 @@ def montar_dashboard(
     }
 
 
-def montar_reposicao(conexao: Connection, filtro: Filtro, *, limite: int) -> dict[str, Any]:
-    total, itens = repositorio.reposicao(conexao, filtro, limite=limite)
+def montar_reposicao(
+    conexao: Connection,
+    filtro: Filtro,
+    *,
+    limite: int,
+    ids_produto: tuple[UUID, ...] | None = None,
+) -> dict[str, Any]:
+    total, itens = repositorio.reposicao(
+        conexao, filtro, limite=limite, ids_produto=ids_produto
+    )
     return {
         "total": total,
         "itens": [
@@ -192,9 +200,16 @@ CRITERIO_PONTOS = (
 
 
 def montar_estoque_parado(
-    conexao: Connection, filtro: Filtro, *, dias: int, limite: int
+    conexao: Connection,
+    filtro: Filtro,
+    *,
+    dias: int,
+    limite: int,
+    ids_produto: tuple[UUID, ...] | None = None,
 ) -> dict[str, Any]:
-    linhas = repositorio.estoque_parado(conexao, filtro, dias=dias, limite=limite)
+    linhas = repositorio.estoque_parado(
+        conexao, filtro, dias=dias, limite=limite, ids_produto=ids_produto
+    )
     primeira = linhas[0] if linhas else {}
     return {
         "dias": dias,

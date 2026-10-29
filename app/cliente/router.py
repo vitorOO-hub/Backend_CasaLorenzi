@@ -6,8 +6,9 @@ Estas rotas sempre usam o cliente do JWT. O navegador nunca informa `id_cliente`
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, status
 
+from app.automacoes.emails import resumo_da_compra_em_segundo_plano
 from app.cliente import service
 from app.cliente.schemas import (
     AgendamentoCriacao,
@@ -30,6 +31,7 @@ from app.cliente.schemas import (
     PreferenciasGravadas,
     VultoMaisCliente,
 )
+from app.core.config import Settings, get_settings
 from app.core.db import ExecutarDep
 from app.core.papeis import UsuarioAtual
 from app.core.security import get_current_user
@@ -270,10 +272,12 @@ def criar_pedido(
     dados: CheckoutCriacao,
     usuario: UsuarioDep,
     executar: ExecutarDep,
+    tarefas: BackgroundTasks,
+    configuracoes: Annotated[Settings, Depends(get_settings)],
     chave_idempotencia: ChaveIdempotencia = None,
 ):
     payload = dados.model_dump()
-    return executar(
+    pedido = executar(
         lambda conexao: service.criar_checkout(
             conexao,
             usuario,
@@ -281,3 +285,6 @@ def criar_pedido(
             chave_idempotencia=chave_idempotencia,
         )
     )
+    # Resumo da compra por e-mail (n8n) depois da resposta: nunca atrasa nem derruba o pedido.
+    tarefas.add_task(resumo_da_compra_em_segundo_plano, configuracoes, pedido["id_pedido"])
+    return pedido

@@ -5,10 +5,11 @@ Sao as mesmas contas do painel e do Lorenzi+, para os tres canais darem sempre o
 """
 
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, status
 
-from app.automacoes import service
+from app.automacoes import emails, service
 from app.automacoes.schemas import (
     AvisosEnviados,
     AvisosGravados,
@@ -20,7 +21,9 @@ from app.automacoes.schemas import (
     ResumoSemanal,
     Semanal,
 )
+from app.core.config import Settings, get_settings
 from app.core.db import ExecutarDep
+from app.core.erros import ErroDeNegocio
 from app.core.security import requer_automacao
 
 router = APIRouter(
@@ -109,3 +112,32 @@ def relatorios_estoque(
             limite=limite,
         )
     )
+
+
+class EmailsIndisponiveis(ErroDeNegocio):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    detalhe = "E-mails desligados: configure N8N_WEBHOOK_EMAILS e CHAVE_AUTOMACAO no servidor."
+
+
+SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+
+@router.post("/disparar-emails", summary="Disparo diario: pontos a vencer, categoria e reenvios")
+def disparar_emails(
+    executar: ExecutarDep, configuracoes: SettingsDep, simular: bool = False
+) -> dict:
+    """Chamado uma vez por dia pelo agendamento. `simular=true` so lista quem receberia."""
+    if not simular and not emails.configurado(configuracoes):
+        raise EmailsIndisponiveis()
+    return executar(lambda conexao: emails.disparar(conexao, configuracoes, simular=simular))
+
+
+@router.post("/resumo-da-compra/{id_pedido}", summary="Enviar (uma vez) o resumo de uma compra")
+def resumo_da_compra(id_pedido: UUID, executar: ExecutarDep, configuracoes: SettingsDep) -> dict:
+    if not emails.configurado(configuracoes):
+        raise EmailsIndisponiveis()
+    return {
+        "situacao": executar(
+            lambda conexao: emails.enviar_resumo_da_compra(conexao, configuracoes, id_pedido)
+        )
+    }

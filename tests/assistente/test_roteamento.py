@@ -1,6 +1,6 @@
 import pytest
 
-from app.assistente.roteamento import decidir_roteamento, planejar_pergunta
+from app.assistente.roteamento import classificar_pergunta, decidir_roteamento, planejar_pergunta
 
 MODELOS = {
     "rapida": "groq:modelo-rapido-teste",
@@ -19,6 +19,18 @@ def test_pergunta_direta_seleciona_modelo_rapido_sem_chamar_api():
     assert plano.classificacao.rota == "rapida"
     assert plano.destino is not None
     assert (plano.destino.provedor, plano.destino.modelo) == ("groq", "modelo-rapido-teste")
+
+
+@pytest.mark.parametrize(
+    "pergunta",
+    [
+        "Quais produtos indexados são de linho?",
+        "Procure uma peça de linho leve.",
+        "Quais cores existem no catálogo?",
+    ],
+)
+def test_consulta_de_catalogo_exige_chamada_de_ferramenta(pergunta):
+    assert classificar_pergunta(pergunta).requer_ferramenta
 
 
 def test_pergunta_analitica_seleciona_modelo_preciso():

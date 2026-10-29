@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     assistente_vendedor_template_campos: bool = True
     assistente_vendedor_template_compras: bool = False
     assistente_vendedor_perguntas_por_minuto: int = 6
+    # E-mails ao cliente pelo n8n (resumo da compra, pontos a vencer, categoria Lorenzi+): URL do
+    # webhook do fluxo do n8n, que recebe a chave das automacoes no cabecalho X-Chave-Automacao.
+    # Sem URL, nada e enviado e o resto da API funciona.
+    n8n_webhook_emails: str | None = None
+    n8n_timeout_segundos: float = 20.0
+    emails_dias_aviso_pontos: int = 7
+    # Teto de e-mails por disparo diario (o Gmail limita os envios por dia).
+    emails_por_disparo: int = 200
     cors_origins: Annotated[list[str], NoDecode] = []
     # /docs, /redoc e /openapi.json mostram o mapa inteiro da API: so ligam de proposito (dev).
     docs_habilitadas: bool = False
