@@ -7,8 +7,10 @@ da venda e a pessoa que vende vem do token, nunca do corpo.
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query
 
+from app.automacoes.emails import resumo_da_compra_em_segundo_plano
+from app.core.config import Settings, get_settings
 from app.core.db import ExecutarDep
 from app.core.papeis import UsuarioAtual
 from app.core.security import requer_papel
@@ -47,10 +49,15 @@ def lancar(
     dados: NovaVenda,
     usuario: UsuarioDep,
     executar: ExecutarDep,
+    tarefas: BackgroundTasks,
+    configuracoes: Annotated[Settings, Depends(get_settings)],
     chave: ChaveIdempotencia = None,
 ):
     corpo = dados.model_dump()
-    return executar(lambda c: service.lancar_venda(c, usuario, corpo, chave_idempotencia=chave))
+    venda = executar(lambda c: service.lancar_venda(c, usuario, corpo, chave_idempotencia=chave))
+    # Resumo da compra por e-mail (n8n) depois da resposta: nunca atrasa nem derruba a venda.
+    tarefas.add_task(resumo_da_compra_em_segundo_plano, configuracoes, venda["id_pedido"])
+    return venda
 
 
 @router.get("/opcoes", response_model=OpcoesDeVenda, summary="Formas de pagamento e loja")

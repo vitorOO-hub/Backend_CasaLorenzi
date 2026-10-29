@@ -1,0 +1,111 @@
+{
+  "name": "Casa Lorenzi - e-mails ao cliente",
+  "nodes": [
+    {
+      "id": "b1f0c5a2-0001-4c1a-9b0e-000000000001",
+      "name": "Webhook do backend",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "5c8e2d4a-casa-lorenzi-emails",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "casa-lorenzi-emails",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "b1f0c5a2-0002-4c1a-9b0e-000000000002",
+      "name": "Montar e-mail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Nó \"Montar e-mail\" do fluxo \"Casa Lorenzi - e-mails ao cliente\" (n8n, nó Code, modo \"Run Once for\n// Each Item\"). Recebe o corpo do webhook que o backend manda (app/automacoes/emails.py) e devolve\n// { para, assunto, html, texto }. Os textos que vêm do banco (nome, produtos) são escapados.\n// Mudou este arquivo? Cole de novo no nó Code do n8n (ou reimporte n8n/fluxo_emails.json).\n\nconst corpo = $json.body ?? $json;\n\nconst COR = {\n  fundo: \"#f6f3ee\", papel: \"#ffffff\", tinta: \"#16203a\", suave: \"#5e6b89\",\n  marinho: \"#1f2a48\", dourado: \"#b46746\", douradoClaro: \"#f5e6dc\", linha: \"#dfd9cf\",\n};\n\nconst esc = (v) => String(v ?? \"\").replace(/[&<>\"']/g, (c) => ({ \"&\": \"&amp;\", \"<\": \"&lt;\", \">\": \"&gt;\", '\"': \"&quot;\", \"'\": \"&#39;\" })[c]);\nconst moeda = (v) => Number(v || 0).toLocaleString(\"pt-BR\", { style: \"currency\", currency: \"BRL\" });\nconst inteiro = (v) => Number(v || 0).toLocaleString(\"pt-BR\");\nconst dia = (iso) => {\n  const d = new Date(iso);\n  return isNaN(d) ? esc(iso) : d.toLocaleDateString(\"pt-BR\", { timeZone: \"America/Sao_Paulo\" });\n};\nconst pontosTxt = (n) => `${inteiro(n)} ${Number(n) === 1 ? \"ponto\" : \"pontos\"}`;\n\nif (!corpo || !corpo.tipo || !corpo.para || !corpo.para.email) {\n  throw new Error(\"Corpo inválido: faltam tipo ou para.email\");\n}\n\nconst nome = esc(corpo.para.primeiro_nome || \"cliente\");\nconst site = String(corpo.site || \"https://projetocasalorenzi.vercel.app\").replace(/\\/$/, \"\");\n\nfunction moldura(titulo, conteudo, botao) {\n  const cta = botao\n    ? `<tr><td style=\"padding:8px 32px 32px\"><a href=\"${esc(botao.link)}\" style=\"display:inline-block;background:${COR.marinho};color:#fff;text-decoration:none;padding:12px 22px;border-radius:4px;font-size:14px\">${esc(botao.texto)}</a></td></tr>`\n    : \"\";\n  return `<!doctype html><html lang=\"pt-BR\"><body style=\"margin:0;background:${COR.fundo};font-family:Arial,Helvetica,sans-serif;color:${COR.tinta}\">\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:${COR.fundo};padding:24px 12px\"><tr><td align=\"center\">\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:560px;background:${COR.papel};border:1px solid ${COR.linha}\">\n<tr><td style=\"background:${COR.marinho};padding:20px 32px;color:#fff;font-family:Georgia,serif;font-size:22px;letter-spacing:.5px\">Casa Lorenzi</td></tr>\n<tr><td style=\"padding:28px 32px 8px;font-family:Georgia,serif;font-size:24px;line-height:1.25\">${titulo}</td></tr>\n<tr><td style=\"padding:8px 32px 16px;font-size:15px;line-height:1.6\">${conteudo}</td></tr>\n${cta}\n<tr><td style=\"padding:16px 32px;border-top:1px solid ${COR.linha};font-size:12px;color:${COR.suave}\">Você recebeu este e-mail porque é cliente da Casa Lorenzi e participa do Lorenzi+. Dúvidas? Responda este e-mail ou fale com a sua loja.</td></tr>\n</table></td></tr></table></body></html>`;\n}\n\nfunction blocoBeneficios(proxima) {\n  if (!proxima) return \"\";\n  const lista = (proxima.beneficios || [])\n    .map((b) => `<li style=\"margin:4px 0\"><strong>${esc(b.titulo)}</strong>: ${esc(b.descricao)}</li>`)\n    .join(\"\");\n  return `<div style=\"background:${COR.douradoClaro};border-left:3px solid ${COR.dourado};padding:14px 16px;margin:16px 0\">\n<p style=\"margin:0 0 6px\">Faltam <strong>${pontosTxt(proxima.faltam)}</strong> para você chegar à categoria <strong>${esc(proxima.nome)}</strong>.</p>\n${lista ? `<p style=\"margin:8px 0 4px\">No ${esc(proxima.nome)} você ganha:</p><ul style=\"margin:0;padding-left:18px\">${lista}</ul>` : \"\"}\n</div>`;\n}\n\nlet assunto, html, texto;\n\nif (corpo.tipo === \"pos_compra\") {\n  const p = corpo.pedido;\n  const linhas = (p.itens || [])\n    .map((i) => `<tr><td style=\"padding:8px 0;border-bottom:1px solid ${COR.linha}\">${esc(i.produto)}<br><span style=\"color:${COR.suave};font-size:13px\">${inteiro(i.quantidade)} × ${moeda(i.preco_unitario)}</span></td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid ${COR.linha};white-space:nowrap\">${moeda(i.total)}</td></tr>`)\n    .join(\"\");\n  const frete = Number(p.frete) > 0 ? `<tr><td style=\"padding:6px 0\">Frete</td><td align=\"right\">${moeda(p.frete)}</td></tr>` : \"\";\n  const pontos = corpo.pontos && Number(corpo.pontos.ganhos) > 0\n    ? `<p style=\"margin:16px 0 0\">Você ganhou <strong>${pontosTxt(corpo.pontos.ganhos)}</strong> Lorenzi+ nesta compra. Seu saldo agora é de ${pontosTxt(corpo.pontos.saldo)}.</p>`\n    : \"\";\n  assunto = `Obrigado pela sua compra, ${corpo.para.primeiro_nome || \"cliente\"}! Pedido ${p.numero}`;\n  html = moldura(\n    `Obrigado pela sua compra, ${nome}!`,\n    `<p style=\"margin:0 0 12px\">Este é o resumo da sua compra na <strong>${esc(p.loja)}</strong> em ${dia(p.data)}.</p>\n<p style=\"margin:0 0 12px;color:${COR.suave};font-size:13px\">Pedido <strong style=\"color:${COR.tinta}\">${esc(p.numero)}</strong>${p.pagamento ? ` · Pagamento: ${esc(p.pagamento)}` : \"\"}</p>\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"font-size:14px\">${linhas}${frete}\n<tr><td style=\"padding:10px 0;font-weight:bold\">Total</td><td align=\"right\" style=\"padding:10px 0;font-weight:bold\">${moeda(p.total)}</td></tr></table>\n${pontos}\n<p style=\"margin:16px 0 0;font-size:12px;color:${COR.suave}\">Este e-mail é um resumo da compra e não substitui a nota fiscal.</p>`,\n    { texto: \"Ver minhas compras\", link: `${site}/conta/pedidos` },\n  );\n  texto = `Obrigado pela sua compra! Pedido ${p.numero}, total ${moeda(p.total)}.`;\n} else if (corpo.tipo === \"pontos\") {\n  const pt = corpo.pontos;\n  const venc = (pt.vencimentos || [])\n    .map((v) => `<li style=\"margin:4px 0\"><strong>${pontosTxt(v.pontos)}</strong> vencem em ${dia(v.data)}</li>`)\n    .join(\"\");\n  const primeira = (pt.vencimentos || [])[0];\n  assunto = `${corpo.para.primeiro_nome || \"Olá\"}, ${pontosTxt(pt.a_vencer)} Lorenzi+ vencem ${primeira ? `em ${dia(primeira.data)}` : \"em breve\"}`;\n  html = moldura(\n    `Seus pontos estão perto de vencer, ${nome}`,\n    `<p style=\"margin:0 0 8px\">Você tem <strong>${pontosTxt(pt.a_vencer)}</strong> Lorenzi+ que vencem nos próximos dias:</p>\n<ul style=\"margin:0 0 12px;padding-left:18px\">${venc}</ul>\n<p style=\"margin:0\">Seu saldo total é de <strong>${pontosTxt(pt.saldo)}</strong>. Use seus pontos como desconto na próxima compra, no site ou em qualquer uma das nossas casas, antes que eles vençam.</p>\n${blocoBeneficios(corpo.categoria && corpo.categoria.proxima)}`,\n    { texto: \"Ver meus pontos\", link: `${site}/conta/lorenzi-mais` },\n  );\n  texto = `Você tem ${pontosTxt(pt.a_vencer)} Lorenzi+ vencendo. Saldo: ${pontosTxt(pt.saldo)}.`;\n} else if (corpo.tipo === \"categoria\") {\n  const prox = corpo.categoria && corpo.categoria.proxima;\n  if (!prox) throw new Error(\"Aviso de categoria sem próxima categoria\");\n  assunto = `${corpo.para.primeiro_nome || \"Olá\"}, faltam ${pontosTxt(prox.faltam)} para o ${prox.nome}`;\n  html = moldura(\n    `Você está quase no ${esc(prox.nome)}, ${nome}!`,\n    `<p style=\"margin:0 0 8px\">Hoje você é cliente <strong>${esc(corpo.categoria.atual.nome)}</strong> do Lorenzi+ e está muito perto da próxima categoria.</p>\n${blocoBeneficios(prox)}\n<p style=\"margin:0\">Cada compra soma pontos. Você tem ${pontosTxt(corpo.pontos.saldo)} hoje.</p>`,\n    { texto: \"Ver meu Lorenzi+\", link: `${site}/conta/lorenzi-mais` },\n  );\n  texto = `Faltam ${pontosTxt(prox.faltam)} para a categoria ${prox.nome} do Lorenzi+.`;\n} else {\n  throw new Error(`Tipo de e-mail desconhecido: ${corpo.tipo}`);\n}\n\nreturn { json: { para: corpo.para.email, assunto, html, texto, tipo: corpo.tipo } };\n"
+      }
+    },
+    {
+      "id": "b1f0c5a2-0003-4c1a-9b0e-000000000003",
+      "name": "Enviar pelo Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "sendTo": "={{ $json.para }}",
+        "subject": "={{ $json.assunto }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Casa Lorenzi"
+        }
+      }
+    },
+    {
+      "id": "b1f0c5a2-0004-4c1a-9b0e-000000000004",
+      "name": "Responder ao backend",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": true, \"tipo\": $('Montar e-mail').item.json.tipo } }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook do backend": {
+      "main": [
+        [
+          {
+            "node": "Montar e-mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar e-mail": {
+      "main": [
+        [
+          {
+            "node": "Enviar pelo Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar pelo Gmail": {
+      "main": [
+        [
+          {
+            "node": "Responder ao backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  }
+}
