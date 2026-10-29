@@ -27,6 +27,7 @@ CRITERIO_VENDAS = (
 )
 DIAS_PARADO = 60
 PECAS_PARADAS_NO_RESUMO = 10
+CATEGORIAS_MAIS_VENDIDAS_NO_RESUMO = 5
 DIAS_DOS_PONTOS_NO_RESUMO = 30
 CRITERIO_MINIMO = (
     "Pecas ativas com saldo igual ou abaixo do estoque minimo definido pela loja (so onde ha "
@@ -103,7 +104,8 @@ def _vendas_da_semana(
     atual: dict[Any, dict[str, Any]], anterior: dict[Any, dict[str, Any]], nomes: dict[Any, str]
 ) -> list[dict[str, Any]]:
     lojas = []
-    for id_loja in sorted(atual.keys() | anterior.keys(), key=lambda i: nomes.get(i, "")):
+    ids_lojas = atual.keys() | anterior.keys() | nomes.keys()
+    for id_loja in sorted(ids_lojas, key=lambda i: nomes.get(i, "")):
         a, b = atual.get(id_loja, {}), anterior.get(id_loja, {})
         faturamento = round(float(a.get("faturamento", 0)), 2)
         faturamento_anterior = round(float(b.get("faturamento", 0)), 2)
@@ -148,11 +150,32 @@ def resumo_semanal(
         nomes = repositorio.nomes_das_lojas(conexao)
 
     lojas = _vendas_da_semana(por_loja(inicio, fim), por_loja(inicio_ant, fim_ant), nomes)
-    if id_loja is not None and not lojas:
-        lojas = _vendas_da_semana({id_loja: {}}, {}, nomes)
     estoque_parado = gerencia.montar_estoque_parado(
         conexao, escopo, dias=DIAS_PARADO, limite=PECAS_PARADAS_NO_RESUMO
     )
+    indicadores_unidade = None
+    if id_loja is not None:
+        resumo_vendas = vendas.resumo(conexao, escopo, inicio, fim)
+        pedidos = int(resumo_vendas["pedidos"])
+        faturamento = float(resumo_vendas["faturamento"])
+        indicadores_unidade = {
+            "ticket_medio": round(faturamento / pedidos, 2) if pedidos else 0.0,
+            "pecas_vendidas": int(resumo_vendas["pecas"]),
+            "categorias_mais_vendidas": [
+                {
+                    "categoria": linha["categoria"],
+                    "unidades": int(linha["unidades"]),
+                    "faturamento": round(float(linha["faturamento"]), 2),
+                }
+                for linha in vendas.categorias_mais_vendidas(
+                    conexao,
+                    escopo,
+                    inicio,
+                    fim,
+                    limite=CATEGORIAS_MAIS_VENDIDAS_NO_RESUMO,
+                )
+            ],
+        }
     return {
         "semana": {"inicio": inicio, "fim": fim},
         "semana_anterior": {"inicio": inicio_ant, "fim": fim_ant},
@@ -160,6 +183,7 @@ def resumo_semanal(
         "faturamento": round(sum(loja["faturamento"] for loja in lojas), 2),
         "faturamento_anterior": round(sum(loja["faturamento_anterior"] for loja in lojas), 2),
         "lojas": lojas,
+        "indicadores_unidade": indicadores_unidade,
         "estoque_parado": estoque_parado,
         "pontos_a_vencer": (
             gerencia.montar_pontos_a_vencer(conexao, dias=DIAS_DOS_PONTOS_NO_RESUMO)

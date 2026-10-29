@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.automacoes import service as automacoes
+from app.automacoes.schemas import ResumoSemanal
 from app.cliente import service as cliente_service
 from app.cliente.repositorio import situacao_da_categoria
 from app.cliente.vencimento_pontos import a_vencer_por_cliente
@@ -160,14 +161,27 @@ def test_semana_fechada_e_segunda_a_domingo_anterior():
 
 
 def test_vendas_da_semana_compara_e_mostra_loja_sem_venda():
+    loja_sem_vendas = uuid4()
+    loja_sem_vendas_no_periodo = uuid4()
     atual = {LOJA_A: {"faturamento": 1100, "pedidos": 11, "faturamento_online": 100}}
     anterior = {
         LOJA_A: {"faturamento": 1000, "pedidos": 10},
         LOJA_B: {"faturamento": 500, "pedidos": 5},
     }
-    lojas_ = automacoes._vendas_da_semana(atual, anterior, {LOJA_A: "Barra", LOJA_B: "Savassi"})
+    lojas_ = automacoes._vendas_da_semana(
+        atual,
+        anterior,
+        {
+            LOJA_A: "Barra",
+            LOJA_B: "Savassi",
+            loja_sem_vendas: "Loja sem venda anterior",
+            loja_sem_vendas_no_periodo: "Loja sem venda no período",
+        },
+    )
     assert [(x["loja"], x["faturamento"], x["variacao"]) for x in lojas_] == [
         ("Barra", 1100.0, 0.1),
+        ("Loja sem venda anterior", 0.0, None),
+        ("Loja sem venda no período", 0.0, None),
         ("Savassi", 0.0, -1.0),
     ]
 
@@ -175,6 +189,7 @@ def test_vendas_da_semana_compara_e_mostra_loja_sem_venda():
 def test_resumo_semanal_da_loja_filtra_estoque_e_omite_pontos(monkeypatch):
     filtros_vendas = []
     filtros_estoque = []
+    filtros_indicadores = []
     monkeypatch.setattr(
         automacoes.repositorio,
         "nome_da_loja_ativa",
@@ -189,7 +204,17 @@ def test_resumo_semanal_da_loja_filtra_estoque_e_omite_pontos(monkeypatch):
         filtros_estoque.append(filtro)
         return PARADO
 
+    def resumo_vendas(conexao, filtro, inicio, fim):
+        filtros_indicadores.append((filtro, inicio, fim))
+        return {"faturamento": 1200, "pedidos": 12, "pecas": 18}
+
+    def categorias_mais_vendidas(conexao, filtro, inicio, fim, *, limite):
+        filtros_indicadores.append((filtro, inicio, fim, limite))
+        return [{"categoria": "Camisas", "unidades": 10, "faturamento": 800}]
+
     monkeypatch.setattr(automacoes.vendas, "vendas_por_loja", vendas_por_loja)
+    monkeypatch.setattr(automacoes.vendas, "resumo", resumo_vendas)
+    monkeypatch.setattr(automacoes.vendas, "categorias_mais_vendidas", categorias_mais_vendidas)
     monkeypatch.setattr(gerencia, "montar_estoque_parado", estoque_parado)
     monkeypatch.setattr(
         gerencia,
@@ -202,7 +227,41 @@ def test_resumo_semanal_da_loja_filtra_estoque_e_omite_pontos(monkeypatch):
     assert [filtro.id_loja for filtro in filtros_vendas] == [LOJA_A, LOJA_A]
     assert filtros_estoque[0].id_loja == LOJA_A
     assert [loja["loja"] for loja in resumo["lojas"]] == ["Barra"]
+    assert resumo["indicadores_unidade"] == {
+        "ticket_medio": 100.0,
+        "pecas_vendidas": 18,
+        "categorias_mais_vendidas": [
+            {"categoria": "Camisas", "unidades": 10, "faturamento": 800.0}
+        ],
+    }
+    assert all(item[0].id_loja == LOJA_A for item in filtros_indicadores)
+    assert filtros_indicadores[1][3] == automacoes.CATEGORIAS_MAIS_VENDIDAS_NO_RESUMO
     assert resumo["pontos_a_vencer"] is None
+    resposta = ResumoSemanal.model_validate(resumo)
+    assert resposta.indicadores_unidade.ticket_medio == 100.0
+
+
+def test_resumo_semanal_da_rede_nao_calcula_indicadores_exclusivos_da_unidade(monkeypatch):
+    monkeypatch.setattr(
+        automacoes.repositorio, "nomes_das_lojas", lambda conexao: {LOJA_A: "Barra"}
+    )
+    monkeypatch.setattr(automacoes.vendas, "vendas_por_loja", lambda *args: [])
+    monkeypatch.setattr(
+        automacoes.vendas,
+        "resumo",
+        lambda *args: pytest.fail("Resumo da rede não deve buscar indicadores da unidade"),
+    )
+    monkeypatch.setattr(
+        automacoes.vendas,
+        "categorias_mais_vendidas",
+        lambda *args, **kwargs: pytest.fail("Resumo da rede não deve buscar categorias da unidade"),
+    )
+    monkeypatch.setattr(gerencia, "montar_estoque_parado", lambda *args, **kwargs: PARADO)
+    monkeypatch.setattr(gerencia, "montar_pontos_a_vencer", lambda *args, **kwargs: PONTOS)
+
+    resumo = automacoes.resumo_semanal(None, date(2026, 10, 27))
+
+    assert resumo["indicadores_unidade"] is None
 
 
 def test_resumo_semanal_rejeita_loja_inativa_ou_desconhecida(monkeypatch):

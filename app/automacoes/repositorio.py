@@ -71,7 +71,7 @@ def gravar_avisos(conexao: Connection, canal: str, avisos: str) -> int:
 
 
 def nomes_das_lojas(conexao: Connection) -> dict[UUID, str]:
-    return dict(conexao.execute(text("SELECT id_loja, nome FROM loja")).all())
+    return dict(conexao.execute(text("SELECT id_loja, nome FROM loja WHERE ativa")).all())
 
 
 # ---------------------------------------------------------------- estoque (operador)
