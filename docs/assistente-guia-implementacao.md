@@ -183,8 +183,10 @@ Base: a URL do backend no Render. Cabeçalho em todas as chamadas: `X-Chave-Auto
 **Resumo da diretoria (toda segunda às 8h)**
 1. `GET /api/v1/automacoes/resumo-semanal`: semana fechada (segunda a domingo) por loja contra a
    anterior, estoque parado (60 dias) e pontos a vencer (30 dias), cada um com o critério.
-2. Enviar por e-mail. Se usar um LLM para o parágrafo de destaques, ele só redige: os números são os
-   da resposta.
+2. Para o admin, enviar o consolidado da rede. Para cada gerente, repetir a chamada com
+   `?id_loja=<UUID>`: vendas e estoque ficam restritos à loja, e `pontos_a_vencer` vem nulo por ser
+   um indicador da rede. Enviar por e-mail. Se usar um LLM para o parágrafo de destaques, ele só
+   redige: os números são os da resposta.
 
 ## 6. Frontend
 

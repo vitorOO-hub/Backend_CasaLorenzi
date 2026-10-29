@@ -170,7 +170,7 @@ contas do painel e do Lorenzi+.
 |---|---|---|
 | GET | `/pontos-a-vencer?canal=email\|whatsapp&dias=30` | clientes ativos que aceitam mensagens, com contato no canal, pontos vencendo na janela e ainda não avisados sobre aquele lote; traz saldo, categoria e quanto falta para a próxima |
 | POST | `/avisos-pontos` | registra os avisos enviados (`{canal, avisos: [{id_cliente, vence_em, pontos}]}`); repetido não conta de novo |
-| GET | `/resumo-semanal` | vendas da última semana fechada (segunda a domingo) por loja contra a anterior, estoque parado (60 dias) e pontos a vencer (30 dias) |
+| GET | `/resumo-semanal` | vendas da última semana fechada (segunda a domingo) por loja contra a anterior, estoque parado (60 dias) e pontos a vencer (30 dias); com `id_loja`, limita vendas e estoque à loja e omite pontos a vencer, que são da rede |
 
 ## Dashboard de atendimento — `/dashboard/atendimento` (A, G, D)
 
