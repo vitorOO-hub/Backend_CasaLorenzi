@@ -287,6 +287,20 @@ def test_pecas_mais_vendidas_somam_as_variacoes_do_produto(sa_conn, cena):
     assert len(repositorio.pecas_mais_vendidas(sa_conn, Filtro(a), INICIO, FIM, limite=1)) == 1
 
 
+def test_categorias_mais_vendidas_ordenam_por_unidades(sa_conn, cena):
+    c, a = cena.c, cena.loja_a
+    c.pedido(a, cena.cliente, [(cena.cam_p, 3, 100), (cena.cal, 2, 200)])
+    c.pedido(a, cena.cliente, [(cena.cam_m, 5, 100)])
+
+    ranking = repositorio.categorias_mais_vendidas(sa_conn, Filtro(a), INICIO, FIM, limite=5)
+
+    assert [(linha["categoria"], linha["unidades"]) for linha in ranking] == [
+        (texto_padrao("Camisas"), 8),
+        (texto_padrao("Calcas"), 2),
+    ]
+    assert [float(linha["faturamento"]) for linha in ranking] == [800.0, 400.0]
+
+
 def test_sem_vendas_tudo_zera_sem_erro(sa_conn, cena):
     r = resumo(sa_conn, Filtro(cena.loja_a))
     assert (r["pedidos"], float(r["faturamento"]), r["pecas"]) == (0, 0.0, 0)
