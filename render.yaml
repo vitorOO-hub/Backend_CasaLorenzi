@@ -36,6 +36,10 @@ services:
       # respondem 503 e o resto da API funciona.
       - key: CHAVE_AUTOMACAO
         sync: false
+      # Webhook do fluxo "Casa Lorenzi - e-mails ao cliente" no n8n (resumo da compra, pontos a
+      # vencer e categoria). Sem ela, nenhum e-mail sai e o resto da API funciona.
+      - key: N8N_WEBHOOK_EMAILS
+        value: https://vitorjunior.app.n8n.cloud/webhook/casa-lorenzi-emails
       # Provedores de LLM dos assistentes. Segredos; opcionais.
       - key: GEMINI_API_KEY
         sync: false
