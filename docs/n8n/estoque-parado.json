@@ -1,0 +1,222 @@
+{
+  "name": "Estoque parado semanal (operador)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "6aa6be22-43e2-44d8-8656-675d3b65cbfa",
+      "name": "Agenda",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "61523f2f-d2df-4e9a-b8a9-68af5df5c83a",
+      "name": "Testar agora",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b0f25ebe-7f43-47d4-80ea-191810a959de",
+              "name": "api_url",
+              "value": "https://backend-casalorenzi.onrender.com",
+              "type": "string"
+            },
+            {
+              "id": "b9d6f8fe-e284-40e6-a8c1-ff2c313329d5",
+              "name": "painel_url",
+              "value": "https://projetocasalorenzi.vercel.app/painel/estoque",
+              "type": "string"
+            },
+            {
+              "id": "72eaa6a2-fe03-4ec2-9286-bc9d2e66f938",
+              "name": "destinatarios",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9da0997d-ee20-4bd1-8036-2ee574d05ce7",
+      "name": "Configuração",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.api_url }}/api/v1/automacoes/estoque-parado",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "dias",
+              "value": "60"
+            },
+            {
+              "name": "limite",
+              "value": "20"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "cfaa3e39-c6ae-409a-a07b-4a007cbdcf3b",
+      "name": "Consultar API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "API Casa Lorenzi"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Uma mensagem por loja com estoque parado. Loja sem peca parada nao recebe e-mail.\nconst config = $('Configuração').first().json;\nconst dados = $input.first().json;\n\nconst esc = (t) => String(t ?? '').replace(/[&<>\"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' })[c]);\nconst reais = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });\nconst data = (iso) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'nunca vendeu');\nconst td = 'style=\"padding:6px 8px;border-bottom:1px solid #dfd9cf;vertical-align:top\"';\nconst th = 'style=\"padding:6px 8px;text-align:left;border-bottom:2px solid #1f2a48;font-size:12px;color:#5e6b89\"';\n\nconst saida = [];\nfor (const loja of dados.lojas) {\n  if (!loja.total_itens) continue;\n  const linhas = loja.itens\n    .map((p) => `<tr><td ${td}>${esc(p.produto)} · ${esc(p.cor)}, ${esc(p.tamanho)} <span style=\"color:#5e6b89\">(${esc(p.sku)})</span></td>\n<td ${td}>${p.saldo}</td><td ${td}>${reais(p.valor_parado)}</td><td ${td}>${data(p.ultima_venda)}</td></tr>`)\n    .join('\\n');\n  const mostrando = loja.itens.length < loja.total_itens ? `<p style=\"font-size:12px;color:#5e6b89\">Mostrando as ${loja.itens.length} de maior valor parado.</p>` : '';\n  const html = `<div style=\"font-family:Arial,sans-serif;color:#16203a;max-width:720px\">\n<p style=\"font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#b46746;margin:0\">Casa Lorenzi · Estoque parado</p>\n<h2 style=\"font-family:Georgia,serif;font-weight:normal;color:#1f2a48;margin:4px 0 12px\">${esc(loja.loja)}</h2>\n<p>${loja.total_itens} ${loja.total_itens === 1 ? 'peça' : 'peças'} (${loja.total_unidades} unidades, ${reais(loja.total_valor)}) sem venda há mais de ${dados.dias} dias.\nAvalie transferir para outra loja ou sugerir uma ação de venda.</p>\n<table style=\"border-collapse:collapse;width:100%;font-size:14px\"><tr><th ${th}>Peça</th><th ${th}>Saldo</th><th ${th}>Valor parado</th><th ${th}>Última venda</th></tr>\n${linhas}</table>${mostrando}\n<p style=\"margin-top:24px\"><a href=\"${esc(config.painel_url)}\" style=\"color:#1f2a48\">Abrir o painel de estoque</a></p>\n<p style=\"font-size:12px;color:#5e6b89\">${esc(dados.criterio)}</p></div>`;\n  saida.push({\n    json: {\n      id_loja: loja.id_loja,\n      loja: loja.loja,\n      para: config.destinatarios,\n      assunto: `Estoque parado · ${loja.loja}: ${loja.total_itens} ${loja.total_itens === 1 ? 'peça' : 'peças'} sem venda há ${dados.dias}+ dias`,\n      html,\n    },\n  });\n}\nreturn saida;\n"
+      },
+      "id": "78298816-9c59-4720-89eb-bb2c16cb5264",
+      "name": "Montar e-mail por loja",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.para }}",
+        "subject": "={{ $json.assunto }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "cf46fc67-51cd-45b0-b104-55797d92df98",
+      "name": "Enviar e-mail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        960,
+        100
+      ],
+      "disabled": true,
+      "webhookId": "219cf7b3-c942-4255-be0d-37dfcd6df770"
+    },
+    {
+      "parameters": {
+        "content": "## Antes de ativar\n1. **Consultar API**: escolha a credencial *API Casa Lorenzi* (Header Auth `X-Chave-Automacao`).\n2. **Configuração**: preencha `destinatarios` (e-mails separados por vírgula).\n3. **Enviar e-mail**: o envio ainda está em definição pelo grupo; o nó está desligado. Escolha a credencial e reative (ou troque pelo nó do canal escolhido).\n\nO Render (plano grátis) pode levar ~1 min para acordar: a consulta espera até 2 min e tenta 3 vezes.",
+        "height": 300,
+        "width": 460
+      },
+      "id": "99c977d9-e665-4e2a-add8-7dbe5355df0b",
+      "name": "Leia antes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -340
+      ]
+    }
+  ],
+  "connections": {
+    "Agenda": {
+      "main": [
+        [
+          {
+            "node": "Configuração",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Testar agora": {
+      "main": [
+        [
+          {
+            "node": "Configuração",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuração": {
+      "main": [
+        [
+          {
+            "node": "Consultar API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar API": {
+      "main": [
+        [
+          {
+            "node": "Montar e-mail por loja",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar e-mail por loja": {
+      "main": [
+        [
+          {
+            "node": "Enviar e-mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "pinData": {}
+}
