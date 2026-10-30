@@ -5,6 +5,7 @@ A conexao da API ignora RLS, entao toda leitura e escrita de conversa confere o 
 """
 
 import json
+import re
 from typing import Any
 from uuid import UUID
 
@@ -118,6 +119,17 @@ def gravar_mensagem(
         {"c": str(id_conversa)},
     )
     return id_mensagem
+
+
+def contatos_do_cliente(conexao: Connection, id_usuario: UUID) -> tuple[str, str]:
+    """E-mail (minusculo) e documento (so digitos) da propria conta, para reconhecer terceiros."""
+    linha = conexao.execute(
+        text("SELECT email, documento FROM usuario WHERE id_usuario = CAST(:u AS uuid)"),
+        {"u": str(id_usuario)},
+    ).first()
+    if linha is None:
+        return "", ""
+    return (linha[0] or "").strip().lower(), re.sub(r"\D", "", linha[1] or "")
 
 
 def mensagens_do_usuario_hoje(conexao: Connection, id_usuario: UUID) -> int:
