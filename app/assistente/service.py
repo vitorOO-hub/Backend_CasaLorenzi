@@ -193,6 +193,7 @@ def enviar_mensagem(
     executar_ferramenta=None,
     escopo_permitido=None,
     esclarecer=None,
+    contextualizar=None,
     forcar_ferramenta: bool = False,
 ) -> dict[str, Any]:
     id_usuario = executar_db(lambda c: _id_usuario(c, usuario, papel))
@@ -201,7 +202,8 @@ def enviar_mensagem(
             c, id_conversa, id_usuario, pergunta, tipo_conversa
         )
     )
-    if escopo_permitido is not None and not escopo_permitido(pergunta):
+    pergunta_consulta = contextualizar(pergunta, historico) if contextualizar else pergunta
+    if escopo_permitido is not None and not escopo_permitido(pergunta_consulta):
         resposta = (
             "Este assistente responde somente sobre vendas e indicadores da sua unidade, "
             "reposições, estoque parado e pendências do gerente. Para outros assuntos, "
@@ -209,7 +211,7 @@ def enviar_mensagem(
         )
         executar_db(lambda c: repositorio.gravar_resposta(c, id_conversa, resposta, "", 0, 0))
         return {"id_conversa": id_conversa, "resposta": resposta}
-    esclarecimento = esclarecer(pergunta) if esclarecer is not None else None
+    esclarecimento = esclarecer(pergunta_consulta) if esclarecer is not None else None
     if esclarecimento:
         executar_db(
             lambda c: repositorio.gravar_resposta(c, id_conversa, esclarecimento, "", 0, 0)
@@ -223,7 +225,7 @@ def enviar_mensagem(
         )
     else:
         executar_chamada = executar_ferramenta
-    plano = planejar_pergunta(pergunta, configuracoes)
+    plano = planejar_pergunta(pergunta_consulta, configuracoes)
     if plano.estado == "esclarecer":
         resposta = "Pode me dizer o produto, pedido ou loja a que você está se referindo?"
         executar_db(lambda c: repositorio.gravar_resposta(c, id_conversa, resposta, "", 0, 0))

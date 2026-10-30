@@ -162,6 +162,16 @@ _PERIODO_EXPLICITO = re.compile(
     r"julho|agosto|setembro|outubro|novembro|dezembro)\b|"
     r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b|\b\d{4}-\d{2}-\d{2}\b"
 )
+_PEDIDO_PERIODO = "Qual período você quer consultar? Informe as datas inicial e final."
+_RESPOSTA_PERIODO = re.compile(
+    r"(?:(?:d[oa]s?|n[oa]s?|em)\s+)?(?:"
+    r"(?:ultim[oa]s?|passad[oa]s?)\s+\d+\s+(?:dias?|semanas?|mes(?:es)?|anos?)|"
+    r"(?:est[ea]|ess[ea]|ultim[oa]|passad[oa])\s+(?:semana|mes|ano)|"
+    r"hoje|ontem|\d{4}|"
+    r"\d{1,2}/\d{1,2}(?:/\d{2,4})?(?:\s+(?:a|ate)\s+"
+    r"\d{1,2}/\d{1,2}(?:/\d{2,4})?)?"
+    r")[.!?]?"
+)
 
 
 def _normalizar(texto: str) -> str:
@@ -193,8 +203,29 @@ def esclarecimento_necessario(pergunta: str) -> str | None:
             " Para consultar o faturamento, informe o período novamente."
         )
     if _ASSUNTO_VENDAS.search(texto) and not _PERIODO_EXPLICITO.search(texto):
-        return "Qual período você quer consultar? Informe as datas inicial e final."
+        return _PEDIDO_PERIODO
     return None
+
+
+def contextualizar_periodo(pergunta: str, historico: list[dict[str, Any]]) -> str:
+    """Recupera a pergunta apenas após o pedido de período feito por este assistente."""
+    if len(historico) < 3 or not _RESPOSTA_PERIODO.fullmatch(_normalizar(pergunta.strip())):
+        return pergunta
+    anterior, resposta, atual = historico[-3:]
+    if (
+        anterior.get("role") != "user"
+        or resposta.get("role") != "assistant"
+        or resposta.get("content") != _PEDIDO_PERIODO
+        or atual.get("role") != "user"
+        or atual.get("content") != pergunta
+    ):
+        return pergunta
+    texto_anterior = anterior.get("content", "")
+    if not isinstance(texto_anterior, str) or not pergunta_no_escopo(texto_anterior):
+        return pergunta
+    if not _ASSUNTO_VENDAS.search(_normalizar(texto_anterior)):
+        return pergunta
+    return f"{texto_anterior} {pergunta}"
 
 
 def _validar_argumentos(nome: str, argumentos: dict[str, Any]) -> None:
@@ -390,5 +421,6 @@ def enviar_mensagem(
         ),
         escopo_permitido=pergunta_no_escopo,
         esclarecer=esclarecimento_necessario,
+        contextualizar=contextualizar_periodo,
         forcar_ferramenta=True,
     )

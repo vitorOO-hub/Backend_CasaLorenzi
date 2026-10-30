@@ -376,6 +376,57 @@ def test_ganhos_ambiguos_pedem_esclarecimento_sem_assumir_lucro(monkeypatch):
     assert "lucro ainda não está disponível" in resposta["resposta"]
 
 
+@pytest.mark.parametrize(
+    ("assunto", "periodo"),
+    [("qual foi nossa receita?", "dos ultimos 30 dias"), ("faturamento", "este ano")],
+)
+def test_resposta_de_periodo_continua_consulta_de_vendas(monkeypatch, assunto, periodo):
+    usuario = gerente_usuario()
+    historico = [
+        {"role": "user", "content": assunto},
+        {"role": "assistant", "content": gerente._PEDIDO_PERIODO},
+        {"role": "user", "content": periodo},
+    ]
+    monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(repositorio, "gravar_pergunta", lambda *_args: historico.copy())
+    monkeypatch.setattr(repositorio, "gravar_resposta", lambda *_args: None)
+    monkeypatch.setattr(repositorio, "gravar_ferramenta", lambda *_args: None)
+    consultado = {}
+
+    def dashboard(_conexao, _usuario, *, inicio, fim, filtro):
+        consultado.update(inicio=inicio, fim=fim, loja=filtro.id_loja)
+        return {"faturamento": 123}
+
+    monkeypatch.setattr(gerente.gerencia_service, "montar_dashboard", dashboard)
+    turnos = iter([
+        {"texto": "", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": [{
+            "id": "1", "name": "consultar_vendas_unidade",
+            "arguments": {"inicio": "2026-01-01", "fim": "2026-01-31"},
+        }]},
+        {"texto": "Faturamento: R$ 123", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": []},
+    ])
+    monkeypatch.setattr(provedor, "completar", lambda *_args: next(turnos))
+    resposta = gerente.enviar_mensagem(
+        lambda operacao: operacao(None), usuario,
+        Settings(
+            _env_file=None, database_url="postgresql://localhost/teste",
+            groq_api_key="teste", gemini_api_key="teste",
+        ),
+        uuid4(), periodo,
+    )
+    assert resposta["resposta"] == "Faturamento: R$ 123"
+    assert consultado["loja"] == usuario.id_loja
+
+
+def test_periodo_nao_herda_assunto_sem_pedido_explicito_do_assistente():
+    historico = [
+        {"role": "user", "content": "qual foi nossa receita?"},
+        {"role": "assistant", "content": "Outra resposta"},
+        {"role": "user", "content": "este ano"},
+    ]
+    assert gerente.contextualizar_periodo("este ano", historico) == "este ano"
+
+
 def test_gerente_sem_loja_nao_acessa_chat():
     usuario = UsuarioAtual(id_auth=uuid4(), papel=Papel.GERENTE_LOJA)
 
