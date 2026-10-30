@@ -15,11 +15,13 @@ from app.core.papeis import Papel, UsuarioAtual
 from app.gerencia import repositorio as gerencia_repositorio
 from app.gerencia import service as gerencia_service
 from app.gerencia.repositorio import Filtro
+from app.painel_estoque import service as estoque_service
+from app.painel_estoque.repositorio import FiltroSaldo
 
 TIPO_CONVERSA = "interno_gerente"
 INSTRUCOES = """Você é o assistente interno do gerente de uma unidade da Casa Lorenzi.
 Responda somente sobre as consultas disponíveis: vendas e indicadores da própria unidade,
-reposição, estoque parado, pendências gerenciais e resumo da própria loja. Use as ferramentas
+reposição, saldo de estoque, estoque parado, pendências gerenciais e resumo da própria loja. Use as ferramentas
 para confirmar dados atuais e baseie afirmações exclusivamente nos resultados retornados.
 O escopo da unidade vem do sistema; não tente consultar ou comparar outras lojas. Não invente,
 estime nem complete dados ausentes. Se não houver evidência, diga que não pode confirmar e indique
@@ -31,9 +33,23 @@ Responda em português."""
 
 FERRAMENTAS: list[dict[str, Any]] = [
     {
+        "name": "consultar_saldo_unidade",
+        "description": "Consulta saldo atual por peça, estoque baixo e peças esgotadas da unidade.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "busca": {"type": "string", "maxLength": 80},
+                "categoria": {"type": "string", "maxLength": 80},
+                "situacao": {"type": "string", "enum": ["ok", "baixo", "esgotado"]},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "consultar_vendas_unidade",
         "description": (
-            "Consulta indicadores de venda da unidade do gerente em um período. "
+            "Consulta faturamento, pedidos, peças vendidas, ticket médio, evolução diária, "
+            "movimento por dia da semana, peças mais vendidas e marcas em um período. "
             "Datas no formato AAAA-MM-DD. A unidade é obtida do usuário autenticado."
         ),
         "parameters": {
@@ -93,7 +109,8 @@ FERRAMENTAS: list[dict[str, Any]] = [
 ]
 
 _PADROES_ESCOPO = (
-    re.compile(r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas)\b"),
+    re.compile(r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas|mais vendid[oa]s?|marcas?|movimento|desempenho)\b"),
+    re.compile(r"\b(estoque|saldo|esgotad[oa]s?|disponibilidade)\b"),
     re.compile(r"\b(reposicao|repor|reabastecer|estoque baixo|giro de estoque|cobertura)\b"),
     re.compile(
         r"\b(estoque parado|parad[oa]s? no estoque|sem venda|sem vender|"
@@ -112,7 +129,7 @@ _FORA_ESCOPO = re.compile(
     r"crie|criar|lance|importar|execute|executar)\b"
 )
 _ASSUNTO_VENDAS = re.compile(
-    r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas)\b"
+    r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas|mais vendid[oa]s?|marcas?|movimento|desempenho)\b"
 )
 _PERIODO_EXPLICITO = re.compile(
     r"\b(20\d{2}|hoje|ontem|semana|mes|mensal|ano|anual|periodo|"
@@ -180,6 +197,19 @@ def executar_ferramenta(
         raise FerramentaInvalida("Consulta exclusiva do gerente de loja")
     _validar_argumentos(nome, argumentos)
     filtro = Filtro(id_loja=usuario.id_loja, categoria=argumentos.get("categoria"))
+
+    if nome == "consultar_saldo_unidade":
+        filtro_saldo = FiltroSaldo(
+            id_loja=usuario.id_loja,
+            busca=argumentos.get("busca"),
+            categoria=argumentos.get("categoria"),
+            situacao=argumentos.get("situacao"),
+        )
+        resultado = estoque_service.montar_saldo(conexao, filtro_saldo, limit=20, offset=0)
+        if any(argumentos.get(chave) for chave in ("busca", "categoria", "situacao")):
+            # O resumo do endpoint sempre cobre a loja inteira, mesmo com filtros.
+            resultado.pop("resumo", None)
+        return resultado
 
     if nome == "consultar_vendas_unidade":
         inicio = date.fromisoformat(argumentos["inicio"])
