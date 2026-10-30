@@ -67,6 +67,66 @@
         "responseBody": "={{ { \"ok\": true, \"tipo\": $('Montar e-mail').item.json.tipo } }}",
         "options": {}
       }
+    },
+    {
+      "id": "b1f0c5a2-0005-4c1a-9b0e-000000000005",
+      "name": "Todo dia as 9h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        240
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b1f0c5a2-0006-4c1a-9b0e-000000000006",
+      "name": "Acordar o servidor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        240
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 20000,
+      "parameters": {
+        "method": "GET",
+        "url": "https://backend-casalorenzi.onrender.com/health",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "b1f0c5a2-0007-4c1a-9b0e-000000000007",
+      "name": "Disparar avisos diarios",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        240
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://backend-casalorenzi.onrender.com/api/v1/automacoes/disparar-emails",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 600000
+        }
+      }
     }
   ],
   "connections": {
@@ -97,6 +157,28 @@
         [
           {
             "node": "Responder ao backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Todo dia as 9h": {
+      "main": [
+        [
+          {
+            "node": "Acordar o servidor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acordar o servidor": {
+      "main": [
+        [
+          {
+            "node": "Disparar avisos diarios",
             "type": "main",
             "index": 0
           }

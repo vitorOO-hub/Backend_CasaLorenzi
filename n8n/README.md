@@ -1,19 +1,25 @@
 # E-mails ao cliente pelo n8n
 
-Três e-mails automáticos, enviados pelo Gmail da loja através de um fluxo do n8n que só recebe
-webhooks. Quem decide quem recebe é o backend (`app/automacoes/emails.py`); o n8n monta a mensagem
+Três e-mails automáticos, enviados pelo Gmail da loja através de um fluxo do n8n com duas entradas: o
+webhook (resumo da compra) e o relógio diário (dispara os avisos). Quem decide quem recebe é o backend (`app/automacoes/emails.py`); o n8n monta a mensagem
 (`montar_email.js`) e envia.
 
 | E-mail | Quando sai | Quem chama o n8n |
 |---|---|---|
 | Resumo da compra (`pos_compra`) | logo depois de uma venda na loja ou de um pedido no site | a rota da venda, em segundo plano |
-| Pontos a vencer (`pontos`) | lotes que vencem nos próximos 7 dias (`EMAILS_DIAS_AVISO_PONTOS`) | o disparo diário |
-| Quase na próxima categoria (`categoria`) | faltam até 20% dos pontos da próxima categoria | o disparo diário |
+| Pontos a vencer (`pontos`) | lotes que vencem nos próximos 7 dias (`EMAILS_DIAS_AVISO_PONTOS`) | o disparo diário (relógio do n8n) |
+| Quase na próxima categoria (`categoria`) | faltam até 20% dos pontos da próxima categoria | o disparo diário (relógio do n8n) |
 
 O e-mail de pontos também mostra quanto falta para a próxima categoria e as vantagens dela; quem o
 recebeu não ganha um segundo e-mail de categoria no mesmo ano.
 
 ## Como funciona
+
+**Disparo diário:** o nó **Todo dia às 9h** (relógio do n8n, fuso de São Paulo) acorda o servidor
+(`/health`, o Render grátis dorme) e chama `POST /api/v1/automacoes/disparar-emails` no backend, que
+decide quem recebe e devolve cada e-mail ao webhook abaixo. Não há mais agendamento no GitHub Actions.
+
+**Cada e-mail:**
 
 1. O backend manda um `POST` para `N8N_WEBHOOK_EMAILS` com o cabeçalho `X-Chave-Automacao` (o
    mesmo valor de `CHAVE_AUTOMACAO`) e o corpo do e-mail (`tipo`, `para`, dados do pedido ou dos
@@ -36,14 +42,16 @@ No n8n (`https://vitorjunior.app.n8n.cloud`), fluxo **Casa Lorenzi - e-mails ao 
    `X-Chave-Automacao`, Value = o valor de `CHAVE_AUTOMACAO` do backend.
 2. Nó **Enviar pelo Gmail** → Credential → *Create new* (**Gmail OAuth2**) → *Sign in with Google*
    com o Gmail da loja.
-3. **Publish** (ativa o fluxo). A URL de produção do webhook é
+3. Nó **Disparar avisos diarios** → Credential → a mesma **Header Auth** do passo 1
+   (`X-Chave-Automacao`). Confira também a URL do backend nos nós **Acordar o servidor** e
+   **Disparar avisos diarios**.
+4. **Publish** (ativa o fluxo e o relógio). A URL de produção do webhook é
    `https://vitorjunior.app.n8n.cloud/webhook/casa-lorenzi-emails`.
 
 No backend: `N8N_WEBHOOK_EMAILS` com essa URL (no Render já está em `render.yaml`) e
 `CHAVE_AUTOMACAO`.
 
-No GitHub (repositório do backend): segredo `CHAVE_AUTOMACAO` para o agendamento
-`.github/workflows/avisos-diarios.yml` (todo dia às 9h de Brasília).
+O segredo `CHAVE_AUTOMACAO` do GitHub não é mais necessário (o agendamento saiu do Actions).
 
 ## Testar na mão
 
