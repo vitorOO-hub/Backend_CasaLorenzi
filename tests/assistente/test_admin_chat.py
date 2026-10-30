@@ -64,6 +64,32 @@ def test_consulta_de_vendas_limita_periodo_antes_do_banco():
         )
 
 
+def test_comparacao_de_lojas_e_exclusiva_do_admin(monkeypatch):
+    chamadas = []
+    lojas = [
+        {"id_loja": uuid4(), "nome": f"Loja {i}", "faturamento": float(i),
+         "faturamento_anterior": 0, "pedidos": i, "ticket_medio": 1}
+        for i in range(21)
+    ]
+
+    def montar_rede(_c, usuario, **kwargs):
+        chamadas.append((usuario, kwargs))
+        return {"unidades": lojas, "periodo": {}, "periodo_anterior": {}}
+
+    monkeypatch.setattr(ferramentas.gerencia_service, "montar_rede", montar_rede)
+    argumentos = {"inicio": "2026-01-01", "fim": "2026-01-31"}
+    resultado = ferramentas.executar(None, admin(), "comparar_vendas_lojas", argumentos)
+    assert resultado["total_lojas"] == 21
+    assert resultado["lojas_omitidas"] == 1
+    assert resultado["lojas_maior_faturamento"][0]["faturamento"] == 20
+    assert resultado["loja_menor_faturamento"]["faturamento"] == 0
+    assert chamadas[0][1]["ids_loja"] == ()
+    assert "aviso" not in service._json_para_modelo(resultado)[0]
+    gerente = UsuarioAtual(id_auth=uuid4(), papel=Papel.GERENTE_LOJA, id_loja=uuid4())
+    with pytest.raises(ferramentas.FerramentaInvalida):
+        ferramentas.executar(None, gerente, "comparar_vendas_lojas", argumentos)
+
+
 @pytest.mark.parametrize("detalhe", ["resumo", "pecas_mais_vendidas", "marcas"])
 def test_vendas_admin_retorna_resumo_e_detalhe_solicitado(monkeypatch, detalhe):
     dashboard = {

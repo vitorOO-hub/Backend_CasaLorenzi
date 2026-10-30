@@ -20,6 +20,25 @@ from app.painel_estoque.repositorio import FiltroSaldo
 
 FERRAMENTAS: list[dict[str, Any]] = [
     {
+        "name": "comparar_vendas_lojas",
+        "description": (
+            "Compara faturamento, pedidos e ticket médio das lojas no período. "
+            "Retorna até 20 lojas com maior faturamento e a loja com menor faturamento."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "inicio": {"type": "string", "format": "date"},
+                "fim": {"type": "string", "format": "date"},
+                "categoria": {"type": "string", "maxLength": 80},
+                "canal": {"type": "string", "enum": ["loja", "online"]},
+                "marca": {"type": "string", "maxLength": 40},
+            },
+            "required": ["inicio", "fim"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "consultar_vendas",
         "description": (
             "Indicadores de vendas da rede ou loja no período. Por padrão retorna o resumo; "
@@ -318,6 +337,30 @@ def executar(
         ):
             raise FerramentaInvalida("Argumentos inválidos para a consulta")
 
+    if nome == "comparar_vendas_lojas":
+        inicio = date.fromisoformat(argumentos["inicio"])
+        fim = date.fromisoformat(argumentos["fim"])
+        gerencia_service.validar_periodo(inicio, fim)
+        if (fim - inicio).days > 366:
+            raise FerramentaInvalida("A consulta de vendas aceita períodos de até 367 dias")
+        rede = gerencia_service.montar_rede(
+            conexao, usuario, inicio=inicio, fim=fim, ids_loja=(),
+            categoria=argumentos.get("categoria"), canal=argumentos.get("canal"),
+            marca=argumentos.get("marca"),
+        )
+        lojas = sorted(rede["unidades"], key=lambda loja: loja["faturamento"], reverse=True)
+        campos = (
+            "id_loja", "nome", "faturamento", "faturamento_anterior", "pedidos", "ticket_medio"
+        )
+        resumidas = [{campo: loja[campo] for campo in campos} for loja in lojas]
+        return {
+            "periodo": rede["periodo"],
+            "periodo_anterior": rede["periodo_anterior"],
+            "total_lojas": len(resumidas),
+            "lojas_omitidas": max(0, len(resumidas) - 20),
+            "lojas_maior_faturamento": resumidas[:20],
+            "loja_menor_faturamento": resumidas[-1] if resumidas else None,
+        }
     if nome == "consultar_vendas":
         inicio = date.fromisoformat(argumentos["inicio"])
         fim = date.fromisoformat(argumentos["fim"])
