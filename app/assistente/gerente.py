@@ -165,10 +165,12 @@ _PERIODO_EXPLICITO = re.compile(
 )
 _PEDIDO_PERIODO = "Qual período você quer consultar? Informe as datas inicial e final."
 _RESPOSTA_PERIODO = re.compile(
-    r"(?:(?:d[oa]s?|n[oa]s?|em)\s+)?(?:"
+    r"(?:(?:d[oa]s?|n[oa]s?|em|durante|entre)\s+)?(?:"
     r"(?:ultim[oa]s?|passad[oa]s?)\s+\d+\s+(?:dias?|semanas?|mes(?:es)?|anos?)|"
-    r"(?:est[ea]|ess[ea]|ultim[oa]|passad[oa])\s+(?:semana|mes|ano)|"
-    r"hoje|ontem|\d{4}|"
+    r"\d+\s+(?:dias?|semanas?|mes(?:es)?|anos?)(?:\s+(?:anteriores|passad[oa]s?))?|"
+    r"(?:est[ea]|ess[ea]|nest[ea]|ness[ea]|ultim[oa]|passad[oa])\s+(?:semana|mes|ano)|"
+    r"(?:semana|mes|ano)\s+(?:passad[oa]|atual|corrente)|"
+    r"hoje|ontem|anteontem|\d{4}|"
     r"\d{1,2}/\d{1,2}(?:/\d{2,4})?(?:\s+(?:a|ate)\s+"
     r"\d{1,2}/\d{1,2}(?:/\d{2,4})?)?"
     r")[.!?]?"
@@ -212,14 +214,27 @@ def contextualizar_periodo(pergunta: str, historico: list[dict[str, Any]]) -> st
     """Recupera a pergunta apenas após o pedido de período feito por este assistente."""
     if len(historico) < 3 or not _RESPOSTA_PERIODO.fullmatch(_normalizar(pergunta.strip())):
         return pergunta
-    anterior, resposta, atual = historico[-3:]
-    if (
-        anterior.get("role") != "user"
-        or resposta.get("role") != "assistant"
-        or resposta.get("content") != _PEDIDO_PERIODO
-        or atual.get("role") != "user"
-        or atual.get("content") != pergunta
-    ):
+    if historico[-1].get("role") != "user" or historico[-1].get("content") != pergunta:
+        return pergunta
+    anteriores = historico[:-1]
+    recusa = "Este assistente responde somente sobre vendas e indicadores da sua unidade, "
+    while len(anteriores) >= 2:
+        resposta = anteriores[-1]
+        anterior = anteriores[-2]
+        if resposta.get("role") != "assistant" or anterior.get("role") != "user":
+            return pergunta
+        if resposta.get("content") == _PEDIDO_PERIODO:
+            break
+        texto = anterior.get("content", "")
+        if (
+            not isinstance(resposta.get("content"), str)
+            or not resposta["content"].startswith(recusa)
+            or not isinstance(texto, str)
+            or not _RESPOSTA_PERIODO.fullmatch(_normalizar(texto.strip()))
+        ):
+            return pergunta
+        anteriores = anteriores[:-2]
+    else:
         return pergunta
     texto_anterior = anterior.get("content", "")
     if not isinstance(texto_anterior, str) or not pergunta_no_escopo(texto_anterior):

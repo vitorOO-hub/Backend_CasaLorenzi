@@ -378,7 +378,12 @@ def test_ganhos_ambiguos_pedem_esclarecimento_sem_assumir_lucro(monkeypatch):
 
 @pytest.mark.parametrize(
     ("assunto", "periodo"),
-    [("qual foi nossa receita?", "dos ultimos 30 dias"), ("faturamento", "este ano")],
+    [
+        ("qual foi nossa receita?", "dos ultimos 30 dias"),
+        ("faturamento", "este ano"),
+        ("qual foi o faturamento?", "nos últimos 30 dias"),
+        ("qual foi a receita?", "ano passado"),
+    ],
 )
 def test_resposta_de_periodo_continua_consulta_de_vendas(monkeypatch, assunto, periodo):
     usuario = gerente_usuario()
@@ -405,7 +410,13 @@ def test_resposta_de_periodo_continua_consulta_de_vendas(monkeypatch, assunto, p
         }]},
         {"texto": "Faturamento: R$ 123", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": []},
     ])
-    monkeypatch.setattr(provedor, "completar", lambda *_args: next(turnos))
+    mensagens_modelo = []
+
+    def completar(_destino, _config, _instrucoes, mensagens, _ferramentas):
+        mensagens_modelo.append(mensagens)
+        return next(turnos)
+
+    monkeypatch.setattr(provedor, "completar", completar)
     resposta = gerente.enviar_mensagem(
         lambda operacao: operacao(None), usuario,
         Settings(
@@ -416,6 +427,7 @@ def test_resposta_de_periodo_continua_consulta_de_vendas(monkeypatch, assunto, p
     )
     assert resposta["resposta"] == "Faturamento: R$ 123"
     assert consultado["loja"] == usuario.id_loja
+    assert mensagens_modelo[0][-1]["content"] == f"{assunto} {periodo}"
 
 
 def test_periodo_nao_herda_assunto_sem_pedido_explicito_do_assistente():
@@ -425,6 +437,23 @@ def test_periodo_nao_herda_assunto_sem_pedido_explicito_do_assistente():
         {"role": "user", "content": "este ano"},
     ]
     assert gerente.contextualizar_periodo("este ano", historico) == "este ano"
+
+
+def test_periodo_recupera_assunto_apos_tentativa_anterior_recusada():
+    historico = [
+        {"role": "user", "content": "qual foi nossa receita?"},
+        {"role": "assistant", "content": gerente._PEDIDO_PERIODO},
+        {"role": "user", "content": "dos ultimos 30 dias"},
+        {"role": "assistant", "content": (
+            "Este assistente responde somente sobre vendas e indicadores da sua unidade, "
+            "reposições, estoque parado e pendências do gerente. Para outros assuntos, "
+            "procure a área responsável."
+        )},
+        {"role": "user", "content": "este ano"},
+    ]
+    assert gerente.contextualizar_periodo("este ano", historico) == (
+        "qual foi nossa receita? este ano"
+    )
 
 
 def test_instrucoes_incluem_data_atual_no_fuso_de_sao_paulo(monkeypatch):

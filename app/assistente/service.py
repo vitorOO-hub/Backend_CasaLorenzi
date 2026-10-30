@@ -203,6 +203,8 @@ def enviar_mensagem(
         )
     )
     pergunta_consulta = contextualizar(pergunta, historico) if contextualizar else pergunta
+    if pergunta_consulta != pergunta and historico and historico[-1].get("role") == "user":
+        historico = [*historico[:-1], {**historico[-1], "content": pergunta_consulta}]
     if escopo_permitido is not None and not escopo_permitido(pergunta_consulta):
         resposta = (
             "Este assistente responde somente sobre vendas e indicadores da sua unidade, "
