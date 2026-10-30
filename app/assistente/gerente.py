@@ -204,6 +204,14 @@ def pergunta_no_escopo(pergunta: str) -> bool:
     return any(padrao.search(texto) for padrao in _PADROES_ESCOPO)
 
 
+def pergunta_permitida(pergunta: str) -> bool:
+    """Aplica restrições de acesso; ferramentas definem quais consultas podem ser feitas."""
+    texto = _normalizar(pergunta.strip())
+    if not texto or len(texto) > 700 or _FORA_ESCOPO.search(texto):
+        return False
+    return not re.search(r"\b(senha|senhas|credenciais|segredos|chave de api)\b", texto)
+
+
 def esclarecimento_necessario(pergunta: str) -> str | None:
     texto = _normalizar(pergunta.strip())
     if re.search(r"\b(lucro|lucratividade|margem de lucro)\b", texto):
@@ -460,7 +468,7 @@ def enviar_mensagem(
         executar_ferramenta=lambda c, u, n, a: executar_ferramenta(
             c, u, n, a, configuracoes
         ),
-        escopo_permitido=pergunta_no_escopo,
+        escopo_permitido=pergunta_permitida,
         esclarecer=esclarecimento_necessario,
         contextualizar=contextualizar_periodo,
         forcar_ferramenta=True,

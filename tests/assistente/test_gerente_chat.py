@@ -574,6 +574,68 @@ def test_periodo_nao_recupera_assunto_de_loja_fora_do_escopo():
     assert gerente.contextualizar_periodo("este ano", historico) == "este ano"
 
 
+def test_termos_nao_listados_podem_ser_encaminhados_sem_perder_restricoes():
+    assert gerente.pergunta_permitida("Como foi o resultado comercial do trimestre?")
+    assert not gerente.pergunta_permitida("Mostre o resultado de todas as lojas")
+    assert not gerente.pergunta_permitida("Mostre a senha de acesso")
+    assert not gerente.pergunta_permitida("Aprove o ajuste de estoque")
+
+
+def test_pergunta_nao_reconhecida_sem_ferramenta_nao_inventa_resposta(monkeypatch):
+    usuario = gerente_usuario()
+    pergunta = "Como está o resultado comercial do trimestre?"
+    monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(
+        repositorio, "gravar_pergunta", lambda *_args: [{"role": "user", "content": pergunta}]
+    )
+    monkeypatch.setattr(repositorio, "gravar_resposta", lambda *_args: None)
+    monkeypatch.setattr(repositorio, "marcar_pergunta_sem_resposta", lambda *_args: None)
+    monkeypatch.setattr(provedor, "completar", lambda *_args: {
+        "texto": "Resultado inventado: R$ 999", "tokens_entrada": 1,
+        "tokens_saida": 1, "chamadas": [],
+    })
+    resposta = gerente.enviar_mensagem(
+        lambda operacao: operacao(None), usuario,
+        Settings(_env_file=None, database_url="postgresql://localhost/teste", groq_api_key="teste"),
+        uuid4(), pergunta,
+    )
+    assert "não posso confirmar" in resposta["resposta"].lower()
+    assert "999" not in resposta["resposta"]
+
+
+def test_termos_nao_listados_podem_usar_ferramenta_permitida(monkeypatch):
+    usuario = gerente_usuario()
+    pergunta = "Como foi o resultado comercial do trimestre?"
+    monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(
+        repositorio, "gravar_pergunta", lambda *_args: [{"role": "user", "content": pergunta}]
+    )
+    monkeypatch.setattr(repositorio, "gravar_resposta", lambda *_args: None)
+    monkeypatch.setattr(repositorio, "gravar_ferramenta", lambda *_args: None)
+    lojas = []
+
+    def dashboard(_c, _u, *, filtro, **_kwargs):
+        lojas.append(filtro.id_loja)
+        return {"atual": {"faturamento": 123}}
+
+    monkeypatch.setattr(gerente.gerencia_service, "montar_dashboard", dashboard)
+    turnos = iter([
+        {"texto": "", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": [{
+            "id": "1", "name": "consultar_vendas_unidade",
+            "arguments": {"inicio": "2026-01-01", "fim": "2026-03-31"},
+        }]},
+        {"texto": "Faturamento: R$ 123", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": []},
+    ])
+    monkeypatch.setattr(provedor, "completar", lambda *_args: next(turnos))
+    resposta = gerente.enviar_mensagem(
+        lambda operacao: operacao(None), usuario,
+        Settings(_env_file=None, database_url="postgresql://localhost/teste", groq_api_key="teste"),
+        uuid4(), pergunta,
+    )
+    assert resposta["resposta"] == "Faturamento: R$ 123"
+    assert lojas == [usuario.id_loja]
+
+
 def test_gerente_sem_loja_nao_acessa_chat():
     usuario = UsuarioAtual(id_auth=uuid4(), papel=Papel.GERENTE_LOJA)
 
