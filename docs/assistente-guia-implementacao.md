@@ -123,6 +123,17 @@ parado, lojas, pendências, chamados e mensagens, equipe, catálogo, clientes/fi
 vendas pendentes e totais de pontos a vencer. Toda consulta chama uma função allowlisted do servidor;
 não há SQL livre nem ferramenta de escrita. O acesso a cliente usa os serviços de escopo já existentes.
 
+O admin pode comparar as vendas das lojas por período, usando a mesma consulta do painel da rede.
+O resultado mostra até 20 lojas com maior faturamento, o total de lojas, quantas foram omitidas e
+a loja com menor faturamento. A ferramenta é exclusiva do administrador. Para perguntas sobre
+vendas sem período, o assistente pede essa informação e aceita uma resposta seguinte como
+"últimos 30 dias" ou "este ano"; o contexto fica limitado à mesma conversa.
+
+Nas perguntas que dependem de dados do sistema, o chatbot precisa concluir uma consulta antes de
+afirmar números. A data de referência é a de São Paulo. Perguntas sobre lucro recebem uma explicação
+de que esse indicador ainda não está disponível: faturamento não é lucro. Exemplos para validação:
+"Qual a receita da rede?" seguido de "este ano", e "Qual loja faturou mais nos últimos 30 dias?".
+
 Rotas do backend admin:
 
 | Método | Rota | Função |
