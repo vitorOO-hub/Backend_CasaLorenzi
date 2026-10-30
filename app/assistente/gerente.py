@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.engine import Connection
 
-from app.assistente import embeddings, service
+from app.assistente import embeddings, periodos, service
 from app.assistente.ferramentas import FerramentaInvalida
 from app.core.config import Settings
 from app.core.papeis import Papel, UsuarioAtual
@@ -176,22 +176,7 @@ _PERIODO_EXPLICITO = re.compile(
     r"julho|agosto|setembro|outubro|novembro|dezembro)\b|"
     r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b|\b\d{4}-\d{2}-\d{2}\b"
 )
-_PEDIDO_PERIODO = "Qual período você quer consultar? Informe as datas inicial e final."
-_RESPOSTA_PERIODO = re.compile(
-    r"(?:(?:d[oa]s?|n[oa]s?|em|durante|entre|nesses|nessas|esses|essas)\s+)?(?:"
-    r"(?:ultim[oa]s?|passad[oa]s?)\s+\d+\s+(?:dias?|semanas?|mes(?:es)?|anos?)|"
-    r"\d+\s+(?:dias?|semanas?|mes(?:es)?|anos?)(?:\s+(?:anteriores|passad[oa]s?))?|"
-    r"(?:est[ea]|ess[ea]|dest[ea]|dess[ea]|nest[ea]|ness[ea]|"
-    r"ultim[oa]|passad[oa])\s+(?:semana|mes|ano)|"
-    r"(?:semana|mes|ano)\s+(?:passad[oa]|atual|corrente)|"
-    r"ano\s+de\s+\d{4}|"
-    r"(?:mes\s+de\s+)?(?:janeiro|fevereiro|marco|abril|maio|junho|julho|"
-    r"agosto|setembro|outubro|novembro|dezembro)(?:\s+de\s+\d{4})?|"
-    r"hoje|ontem|anteontem|\d{4}|"
-    r"\d{1,2}/\d{1,2}(?:/\d{2,4})?(?:\s+(?:a|ate)\s+"
-    r"\d{1,2}/\d{1,2}(?:/\d{2,4})?)?"
-    r")[.!?]?"
-)
+_PEDIDO_PERIODO = periodos.PEDIDO_PERIODO
 
 
 def _normalizar(texto: str) -> str:
@@ -237,36 +222,13 @@ def esclarecimento_necessario(pergunta: str) -> str | None:
 
 def contextualizar_periodo(pergunta: str, historico: list[dict[str, Any]]) -> str:
     """Recupera a pergunta apenas após o pedido de período feito por este assistente."""
-    if len(historico) < 3 or not _RESPOSTA_PERIODO.fullmatch(_normalizar(pergunta.strip())):
-        return pergunta
-    if historico[-1].get("role") != "user" or historico[-1].get("content") != pergunta:
-        return pergunta
-    anteriores = historico[:-1]
-    recusa = "Este assistente responde somente sobre vendas e indicadores da sua unidade, "
-    while len(anteriores) >= 2:
-        resposta = anteriores[-1]
-        anterior = anteriores[-2]
-        if resposta.get("role") != "assistant" or anterior.get("role") != "user":
-            return pergunta
-        if resposta.get("content") == _PEDIDO_PERIODO:
-            break
-        texto = anterior.get("content", "")
-        if (
-            not isinstance(resposta.get("content"), str)
-            or not resposta["content"].startswith(recusa)
-            or not isinstance(texto, str)
-            or not _RESPOSTA_PERIODO.fullmatch(_normalizar(texto.strip()))
-        ):
-            return pergunta
-        anteriores = anteriores[:-2]
-    else:
-        return pergunta
-    texto_anterior = anterior.get("content", "")
-    if not isinstance(texto_anterior, str) or not pergunta_no_escopo(texto_anterior):
-        return pergunta
-    if not _ASSUNTO_VENDAS.search(_normalizar(texto_anterior)):
-        return pergunta
-    return f"{texto_anterior} {pergunta}"
+    return periodos.contextualizar(
+        pergunta,
+        historico,
+        aceitar_assunto=lambda texto: bool(
+            pergunta_no_escopo(texto) and _ASSUNTO_VENDAS.search(_normalizar(texto))
+        ),
+    )
 
 
 def _validar_argumentos(nome: str, argumentos: dict[str, Any]) -> None:
