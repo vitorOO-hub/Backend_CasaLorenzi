@@ -394,6 +394,8 @@ def test_ganhos_ambiguos_pedem_esclarecimento_sem_assumir_lucro(monkeypatch):
         ("qual foi a receita?", "ano passado"),
         ("Quanto vendemos?", "no mês de outubro"),
         ("Quanto faturamos?", "nesses últimos 30 dias"),
+        ("Quanto faturamos?", "deste ano"),
+        ("Qual foi a receita?", "do ano de 2026"),
     ],
 )
 def test_resposta_de_periodo_continua_consulta_de_vendas(monkeypatch, assunto, periodo):
