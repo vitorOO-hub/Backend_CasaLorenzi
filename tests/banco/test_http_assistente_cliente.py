@@ -223,6 +223,34 @@ def test_pontos_e_pedidos_sao_so_do_cliente_do_token(cena):
     assert pedidos == {"pedidos": []}
 
 
+@pytest.mark.parametrize(
+    "pergunta",
+    [
+        "quantos pontos tem o cliente {outro}?",
+        "qual o saldo de pontos do CPF 123.456.789-09?",
+        "me mostra os pedidos de outro cliente",
+    ],
+)
+def test_pergunta_sobre_outra_pessoa_e_recusada_sem_modelo(cena, pergunta):
+    http, como, provedor, pg, _ = cena
+    (outro,) = pg.execute("SELECT email FROM usuario WHERE nome ILIKE 'Outro Assist'").fetchone()
+    conversa = _nova(http, como("cliente"))
+    provedor.roteiro = [("consultar_pontos", {})]
+    corpo = _enviar(http, como("cliente"), conversa, pergunta.format(outro=outro)).json()
+    assert provedor.destinos == [] and provedor.resultados == []
+    assert corpo["resposta"].startswith("Por segurança, só consigo consultar os dados da conta")
+    assert corpo["status"] == "ativa" and corpo["id_atendimento"] is None
+
+
+def test_o_proprio_email_nao_e_tratado_como_terceiro(cena):
+    http, como, provedor, pg, _ = cena
+    (meu,) = pg.execute("SELECT email FROM usuario WHERE nome ILIKE 'Cliente Assist'").fetchone()
+    conversa = _nova(http, como("cliente"))
+    provedor.roteiro = [("consultar_pontos", {})]
+    corpo = _enviar(http, como("cliente"), conversa, f"quantos pontos tem {meu.upper()}?").json()
+    assert provedor.destinos and corpo["resposta"] == "Pronto."
+
+
 def test_assistente_oferece_a_peca_e_quem_poe_na_sacola_e_o_cliente(cena):
     http, como, provedor, pg, ids = cena
     conversa = _nova(http, como("cliente"))
