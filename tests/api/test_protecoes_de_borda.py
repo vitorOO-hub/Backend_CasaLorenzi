@@ -218,6 +218,41 @@ def test_app_aplica_limite_cabecalhos_e_cors_juntos():
     assert r.headers["x-content-type-options"] == "nosniff"
 
 
+def test_cors_aceita_urls_de_branch_e_de_deploy_do_projeto_na_vercel_e_so_elas():
+    cliente = TestClient(
+        criar_app(
+            Settings(
+                _env_file=None,
+                database_url=DATABASE_URL_TESTE,
+                cors_origins=["https://projetocasalorenzi.vercel.app"],
+            )
+        )
+    )
+
+    def preflight(origem: str):
+        return cliente.options(
+            "/api/v1/cliente/chamados",
+            headers={
+                "Origin": origem,
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "authorization",
+            },
+        )
+
+    for ok in (
+        "https://projetocasalorenzi.vercel.app",
+        "https://projetocasalorenzi-git-main-vitor-s-projectss.vercel.app",
+        "https://projetocasalorenzi-jdz8cvb2c-vitor-s-projectss.vercel.app",
+    ):
+        assert preflight(ok).headers["access-control-allow-origin"] == ok
+    for nao in (
+        "https://projetocasalorenzi-git-main-outro-time.vercel.app",
+        "https://projetocasalorenzi.vercel.app.evil.com",
+        "https://evil.vercel.app",
+    ):
+        assert preflight(nao).status_code == 400
+
+
 def test_app_comprime_respostas_grandes_quando_cliente_aceita_gzip():
     app = criar_app(Settings(_env_file=None, database_url=DATABASE_URL_TESTE))
     assert any(middleware.cls is GZipMiddleware for middleware in app.user_middleware)

@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # Teto de e-mails por disparo diario (o Gmail limita os envios por dia).
     emails_por_disparo: int = 200
     cors_origins: Annotated[list[str], NoDecode] = []
+    # URLs de branch e de deploy do front na Vercel (projetocasalorenzi-git-main-..., -abc123-...)
+    # tambem podem chamar a API; so as do time do projeto. Vazio (CORS_ORIGIN_REGEX=) desliga.
+    cors_origin_regex: str | None = (
+        r"^https://projetocasalorenzi(-[a-z0-9]+)*-vitor-s-projectss\.vercel\.app$"
+    )
     # /docs, /redoc e /openapi.json mostram o mapa inteiro da API: so ligam de proposito (dev).
     docs_habilitadas: bool = False
     # Limite de requisicoes por minuto (ver app/core/protecoes.py). Desligar so em teste.
