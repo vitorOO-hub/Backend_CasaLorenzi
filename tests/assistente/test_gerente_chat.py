@@ -411,7 +411,7 @@ def test_resposta_de_periodo_continua_consulta_de_vendas(monkeypatch, assunto, p
 
     def dashboard(_conexao, _usuario, *, inicio, fim, filtro):
         consultado.update(inicio=inicio, fim=fim, loja=filtro.id_loja)
-        return {"faturamento": 123}
+        return {"atual": {"faturamento": 123}}
 
     monkeypatch.setattr(gerente.gerencia_service, "montar_dashboard", dashboard)
     turnos = iter([
@@ -465,6 +465,32 @@ def test_periodo_recupera_assunto_apos_tentativa_anterior_recusada():
     assert gerente.contextualizar_periodo("este ano", historico) == (
         "qual foi nossa receita? este ano"
     )
+
+
+@pytest.mark.parametrize("detalhe", ["resumo", "pecas_mais_vendidas", "marcas"])
+def test_vendas_enviam_ao_modelo_apenas_detalhe_solicitado(monkeypatch, detalhe):
+    usuario = gerente_usuario()
+    dashboard = {
+        "periodo": {"inicio": "2026-01-01", "fim": "2026-10-30"},
+        "atual": {"faturamento": 123},
+        "anterior": {"faturamento": 100},
+        "escopo": {"id_loja": str(usuario.id_loja)},
+        "serie_diaria": [{"data": str(i), "descricao": "x" * 100} for i in range(365)],
+        "pecas_mais_vendidas": [{"nome": "Camisa", "unidades": 4}],
+        "marcas": [{"marca": "A", "faturamento": 123}],
+        "opcoes": {"marcas": ["x" * 100 for _ in range(100)]},
+    }
+    monkeypatch.setattr(gerente.gerencia_service, "montar_dashboard", lambda *_a, **_k: dashboard)
+    resultado = gerente.executar_ferramenta(
+        None, usuario, "consultar_vendas_unidade",
+        {"inicio": "2026-01-01", "fim": "2026-10-30", "detalhe": detalhe},
+    )
+    assert resultado["atual"]["faturamento"] == 123
+    assert "opcoes" not in resultado
+    assert "serie_diaria" not in resultado
+    if detalhe != "resumo":
+        assert resultado[detalhe] == dashboard[detalhe]
+    assert "aviso" not in service._json_para_modelo(resultado)[0]
 
 
 def test_instrucoes_incluem_data_atual_no_fuso_de_sao_paulo(monkeypatch):
