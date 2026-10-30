@@ -29,6 +29,8 @@ def gerente_usuario(loja=None):
         "Qual foi o movimento por dia na semana passada?",
         "Qual o saldo em estoque da camiseta?",
         "Quais peças estão esgotadas?",
+        "Quantos ajustes estão pendentes para aprovar?",
+        "Mostre as movimentações de estoque",
     ],
 )
 def test_pergunta_de_funcionalidade_do_gerente_e_permitida(pergunta):
@@ -53,6 +55,7 @@ def test_ferramentas_do_gerente_nao_expoem_ferramentas_admin():
     nomes = {ferramenta["name"] for ferramenta in gerente.FERRAMENTAS}
 
     assert nomes == {
+        "consultar_movimentacoes_unidade",
         "consultar_saldo_unidade",
         "consultar_vendas_unidade",
         "consultar_reposicao_unidade",
@@ -84,6 +87,30 @@ def test_saldo_usa_loja_autenticada_e_rejeita_outra_loja(monkeypatch):
     with pytest.raises(FerramentaInvalida):
         gerente.executar_ferramenta(
             None, usuario, "consultar_saldo_unidade", {"id_loja": str(uuid4())}
+        )
+
+
+def test_movimentacoes_usam_loja_do_token(monkeypatch):
+    usuario = gerente_usuario()
+    recebido = {}
+
+    def filtro(_conexao, _usuario, **kwargs):
+        recebido.update(kwargs)
+        return "filtro"
+
+    monkeypatch.setattr(gerente.estoque_service, "filtro_de_movimentacoes", filtro)
+    monkeypatch.setattr(
+        gerente.estoque_service, "montar_movimentacoes",
+        lambda _c, _f, **_k: {"total": 0, "itens": []},
+    )
+    gerente.executar_ferramenta(
+        None, usuario, "consultar_movimentacoes_unidade", {"tipo": "entrada"}
+    )
+    assert recebido["id_loja"] == usuario.id_loja
+    assert recebido["grupo"] == "entrada"
+    with pytest.raises(FerramentaInvalida):
+        gerente.executar_ferramenta(
+            None, usuario, "consultar_movimentacoes_unidade", {"id_loja": str(uuid4())}
         )
 
 

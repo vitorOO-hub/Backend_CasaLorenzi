@@ -21,7 +21,8 @@ from app.painel_estoque.repositorio import FiltroSaldo
 TIPO_CONVERSA = "interno_gerente"
 INSTRUCOES = """Você é o assistente interno do gerente de uma unidade da Casa Lorenzi.
 Responda somente sobre as consultas disponíveis: vendas e indicadores da própria unidade,
-reposição, saldo de estoque, estoque parado, pendências gerenciais e resumo da própria loja. Use as ferramentas
+reposição, saldo e movimentações de estoque, estoque parado, pendências gerenciais e resumo da
+própria loja. Use as ferramentas
 para confirmar dados atuais e baseie afirmações exclusivamente nos resultados retornados.
 O escopo da unidade vem do sistema; não tente consultar ou comparar outras lojas. Não invente,
 estime nem complete dados ausentes. Se não houver evidência, diga que não pode confirmar e indique
@@ -32,6 +33,23 @@ resultados são limitados a produtos com estoque registrado na unidade do gerent
 Responda em português."""
 
 FERRAMENTAS: list[dict[str, Any]] = [
+    {
+        "name": "consultar_movimentacoes_unidade",
+        "description": (
+            "Consulta o histórico de entradas, saídas, ajustes e transferências "
+            "de estoque da unidade."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tipo": {"type": "string", "enum": ["entrada", "saida", "ajuste", "transferencia"]},
+                "sku": {"type": "string", "maxLength": 60},
+                "de": {"type": "string", "format": "date"},
+                "ate": {"type": "string", "format": "date"},
+            },
+            "additionalProperties": False,
+        },
+    },
     {
         "name": "consultar_saldo_unidade",
         "description": "Consulta saldo atual por peça, estoque baixo e peças esgotadas da unidade.",
@@ -109,8 +127,12 @@ FERRAMENTAS: list[dict[str, Any]] = [
 ]
 
 _PADROES_ESCOPO = (
-    re.compile(r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas|mais vendid[oa]s?|marcas?|movimento|desempenho)\b"),
+    re.compile(
+        r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas|"
+        r"mais vendid[oa]s?|marcas?|movimento|desempenho)\b"
+    ),
     re.compile(r"\b(estoque|saldo|esgotad[oa]s?|disponibilidade)\b"),
+    re.compile(r"\b(movimentacoes?|entradas?|saidas?)\b.*\b(estoque|pecas?|produtos?|sku)\b"),
     re.compile(r"\b(reposicao|repor|reabastecer|estoque baixo|giro de estoque|cobertura)\b"),
     re.compile(
         r"\b(estoque parado|parad[oa]s? no estoque|sem venda|sem vender|"
@@ -125,11 +147,12 @@ _FORA_ESCOPO = re.compile(
     r"pontos|fidelidade|outras lojas|outra loja|todas as lojas|todas as unidades|"
     r"outras unidades|outra unidade|rede inteira|toda a rede|rede toda|da rede|na rede|"
     r"comparar lojas|compare lojas|"
-    r"aprovar|aprove|recusar|altere|alterar|edite|editar|exclua|excluir|"
+    r"(?<!para )aprovar|aprove|recusar|altere|alterar|edite|editar|exclua|excluir|"
     r"crie|criar|lance|importar|execute|executar)\b"
 )
 _ASSUNTO_VENDAS = re.compile(
-    r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas|mais vendid[oa]s?|marcas?|movimento|desempenho)\b"
+    r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas|"
+    r"mais vendid[oa]s?|marcas?|desempenho)\b"
 )
 _PERIODO_EXPLICITO = re.compile(
     r"\b(20\d{2}|hoje|ontem|semana|mes|mensal|ano|anual|periodo|"
@@ -197,6 +220,15 @@ def executar_ferramenta(
         raise FerramentaInvalida("Consulta exclusiva do gerente de loja")
     _validar_argumentos(nome, argumentos)
     filtro = Filtro(id_loja=usuario.id_loja, categoria=argumentos.get("categoria"))
+
+    if nome == "consultar_movimentacoes_unidade":
+        de = date.fromisoformat(argumentos["de"]) if argumentos.get("de") else None
+        ate = date.fromisoformat(argumentos["ate"]) if argumentos.get("ate") else None
+        filtro_movimentos = estoque_service.filtro_de_movimentacoes(
+            conexao, usuario, id_loja=usuario.id_loja, grupo=argumentos.get("tipo"),
+            sku=argumentos.get("sku"), de=de, ate=ate,
+        )
+        return estoque_service.montar_movimentacoes(conexao, filtro_movimentos, limit=20, offset=0)
 
     if nome == "consultar_saldo_unidade":
         filtro_saldo = FiltroSaldo(
