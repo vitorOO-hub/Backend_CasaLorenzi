@@ -2,9 +2,10 @@
 
 import re
 import unicodedata
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.engine import Connection
 
@@ -414,7 +415,11 @@ def enviar_mensagem(
         pergunta,
         papel=Papel.GERENTE_LOJA,
         tipo_conversa=TIPO_CONVERSA,
-        instrucoes=INSTRUCOES,
+        instrucoes=(
+            INSTRUCOES + "\nData atual em São Paulo: "
+            + datetime.now(ZoneInfo("America/Sao_Paulo")).date().isoformat()
+            + ". Use esta data como referência para períodos relativos."
+        ),
         ferramentas_disponiveis=FERRAMENTAS,
         executar_ferramenta=lambda c, u, n, a: executar_ferramenta(
             c, u, n, a, configuracoes

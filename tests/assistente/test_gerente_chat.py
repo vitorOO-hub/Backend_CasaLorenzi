@@ -427,6 +427,24 @@ def test_periodo_nao_herda_assunto_sem_pedido_explicito_do_assistente():
     assert gerente.contextualizar_periodo("este ano", historico) == "este ano"
 
 
+def test_instrucoes_incluem_data_atual_no_fuso_de_sao_paulo(monkeypatch):
+    from datetime import datetime
+
+    class Relogio:
+        @staticmethod
+        def now(fuso):
+            assert str(fuso) == "America/Sao_Paulo"
+            return datetime(2026, 10, 30)
+
+    capturado = {}
+    monkeypatch.setattr(gerente, "datetime", Relogio)
+    monkeypatch.setattr(
+        gerente.service, "enviar_mensagem", lambda *_args, **kwargs: capturado.update(kwargs)
+    )
+    gerente.enviar_mensagem(None, gerente_usuario(), None, uuid4(), "faturamento deste ano")
+    assert "Data atual em São Paulo: 2026-10-30" in capturado["instrucoes"]
+
+
 def test_gerente_sem_loja_nao_acessa_chat():
     usuario = UsuarioAtual(id_auth=uuid4(), papel=Papel.GERENTE_LOJA)
 
