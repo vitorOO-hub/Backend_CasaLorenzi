@@ -511,6 +511,69 @@ def test_instrucoes_incluem_data_atual_no_fuso_de_sao_paulo(monkeypatch):
     assert "Data atual em São Paulo: 2026-10-30" in capturado["instrucoes"]
 
 
+@pytest.mark.parametrize(
+    "mensagens",
+    [
+        ["qual foi nossa receita?", "dos ultimos 30 dias"],
+        ["quanto ganhamos de dinheiro esse ano?", "faturamento", "este ano"],
+    ],
+)
+def test_conversa_completa_lembra_assunto_apos_pedir_periodo(monkeypatch, mensagens):
+    usuario = gerente_usuario()
+    conversa = uuid4()
+    historico = []
+    consultas = []
+
+    def gravar_pergunta(_c, id_conversa, _id_usuario, texto, _tipo):
+        assert id_conversa == conversa
+        historico.append({"role": "user", "content": texto})
+        return historico.copy()
+
+    def gravar_resposta(_c, id_conversa, texto, *_args):
+        assert id_conversa == conversa
+        historico.append({"role": "assistant", "content": texto})
+
+    monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(repositorio, "gravar_pergunta", gravar_pergunta)
+    monkeypatch.setattr(repositorio, "gravar_resposta", gravar_resposta)
+    monkeypatch.setattr(repositorio, "gravar_ferramenta", lambda *_args: None)
+
+    def dashboard(_c, _u, *, inicio, fim, filtro):
+        consultas.append((inicio, fim, filtro.id_loja))
+        return {"atual": {"faturamento": 123}}
+
+    monkeypatch.setattr(gerente.gerencia_service, "montar_dashboard", dashboard)
+    turnos = iter([
+        {"texto": "", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": [{
+            "id": "1", "name": "consultar_vendas_unidade",
+            "arguments": {"inicio": "2026-01-01", "fim": "2026-01-31"},
+        }]},
+        {"texto": "Faturamento: R$ 123", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": []},
+    ])
+    monkeypatch.setattr(provedor, "completar", lambda *_args: next(turnos))
+    config = Settings(
+        _env_file=None, database_url="postgresql://localhost/teste",
+        groq_api_key="teste", gemini_api_key="teste",
+    )
+    respostas = [
+        gerente.enviar_mensagem(lambda operacao: operacao(None), usuario, config, conversa, texto)
+        for texto in mensagens
+    ]
+    assert "Qual período" in respostas[-2]["resposta"]
+    assert respostas[-1]["resposta"] == "Faturamento: R$ 123"
+    assert len(consultas) == 1
+    assert consultas[0][2] == usuario.id_loja
+
+
+def test_periodo_nao_recupera_assunto_de_loja_fora_do_escopo():
+    historico = [
+        {"role": "user", "content": "faturamento de todas as lojas?"},
+        {"role": "assistant", "content": gerente._PEDIDO_PERIODO},
+        {"role": "user", "content": "este ano"},
+    ]
+    assert gerente.contextualizar_periodo("este ano", historico) == "este ano"
+
+
 def test_gerente_sem_loja_nao_acessa_chat():
     usuario = UsuarioAtual(id_auth=uuid4(), papel=Papel.GERENTE_LOJA)
 
