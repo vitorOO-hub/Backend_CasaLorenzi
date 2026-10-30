@@ -358,6 +358,24 @@ def test_pergunta_sobre_lucro_explica_limitacao_sem_inventar_valor(monkeypatch):
     assert "diferente de faturamento" in resposta["resposta"]
 
 
+def test_ganhos_ambiguos_pedem_esclarecimento_sem_assumir_lucro(monkeypatch):
+    usuario = gerente_usuario()
+    monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(repositorio, "gravar_pergunta", lambda *_args: [])
+    monkeypatch.setattr(repositorio, "gravar_resposta", lambda *_args: None)
+    monkeypatch.setattr(
+        provedor, "completar",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("não deveria chamar o provedor")),
+    )
+    resposta = gerente.enviar_mensagem(
+        lambda operacao: operacao(None), usuario,
+        Settings(_env_file=None, database_url="postgresql://localhost/teste"),
+        uuid4(), "quanto ganhamos de dinheiro esse ano?",
+    )
+    assert "faturamento ou o lucro" in resposta["resposta"]
+    assert "lucro ainda não está disponível" in resposta["resposta"]
+
+
 def test_gerente_sem_loja_nao_acessa_chat():
     usuario = UsuarioAtual(id_auth=uuid4(), papel=Papel.GERENTE_LOJA)
 

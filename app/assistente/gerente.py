@@ -127,6 +127,7 @@ FERRAMENTAS: list[dict[str, Any]] = [
 ]
 
 _PADROES_ESCOPO = (
+    re.compile(r"\b(ganhamos|ganhou|ganho|ganhos)\b.*\b(dinheiro|ano|mes|semana|periodo)\b"),
     re.compile(r"\b(lucro|lucratividade|margem de lucro)\b"),
     re.compile(
         r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas|"
@@ -182,6 +183,14 @@ def esclarecimento_necessario(pergunta: str) -> str | None:
             "Ainda não consigo consultar o lucro da loja: o painel não disponibiliza esse "
             "indicador. Lucro é diferente de faturamento, pois depende também dos custos e "
             "despesas. Posso consultar o faturamento no período desejado."
+        )
+    if re.search(r"\b(ganhamos|ganhou|ganho|ganhos)\b", texto) and not re.search(
+        r"\b(faturamento|receita|vendas?)\b", texto
+    ):
+        return (
+            "Você quer saber o faturamento ou o lucro da loja nesse período? "
+            "Consigo consultar o faturamento; o lucro ainda não está disponível no painel."
+            " Para consultar o faturamento, informe o período novamente."
         )
     if _ASSUNTO_VENDAS.search(texto) and not _PERIODO_EXPLICITO.search(texto):
         return "Qual período você quer consultar? Informe as datas inicial e final."
