@@ -131,7 +131,8 @@ _PADROES_ESCOPO = (
     re.compile(r"\b(ganhamos|ganhou|ganho|ganhos)\b.*\b(dinheiro|ano|mes|semana|periodo)\b"),
     re.compile(r"\b(lucro|lucratividade|margem de lucro)\b"),
     re.compile(
-        r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas|"
+        r"\b(vendas?|vendemos|vendeu|venderam|faturamos|faturou|faturamento|"
+        r"receita|ticket medio|pedidos|pecas vendidas|"
         r"mais vendid[oa]s?|marcas?|movimento|desempenho)\b"
     ),
     re.compile(r"\b(estoque|saldo|esgotad[oa]s?|disponibilidade)\b"),
@@ -154,7 +155,8 @@ _FORA_ESCOPO = re.compile(
     r"crie|criar|lance|importar|execute|executar)\b"
 )
 _ASSUNTO_VENDAS = re.compile(
-    r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas|"
+    r"\b(vendas?|vendemos|vendeu|venderam|faturamos|faturou|faturamento|"
+    r"receita|ticket medio|pedidos|pecas vendidas|"
     r"mais vendid[oa]s?|marcas?|desempenho)\b"
 )
 _PERIODO_EXPLICITO = re.compile(
@@ -165,11 +167,13 @@ _PERIODO_EXPLICITO = re.compile(
 )
 _PEDIDO_PERIODO = "Qual período você quer consultar? Informe as datas inicial e final."
 _RESPOSTA_PERIODO = re.compile(
-    r"(?:(?:d[oa]s?|n[oa]s?|em|durante|entre)\s+)?(?:"
+    r"(?:(?:d[oa]s?|n[oa]s?|em|durante|entre|nesses|nessas|esses|essas)\s+)?(?:"
     r"(?:ultim[oa]s?|passad[oa]s?)\s+\d+\s+(?:dias?|semanas?|mes(?:es)?|anos?)|"
     r"\d+\s+(?:dias?|semanas?|mes(?:es)?|anos?)(?:\s+(?:anteriores|passad[oa]s?))?|"
     r"(?:est[ea]|ess[ea]|nest[ea]|ness[ea]|ultim[oa]|passad[oa])\s+(?:semana|mes|ano)|"
     r"(?:semana|mes|ano)\s+(?:passad[oa]|atual|corrente)|"
+    r"(?:mes\s+de\s+)?(?:janeiro|fevereiro|marco|abril|maio|junho|julho|"
+    r"agosto|setembro|outubro|novembro|dezembro)(?:\s+de\s+\d{4})?|"
     r"hoje|ontem|anteontem|\d{4}|"
     r"\d{1,2}/\d{1,2}(?:/\d{2,4})?(?:\s+(?:a|ate)\s+"
     r"\d{1,2}/\d{1,2}(?:/\d{2,4})?)?"

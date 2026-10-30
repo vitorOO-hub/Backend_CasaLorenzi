@@ -31,6 +31,9 @@ def gerente_usuario(loja=None):
         "Quais peças estão esgotadas?",
         "Quantos ajustes estão pendentes para aprovar?",
         "Mostre as movimentações de estoque",
+        "Quanto vendemos neste mês?",
+        "Quanto a loja faturou neste ano?",
+        "Quanto vendeu a loja na semana passada?",
     ],
 )
 def test_pergunta_de_funcionalidade_do_gerente_e_permitida(pergunta):
@@ -340,6 +343,12 @@ def test_consulta_de_vendas_sem_periodo_pede_esclarecimento_sem_chamar_provedor(
     assert "Qual período" in resposta["resposta"]
 
 
+def test_pergunta_em_linguagem_natural_sobre_vendas_pede_periodo():
+    pergunta = "Quanto a loja vendeu?"
+    assert gerente.pergunta_no_escopo(pergunta)
+    assert gerente.esclarecimento_necessario(pergunta) == gerente._PEDIDO_PERIODO
+
+
 def test_pergunta_sobre_lucro_explica_limitacao_sem_inventar_valor(monkeypatch):
     usuario = gerente_usuario()
     monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
@@ -383,6 +392,8 @@ def test_ganhos_ambiguos_pedem_esclarecimento_sem_assumir_lucro(monkeypatch):
         ("faturamento", "este ano"),
         ("qual foi o faturamento?", "nos últimos 30 dias"),
         ("qual foi a receita?", "ano passado"),
+        ("Quanto vendemos?", "no mês de outubro"),
+        ("Quanto faturamos?", "nesses últimos 30 dias"),
     ],
 )
 def test_resposta_de_periodo_continua_consulta_de_vendas(monkeypatch, assunto, periodo):
