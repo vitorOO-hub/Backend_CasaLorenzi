@@ -127,6 +127,7 @@ FERRAMENTAS: list[dict[str, Any]] = [
 ]
 
 _PADROES_ESCOPO = (
+    re.compile(r"\b(lucro|lucratividade|margem de lucro)\b"),
     re.compile(
         r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas|"
         r"mais vendid[oa]s?|marcas?|movimento|desempenho)\b"
@@ -176,6 +177,12 @@ def pergunta_no_escopo(pergunta: str) -> bool:
 
 def esclarecimento_necessario(pergunta: str) -> str | None:
     texto = _normalizar(pergunta.strip())
+    if re.search(r"\b(lucro|lucratividade|margem de lucro)\b", texto):
+        return (
+            "Ainda não consigo consultar o lucro da loja: o painel não disponibiliza esse "
+            "indicador. Lucro é diferente de faturamento, pois depende também dos custos e "
+            "despesas. Posso consultar o faturamento no período desejado."
+        )
     if _ASSUNTO_VENDAS.search(texto) and not _PERIODO_EXPLICITO.search(texto):
         return "Qual período você quer consultar? Informe as datas inicial e final."
     return None
