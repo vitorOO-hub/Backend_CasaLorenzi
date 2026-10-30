@@ -105,6 +105,18 @@ estoque na loja do token; não há acesso do gerente à ferramenta de catálogo 
 `GEMINI_API_KEY` é usada somente no servidor para gerar o vetor da consulta; os embeddings dos produtos
 são compartilhados com o chatbot admin e não precisam ser gerados novamente.
 
+O assistente do gerente também consulta saldo e movimentações da própria unidade. As ferramentas
+são somente de leitura e o identificador da loja vem do usuário autenticado, não do modelo. Uma
+pergunta que não corresponda às palavras reconhecidas pode ser analisada pelo modelo, mas pedidos
+explicitamente proibidos continuam bloqueados e uma resposta com dados exige uma consulta concluída.
+
+Quando o assistente pede o período de uma consulta de vendas, uma resposta curta como "este ano"
+ou "últimos 30 dias" retoma o assunto anterior da mesma conversa. A data de referência é a de São
+Paulo. A ferramenta de vendas retorna os totais e o período anterior; séries, peças, marcas e
+movimento semanal são enviados somente quando solicitados pelo modelo. Listas truncadas não devem
+ser tratadas como completas. Lucro não está disponível no dashboard e não deve ser confundido com
+faturamento.
+
 O chatbot administrativo foi separado das consultas de gerente e só aceita `Papel.ADMIN`. Ele pode
 consultar vendas, estoque/saldo, movimentações, ajustes, transferências, mínimos, reposição, estoque
 parado, lojas, pendências, chamados e mensagens, equipe, catálogo, clientes/fichas, auditoria, integrações,
