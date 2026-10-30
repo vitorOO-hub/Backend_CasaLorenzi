@@ -22,7 +22,8 @@ CONSULTA_SISTEMA = re.compile(
     r"estoque|reposicao|movimentacoes?|ajustes?|transferencias?|pendencias?|"
     r"clientes?|equipe|funcionarios?|usuarios?|lojas?|unidades?|rede|"
     r"pontos?|fidelidade|chamados?|catalogo|produtos?|pecas?|marcas?|"
-    r"financeiro|precos?|ticket|caixa|auditoria|integracoes?)\b"
+    r"financeiro|precos?|ticket|caixa|auditoria|integracoes?|cpf|email|telefone|"
+    r"documentos?|contatos?|gerentes?|cargos?)\b"
 )
 
 

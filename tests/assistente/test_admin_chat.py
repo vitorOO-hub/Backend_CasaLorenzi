@@ -144,6 +144,14 @@ def test_admin_exige_consulta_antes_de_afirmar_dados(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    "pergunta",
+    ["Qual o CPF de Maria?", "Qual o telefone de João?", "Quem é o gerente?"],
+)
+def test_admin_exige_ferramenta_para_dados_pessoais_e_equipe(pergunta):
+    assert assistente_admin.exige_ferramenta(pergunta)
+
+
+@pytest.mark.parametrize(
     "mensagens",
     [
         ["qual a receita da rede?", "dos ultimos 30 dias"],

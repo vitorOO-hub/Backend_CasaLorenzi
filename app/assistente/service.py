@@ -2,6 +2,7 @@
 
 import json
 import unicodedata
+from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
@@ -196,7 +197,7 @@ def enviar_mensagem(
     escopo_permitido=None,
     esclarecer=None,
     contextualizar=None,
-    forcar_ferramenta: bool = False,
+    forcar_ferramenta: bool | Callable[[str], bool] = False,
 ) -> dict[str, Any]:
     id_usuario = executar_db(lambda c: _id_usuario(c, usuario, papel))
     historico = executar_db(
