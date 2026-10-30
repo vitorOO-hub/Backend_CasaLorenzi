@@ -15,11 +15,14 @@ from app.core.papeis import Papel, UsuarioAtual
 from app.gerencia import repositorio as gerencia_repositorio
 from app.gerencia import service as gerencia_service
 from app.gerencia.repositorio import Filtro
+from app.painel_estoque import service as estoque_service
+from app.painel_estoque.repositorio import FiltroSaldo
 
 TIPO_CONVERSA = "interno_gerente"
 INSTRUCOES = """Você é o assistente interno do gerente de uma unidade da Casa Lorenzi.
 Responda somente sobre as consultas disponíveis: vendas e indicadores da própria unidade,
-reposição, estoque parado, pendências gerenciais e resumo da própria loja. Use as ferramentas
+reposição, saldo e movimentações de estoque, estoque parado, pendências gerenciais e resumo da
+própria loja. Use as ferramentas
 para confirmar dados atuais e baseie afirmações exclusivamente nos resultados retornados.
 O escopo da unidade vem do sistema; não tente consultar ou comparar outras lojas. Não invente,
 estime nem complete dados ausentes. Se não houver evidência, diga que não pode confirmar e indique
@@ -31,9 +34,40 @@ Responda em português."""
 
 FERRAMENTAS: list[dict[str, Any]] = [
     {
+        "name": "consultar_movimentacoes_unidade",
+        "description": (
+            "Consulta o histórico de entradas, saídas, ajustes e transferências "
+            "de estoque da unidade."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tipo": {"type": "string", "enum": ["entrada", "saida", "ajuste", "transferencia"]},
+                "sku": {"type": "string", "maxLength": 60},
+                "de": {"type": "string", "format": "date"},
+                "ate": {"type": "string", "format": "date"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "consultar_saldo_unidade",
+        "description": "Consulta saldo atual por peça, estoque baixo e peças esgotadas da unidade.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "busca": {"type": "string", "maxLength": 80},
+                "categoria": {"type": "string", "maxLength": 80},
+                "situacao": {"type": "string", "enum": ["ok", "baixo", "esgotado"]},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "consultar_vendas_unidade",
         "description": (
-            "Consulta indicadores de venda da unidade do gerente em um período. "
+            "Consulta faturamento, pedidos, peças vendidas, ticket médio, evolução diária, "
+            "movimento por dia da semana, peças mais vendidas e marcas em um período. "
             "Datas no formato AAAA-MM-DD. A unidade é obtida do usuário autenticado."
         ),
         "parameters": {
@@ -93,7 +127,14 @@ FERRAMENTAS: list[dict[str, Any]] = [
 ]
 
 _PADROES_ESCOPO = (
-    re.compile(r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas)\b"),
+    re.compile(r"\b(ganhamos|ganhou|ganho|ganhos)\b.*\b(dinheiro|ano|mes|semana|periodo)\b"),
+    re.compile(r"\b(lucro|lucratividade|margem de lucro)\b"),
+    re.compile(
+        r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas|"
+        r"mais vendid[oa]s?|marcas?|movimento|desempenho)\b"
+    ),
+    re.compile(r"\b(estoque|saldo|esgotad[oa]s?|disponibilidade)\b"),
+    re.compile(r"\b(movimentacoes?|entradas?|saidas?)\b.*\b(estoque|pecas?|produtos?|sku)\b"),
     re.compile(r"\b(reposicao|repor|reabastecer|estoque baixo|giro de estoque|cobertura)\b"),
     re.compile(
         r"\b(estoque parado|parad[oa]s? no estoque|sem venda|sem vender|"
@@ -108,11 +149,12 @@ _FORA_ESCOPO = re.compile(
     r"pontos|fidelidade|outras lojas|outra loja|todas as lojas|todas as unidades|"
     r"outras unidades|outra unidade|rede inteira|toda a rede|rede toda|da rede|na rede|"
     r"comparar lojas|compare lojas|"
-    r"aprovar|aprove|recusar|altere|alterar|edite|editar|exclua|excluir|"
+    r"(?<!para )aprovar|aprove|recusar|altere|alterar|edite|editar|exclua|excluir|"
     r"crie|criar|lance|importar|execute|executar)\b"
 )
 _ASSUNTO_VENDAS = re.compile(
-    r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas)\b"
+    r"\b(vendas?|faturamento|receita|ticket medio|pedidos|pecas vendidas|"
+    r"mais vendid[oa]s?|marcas?|desempenho)\b"
 )
 _PERIODO_EXPLICITO = re.compile(
     r"\b(20\d{2}|hoje|ontem|semana|mes|mensal|ano|anual|periodo|"
@@ -136,6 +178,20 @@ def pergunta_no_escopo(pergunta: str) -> bool:
 
 def esclarecimento_necessario(pergunta: str) -> str | None:
     texto = _normalizar(pergunta.strip())
+    if re.search(r"\b(lucro|lucratividade|margem de lucro)\b", texto):
+        return (
+            "Ainda não consigo consultar o lucro da loja: o painel não disponibiliza esse "
+            "indicador. Lucro é diferente de faturamento, pois depende também dos custos e "
+            "despesas. Posso consultar o faturamento no período desejado."
+        )
+    if re.search(r"\b(ganhamos|ganhou|ganho|ganhos)\b", texto) and not re.search(
+        r"\b(faturamento|receita|vendas?)\b", texto
+    ):
+        return (
+            "Você quer saber o faturamento ou o lucro da loja nesse período? "
+            "Consigo consultar o faturamento; o lucro ainda não está disponível no painel."
+            " Para consultar o faturamento, informe o período novamente."
+        )
     if _ASSUNTO_VENDAS.search(texto) and not _PERIODO_EXPLICITO.search(texto):
         return "Qual período você quer consultar? Informe as datas inicial e final."
     return None
@@ -180,6 +236,28 @@ def executar_ferramenta(
         raise FerramentaInvalida("Consulta exclusiva do gerente de loja")
     _validar_argumentos(nome, argumentos)
     filtro = Filtro(id_loja=usuario.id_loja, categoria=argumentos.get("categoria"))
+
+    if nome == "consultar_movimentacoes_unidade":
+        de = date.fromisoformat(argumentos["de"]) if argumentos.get("de") else None
+        ate = date.fromisoformat(argumentos["ate"]) if argumentos.get("ate") else None
+        filtro_movimentos = estoque_service.filtro_de_movimentacoes(
+            conexao, usuario, id_loja=usuario.id_loja, grupo=argumentos.get("tipo"),
+            sku=argumentos.get("sku"), de=de, ate=ate,
+        )
+        return estoque_service.montar_movimentacoes(conexao, filtro_movimentos, limit=20, offset=0)
+
+    if nome == "consultar_saldo_unidade":
+        filtro_saldo = FiltroSaldo(
+            id_loja=usuario.id_loja,
+            busca=argumentos.get("busca"),
+            categoria=argumentos.get("categoria"),
+            situacao=argumentos.get("situacao"),
+        )
+        resultado = estoque_service.montar_saldo(conexao, filtro_saldo, limit=20, offset=0)
+        if any(argumentos.get(chave) for chave in ("busca", "categoria", "situacao")):
+            # O resumo do endpoint sempre cobre a loja inteira, mesmo com filtros.
+            resultado.pop("resumo", None)
+        return resultado
 
     if nome == "consultar_vendas_unidade":
         inicio = date.fromisoformat(argumentos["inicio"])

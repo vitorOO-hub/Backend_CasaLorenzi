@@ -24,6 +24,13 @@ def gerente_usuario(loja=None):
         "O que está parado no estoque há 60 dias?",
         "Quantas pendências de ajustes e transferências temos?",
         "Mostre o resumo da minha loja",
+        "Quais peças foram mais vendidas nesta semana?",
+        "Como foi o desempenho das marcas neste mês?",
+        "Qual foi o movimento por dia na semana passada?",
+        "Qual o saldo em estoque da camiseta?",
+        "Quais peças estão esgotadas?",
+        "Quantos ajustes estão pendentes para aprovar?",
+        "Mostre as movimentações de estoque",
     ],
 )
 def test_pergunta_de_funcionalidade_do_gerente_e_permitida(pergunta):
@@ -48,6 +55,8 @@ def test_ferramentas_do_gerente_nao_expoem_ferramentas_admin():
     nomes = {ferramenta["name"] for ferramenta in gerente.FERRAMENTAS}
 
     assert nomes == {
+        "consultar_movimentacoes_unidade",
+        "consultar_saldo_unidade",
         "consultar_vendas_unidade",
         "consultar_reposicao_unidade",
         "consultar_estoque_parado_unidade",
@@ -58,6 +67,51 @@ def test_ferramentas_do_gerente_nao_expoem_ferramentas_admin():
         "id_loja" not in ferramenta["parameters"]["properties"]
         for ferramenta in gerente.FERRAMENTAS
     )
+
+
+def test_saldo_usa_loja_autenticada_e_rejeita_outra_loja(monkeypatch):
+    usuario = gerente_usuario()
+    capturado = {}
+
+    def montar_saldo(_conexao, filtro, *, limit, offset):
+        capturado.update(filtro=filtro, limit=limit, offset=offset)
+        return {"total": 0, "itens": [], "resumo": {"unidades": 500}}
+
+    monkeypatch.setattr(gerente.estoque_service, "montar_saldo", montar_saldo)
+    resultado = gerente.executar_ferramenta(
+        None, usuario, "consultar_saldo_unidade", {"busca": "camisa"}
+    )
+    assert "resumo" not in resultado
+    assert capturado["filtro"].id_loja == usuario.id_loja
+    assert capturado["filtro"].busca == "camisa"
+    with pytest.raises(FerramentaInvalida):
+        gerente.executar_ferramenta(
+            None, usuario, "consultar_saldo_unidade", {"id_loja": str(uuid4())}
+        )
+
+
+def test_movimentacoes_usam_loja_do_token(monkeypatch):
+    usuario = gerente_usuario()
+    recebido = {}
+
+    def filtro(_conexao, _usuario, **kwargs):
+        recebido.update(kwargs)
+        return "filtro"
+
+    monkeypatch.setattr(gerente.estoque_service, "filtro_de_movimentacoes", filtro)
+    monkeypatch.setattr(
+        gerente.estoque_service, "montar_movimentacoes",
+        lambda _c, _f, **_k: {"total": 0, "itens": []},
+    )
+    gerente.executar_ferramenta(
+        None, usuario, "consultar_movimentacoes_unidade", {"tipo": "entrada"}
+    )
+    assert recebido["id_loja"] == usuario.id_loja
+    assert recebido["grupo"] == "entrada"
+    with pytest.raises(FerramentaInvalida):
+        gerente.executar_ferramenta(
+            None, usuario, "consultar_movimentacoes_unidade", {"id_loja": str(uuid4())}
+        )
 
 
 def test_ferramenta_usa_loja_do_token_e_nao_recebe_loja_do_modelo(monkeypatch):
@@ -284,6 +338,42 @@ def test_consulta_de_vendas_sem_periodo_pede_esclarecimento_sem_chamar_provedor(
     )
 
     assert "Qual período" in resposta["resposta"]
+
+
+def test_pergunta_sobre_lucro_explica_limitacao_sem_inventar_valor(monkeypatch):
+    usuario = gerente_usuario()
+    monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(repositorio, "gravar_pergunta", lambda *_args: [])
+    monkeypatch.setattr(repositorio, "gravar_resposta", lambda *_args: None)
+    monkeypatch.setattr(
+        provedor, "completar",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("não deveria chamar o provedor")),
+    )
+    resposta = gerente.enviar_mensagem(
+        lambda operacao: operacao(None), usuario,
+        Settings(_env_file=None, database_url="postgresql://localhost/teste"),
+        uuid4(), "qual o lucro desse ano?",
+    )
+    assert "não consigo consultar o lucro" in resposta["resposta"]
+    assert "diferente de faturamento" in resposta["resposta"]
+
+
+def test_ganhos_ambiguos_pedem_esclarecimento_sem_assumir_lucro(monkeypatch):
+    usuario = gerente_usuario()
+    monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(repositorio, "gravar_pergunta", lambda *_args: [])
+    monkeypatch.setattr(repositorio, "gravar_resposta", lambda *_args: None)
+    monkeypatch.setattr(
+        provedor, "completar",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("não deveria chamar o provedor")),
+    )
+    resposta = gerente.enviar_mensagem(
+        lambda operacao: operacao(None), usuario,
+        Settings(_env_file=None, database_url="postgresql://localhost/teste"),
+        uuid4(), "quanto ganhamos de dinheiro esse ano?",
+    )
+    assert "faturamento ou o lucro" in resposta["resposta"]
+    assert "lucro ainda não está disponível" in resposta["resposta"]
 
 
 def test_gerente_sem_loja_nao_acessa_chat():
