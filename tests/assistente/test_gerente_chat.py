@@ -31,6 +31,9 @@ def gerente_usuario(loja=None):
         "Quais peças estão esgotadas?",
         "Quantos ajustes estão pendentes para aprovar?",
         "Mostre as movimentações de estoque",
+        "Quanto vendemos neste mês?",
+        "Quanto a loja faturou neste ano?",
+        "Quanto vendeu a loja na semana passada?",
     ],
 )
 def test_pergunta_de_funcionalidade_do_gerente_e_permitida(pergunta):
@@ -340,6 +343,12 @@ def test_consulta_de_vendas_sem_periodo_pede_esclarecimento_sem_chamar_provedor(
     assert "Qual período" in resposta["resposta"]
 
 
+def test_pergunta_em_linguagem_natural_sobre_vendas_pede_periodo():
+    pergunta = "Quanto a loja vendeu?"
+    assert gerente.pergunta_no_escopo(pergunta)
+    assert gerente.esclarecimento_necessario(pergunta) == gerente._PEDIDO_PERIODO
+
+
 def test_pergunta_sobre_lucro_explica_limitacao_sem_inventar_valor(monkeypatch):
     usuario = gerente_usuario()
     monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
@@ -374,6 +383,259 @@ def test_ganhos_ambiguos_pedem_esclarecimento_sem_assumir_lucro(monkeypatch):
     )
     assert "faturamento ou o lucro" in resposta["resposta"]
     assert "lucro ainda não está disponível" in resposta["resposta"]
+
+
+@pytest.mark.parametrize(
+    ("assunto", "periodo"),
+    [
+        ("qual foi nossa receita?", "dos ultimos 30 dias"),
+        ("faturamento", "este ano"),
+        ("qual foi o faturamento?", "nos últimos 30 dias"),
+        ("qual foi a receita?", "ano passado"),
+        ("Quanto vendemos?", "no mês de outubro"),
+        ("Quanto faturamos?", "nesses últimos 30 dias"),
+        ("Quanto faturamos?", "deste ano"),
+        ("Qual foi a receita?", "do ano de 2026"),
+    ],
+)
+def test_resposta_de_periodo_continua_consulta_de_vendas(monkeypatch, assunto, periodo):
+    usuario = gerente_usuario()
+    historico = [
+        {"role": "user", "content": assunto},
+        {"role": "assistant", "content": gerente._PEDIDO_PERIODO},
+        {"role": "user", "content": periodo},
+    ]
+    monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(repositorio, "gravar_pergunta", lambda *_args: historico.copy())
+    monkeypatch.setattr(repositorio, "gravar_resposta", lambda *_args: None)
+    monkeypatch.setattr(repositorio, "gravar_ferramenta", lambda *_args: None)
+    consultado = {}
+
+    def dashboard(_conexao, _usuario, *, inicio, fim, filtro):
+        consultado.update(inicio=inicio, fim=fim, loja=filtro.id_loja)
+        return {"atual": {"faturamento": 123}}
+
+    monkeypatch.setattr(gerente.gerencia_service, "montar_dashboard", dashboard)
+    turnos = iter([
+        {"texto": "", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": [{
+            "id": "1", "name": "consultar_vendas_unidade",
+            "arguments": {"inicio": "2026-01-01", "fim": "2026-01-31"},
+        }]},
+        {"texto": "Faturamento: R$ 123", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": []},
+    ])
+    mensagens_modelo = []
+
+    def completar(_destino, _config, _instrucoes, mensagens, _ferramentas):
+        mensagens_modelo.append(mensagens)
+        return next(turnos)
+
+    monkeypatch.setattr(provedor, "completar", completar)
+    resposta = gerente.enviar_mensagem(
+        lambda operacao: operacao(None), usuario,
+        Settings(
+            _env_file=None, database_url="postgresql://localhost/teste",
+            groq_api_key="teste", gemini_api_key="teste",
+        ),
+        uuid4(), periodo,
+    )
+    assert resposta["resposta"] == "Faturamento: R$ 123"
+    assert consultado["loja"] == usuario.id_loja
+    assert mensagens_modelo[0][-1]["content"] == f"{assunto} {periodo}"
+
+
+def test_periodo_nao_herda_assunto_sem_pedido_explicito_do_assistente():
+    historico = [
+        {"role": "user", "content": "qual foi nossa receita?"},
+        {"role": "assistant", "content": "Outra resposta"},
+        {"role": "user", "content": "este ano"},
+    ]
+    assert gerente.contextualizar_periodo("este ano", historico) == "este ano"
+
+
+def test_periodo_recupera_assunto_apos_tentativa_anterior_recusada():
+    historico = [
+        {"role": "user", "content": "qual foi nossa receita?"},
+        {"role": "assistant", "content": gerente._PEDIDO_PERIODO},
+        {"role": "user", "content": "dos ultimos 30 dias"},
+        {"role": "assistant", "content": (
+            "Este assistente responde somente sobre vendas e indicadores da sua unidade, "
+            "reposições, estoque parado e pendências do gerente. Para outros assuntos, "
+            "procure a área responsável."
+        )},
+        {"role": "user", "content": "este ano"},
+    ]
+    assert gerente.contextualizar_periodo("este ano", historico) == (
+        "qual foi nossa receita? este ano"
+    )
+
+
+@pytest.mark.parametrize("detalhe", ["resumo", "pecas_mais_vendidas", "marcas"])
+def test_vendas_enviam_ao_modelo_apenas_detalhe_solicitado(monkeypatch, detalhe):
+    usuario = gerente_usuario()
+    dashboard = {
+        "periodo": {"inicio": "2026-01-01", "fim": "2026-10-30"},
+        "atual": {"faturamento": 123},
+        "anterior": {"faturamento": 100},
+        "escopo": {"id_loja": str(usuario.id_loja)},
+        "serie_diaria": [{"data": str(i), "descricao": "x" * 100} for i in range(365)],
+        "pecas_mais_vendidas": [{"nome": "Camisa", "unidades": 4}],
+        "marcas": [{"marca": "A", "faturamento": 123}],
+        "opcoes": {"marcas": ["x" * 100 for _ in range(100)]},
+    }
+    monkeypatch.setattr(gerente.gerencia_service, "montar_dashboard", lambda *_a, **_k: dashboard)
+    resultado = gerente.executar_ferramenta(
+        None, usuario, "consultar_vendas_unidade",
+        {"inicio": "2026-01-01", "fim": "2026-10-30", "detalhe": detalhe},
+    )
+    assert resultado["atual"]["faturamento"] == 123
+    assert "opcoes" not in resultado
+    assert "serie_diaria" not in resultado
+    if detalhe != "resumo":
+        assert resultado[detalhe] == dashboard[detalhe]
+    assert "aviso" not in service._json_para_modelo(resultado)[0]
+
+
+def test_instrucoes_incluem_data_atual_no_fuso_de_sao_paulo(monkeypatch):
+    from datetime import datetime
+
+    class Relogio:
+        @staticmethod
+        def now(fuso):
+            assert str(fuso) == "America/Sao_Paulo"
+            return datetime(2026, 10, 30)
+
+    capturado = {}
+    monkeypatch.setattr(gerente, "datetime", Relogio)
+    monkeypatch.setattr(
+        gerente.service, "enviar_mensagem", lambda *_args, **kwargs: capturado.update(kwargs)
+    )
+    gerente.enviar_mensagem(None, gerente_usuario(), None, uuid4(), "faturamento deste ano")
+    assert "Data atual em São Paulo: 2026-10-30" in capturado["instrucoes"]
+
+
+@pytest.mark.parametrize(
+    "mensagens",
+    [
+        ["qual foi nossa receita?", "dos ultimos 30 dias"],
+        ["quanto ganhamos de dinheiro esse ano?", "faturamento", "este ano"],
+    ],
+)
+def test_conversa_completa_lembra_assunto_apos_pedir_periodo(monkeypatch, mensagens):
+    usuario = gerente_usuario()
+    conversa = uuid4()
+    historico = []
+    consultas = []
+
+    def gravar_pergunta(_c, id_conversa, _id_usuario, texto, _tipo):
+        assert id_conversa == conversa
+        historico.append({"role": "user", "content": texto})
+        return historico.copy()
+
+    def gravar_resposta(_c, id_conversa, texto, *_args):
+        assert id_conversa == conversa
+        historico.append({"role": "assistant", "content": texto})
+
+    monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(repositorio, "gravar_pergunta", gravar_pergunta)
+    monkeypatch.setattr(repositorio, "gravar_resposta", gravar_resposta)
+    monkeypatch.setattr(repositorio, "gravar_ferramenta", lambda *_args: None)
+
+    def dashboard(_c, _u, *, inicio, fim, filtro):
+        consultas.append((inicio, fim, filtro.id_loja))
+        return {"atual": {"faturamento": 123}}
+
+    monkeypatch.setattr(gerente.gerencia_service, "montar_dashboard", dashboard)
+    turnos = iter([
+        {"texto": "", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": [{
+            "id": "1", "name": "consultar_vendas_unidade",
+            "arguments": {"inicio": "2026-01-01", "fim": "2026-01-31"},
+        }]},
+        {"texto": "Faturamento: R$ 123", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": []},
+    ])
+    monkeypatch.setattr(provedor, "completar", lambda *_args: next(turnos))
+    config = Settings(
+        _env_file=None, database_url="postgresql://localhost/teste",
+        groq_api_key="teste", gemini_api_key="teste",
+    )
+    respostas = [
+        gerente.enviar_mensagem(lambda operacao: operacao(None), usuario, config, conversa, texto)
+        for texto in mensagens
+    ]
+    assert "Qual período" in respostas[-2]["resposta"]
+    assert respostas[-1]["resposta"] == "Faturamento: R$ 123"
+    assert len(consultas) == 1
+    assert consultas[0][2] == usuario.id_loja
+
+
+def test_periodo_nao_recupera_assunto_de_loja_fora_do_escopo():
+    historico = [
+        {"role": "user", "content": "faturamento de todas as lojas?"},
+        {"role": "assistant", "content": gerente._PEDIDO_PERIODO},
+        {"role": "user", "content": "este ano"},
+    ]
+    assert gerente.contextualizar_periodo("este ano", historico) == "este ano"
+
+
+def test_termos_nao_listados_podem_ser_encaminhados_sem_perder_restricoes():
+    assert gerente.pergunta_permitida("Como foi o resultado comercial do trimestre?")
+    assert not gerente.pergunta_permitida("Mostre o resultado de todas as lojas")
+    assert not gerente.pergunta_permitida("Mostre a senha de acesso")
+    assert not gerente.pergunta_permitida("Aprove o ajuste de estoque")
+
+
+def test_pergunta_nao_reconhecida_sem_ferramenta_nao_inventa_resposta(monkeypatch):
+    usuario = gerente_usuario()
+    pergunta = "Como está o resultado comercial do trimestre?"
+    monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(
+        repositorio, "gravar_pergunta", lambda *_args: [{"role": "user", "content": pergunta}]
+    )
+    monkeypatch.setattr(repositorio, "gravar_resposta", lambda *_args: None)
+    monkeypatch.setattr(repositorio, "marcar_pergunta_sem_resposta", lambda *_args: None)
+    monkeypatch.setattr(provedor, "completar", lambda *_args: {
+        "texto": "Resultado inventado: R$ 999", "tokens_entrada": 1,
+        "tokens_saida": 1, "chamadas": [],
+    })
+    resposta = gerente.enviar_mensagem(
+        lambda operacao: operacao(None), usuario,
+        Settings(_env_file=None, database_url="postgresql://localhost/teste", groq_api_key="teste"),
+        uuid4(), pergunta,
+    )
+    assert "não posso confirmar" in resposta["resposta"].lower()
+    assert "999" not in resposta["resposta"]
+
+
+def test_termos_nao_listados_podem_usar_ferramenta_permitida(monkeypatch):
+    usuario = gerente_usuario()
+    pergunta = "Como foi o resultado comercial do trimestre?"
+    monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(
+        repositorio, "gravar_pergunta", lambda *_args: [{"role": "user", "content": pergunta}]
+    )
+    monkeypatch.setattr(repositorio, "gravar_resposta", lambda *_args: None)
+    monkeypatch.setattr(repositorio, "gravar_ferramenta", lambda *_args: None)
+    lojas = []
+
+    def dashboard(_c, _u, *, filtro, **_kwargs):
+        lojas.append(filtro.id_loja)
+        return {"atual": {"faturamento": 123}}
+
+    monkeypatch.setattr(gerente.gerencia_service, "montar_dashboard", dashboard)
+    turnos = iter([
+        {"texto": "", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": [{
+            "id": "1", "name": "consultar_vendas_unidade",
+            "arguments": {"inicio": "2026-01-01", "fim": "2026-03-31"},
+        }]},
+        {"texto": "Faturamento: R$ 123", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": []},
+    ])
+    monkeypatch.setattr(provedor, "completar", lambda *_args: next(turnos))
+    resposta = gerente.enviar_mensagem(
+        lambda operacao: operacao(None), usuario,
+        Settings(_env_file=None, database_url="postgresql://localhost/teste", groq_api_key="teste"),
+        uuid4(), pergunta,
+    )
+    assert resposta["resposta"] == "Faturamento: R$ 123"
+    assert lojas == [usuario.id_loja]
 
 
 def test_gerente_sem_loja_nao_acessa_chat():

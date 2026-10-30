@@ -71,6 +71,9 @@ class RepositorioFalso:
     def mensagens_do_usuario_hoje(self, conexao, id_usuario):
         return self.hoje
 
+    def contatos_do_cliente(self, conexao, id_usuario):
+        return "eu@teste.local", "52998224725"
+
     def passar_para_atendente(self, conexao, id_conversa, id_atendimento):
         self.conversas[id_conversa].update(status="com_atendente", id_atendimento=id_atendimento)
 
@@ -123,6 +126,7 @@ def repo(monkeypatch, chamados):
         "mensagens_visiveis",
         "gravar_mensagem",
         "mensagens_do_usuario_hoje",
+        "contatos_do_cliente",
         "passar_para_atendente",
     ):
         monkeypatch.setattr(service.repositorio, nome, getattr(falso, nome))

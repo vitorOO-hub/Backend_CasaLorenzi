@@ -20,8 +20,31 @@ from app.painel_estoque.repositorio import FiltroSaldo
 
 FERRAMENTAS: list[dict[str, Any]] = [
     {
+        "name": "comparar_vendas_lojas",
+        "description": (
+            "Compara faturamento, pedidos e ticket médio das lojas no período. "
+            "Retorna até 20 lojas com maior faturamento e a loja com menor faturamento."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "inicio": {"type": "string", "format": "date"},
+                "fim": {"type": "string", "format": "date"},
+                "categoria": {"type": "string", "maxLength": 80},
+                "canal": {"type": "string", "enum": ["loja", "online"]},
+                "marca": {"type": "string", "maxLength": 40},
+            },
+            "required": ["inicio", "fim"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "consultar_vendas",
-        "description": "Indicadores e vendas da rede em um periodo. Datas no formato AAAA-MM-DD.",
+        "description": (
+            "Indicadores de vendas da rede ou loja no período. Por padrão retorna o resumo; "
+            "selecione detalhe para séries, movimento semanal, peças ou marcas. "
+            "Datas no formato AAAA-MM-DD."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -31,6 +54,13 @@ FERRAMENTAS: list[dict[str, Any]] = [
                 "categoria": {"type": "string"},
                 "canal": {"type": "string", "enum": ["loja", "online"]},
                 "marca": {"type": "string"},
+                "detalhe": {
+                    "type": "string",
+                    "enum": [
+                        "resumo", "serie_diaria", "movimento_semana", "pecas_mais_vendidas",
+                        "marcas", "evolucao_marcas",
+                    ],
+                },
             },
             "required": ["inicio", "fim"],
             "additionalProperties": False,
@@ -307,6 +337,30 @@ def executar(
         ):
             raise FerramentaInvalida("Argumentos inválidos para a consulta")
 
+    if nome == "comparar_vendas_lojas":
+        inicio = date.fromisoformat(argumentos["inicio"])
+        fim = date.fromisoformat(argumentos["fim"])
+        gerencia_service.validar_periodo(inicio, fim)
+        if (fim - inicio).days > 366:
+            raise FerramentaInvalida("A consulta de vendas aceita períodos de até 367 dias")
+        rede = gerencia_service.montar_rede(
+            conexao, usuario, inicio=inicio, fim=fim, ids_loja=(),
+            categoria=argumentos.get("categoria"), canal=argumentos.get("canal"),
+            marca=argumentos.get("marca"),
+        )
+        lojas = sorted(rede["unidades"], key=lambda loja: loja["faturamento"], reverse=True)
+        campos = (
+            "id_loja", "nome", "faturamento", "faturamento_anterior", "pedidos", "ticket_medio"
+        )
+        resumidas = [{campo: loja[campo] for campo in campos} for loja in lojas]
+        return {
+            "periodo": rede["periodo"],
+            "periodo_anterior": rede["periodo_anterior"],
+            "total_lojas": len(resumidas),
+            "lojas_omitidas": max(0, len(resumidas) - 20),
+            "lojas_maior_faturamento": resumidas[:20],
+            "loja_menor_faturamento": resumidas[-1] if resumidas else None,
+        }
     if nome == "consultar_vendas":
         inicio = date.fromisoformat(argumentos["inicio"])
         fim = date.fromisoformat(argumentos["fim"])
@@ -320,9 +374,15 @@ def executar(
             argumentos.get("canal"),
             marca=argumentos.get("marca"),
         )
-        return gerencia_service.montar_dashboard(
+        dashboard = gerencia_service.montar_dashboard(
             conexao, usuario, inicio=inicio, fim=fim, filtro=filtro
         )
+        campos = ("periodo", "periodo_anterior", "atual", "anterior", "escopo")
+        resultado = {campo: dashboard[campo] for campo in campos if campo in dashboard}
+        detalhe = argumentos.get("detalhe", "resumo")
+        if detalhe != "resumo" and detalhe in dashboard:
+            resultado[detalhe] = dashboard[detalhe]
+        return resultado
     if nome == "consultar_estoque":
         loja = UUID(argumentos["id_loja"]) if argumentos.get("id_loja") else None
         filtro = FiltroSaldo(

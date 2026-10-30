@@ -105,11 +105,34 @@ estoque na loja do token; não há acesso do gerente à ferramenta de catálogo 
 `GEMINI_API_KEY` é usada somente no servidor para gerar o vetor da consulta; os embeddings dos produtos
 são compartilhados com o chatbot admin e não precisam ser gerados novamente.
 
+O assistente do gerente também consulta saldo e movimentações da própria unidade. As ferramentas
+são somente de leitura e o identificador da loja vem do usuário autenticado, não do modelo. Uma
+pergunta que não corresponda às palavras reconhecidas pode ser analisada pelo modelo, mas pedidos
+explicitamente proibidos continuam bloqueados e uma resposta com dados exige uma consulta concluída.
+
+Quando o assistente pede o período de uma consulta de vendas, uma resposta curta como "este ano"
+ou "últimos 30 dias" retoma o assunto anterior da mesma conversa. A data de referência é a de São
+Paulo. A ferramenta de vendas retorna os totais e o período anterior; séries, peças, marcas e
+movimento semanal são enviados somente quando solicitados pelo modelo. Listas truncadas não devem
+ser tratadas como completas. Lucro não está disponível no dashboard e não deve ser confundido com
+faturamento.
+
 O chatbot administrativo foi separado das consultas de gerente e só aceita `Papel.ADMIN`. Ele pode
 consultar vendas, estoque/saldo, movimentações, ajustes, transferências, mínimos, reposição, estoque
 parado, lojas, pendências, chamados e mensagens, equipe, catálogo, clientes/fichas, auditoria, integrações,
 vendas pendentes e totais de pontos a vencer. Toda consulta chama uma função allowlisted do servidor;
 não há SQL livre nem ferramenta de escrita. O acesso a cliente usa os serviços de escopo já existentes.
+
+O admin pode comparar as vendas das lojas por período, usando a mesma consulta do painel da rede.
+O resultado mostra até 20 lojas com maior faturamento, o total de lojas, quantas foram omitidas e
+a loja com menor faturamento. A ferramenta é exclusiva do administrador. Para perguntas sobre
+vendas sem período, o assistente pede essa informação e aceita uma resposta seguinte como
+"últimos 30 dias" ou "este ano"; o contexto fica limitado à mesma conversa.
+
+Nas perguntas que dependem de dados do sistema, o chatbot precisa concluir uma consulta antes de
+afirmar números. A data de referência é a de São Paulo. Perguntas sobre lucro recebem uma explicação
+de que esse indicador ainda não está disponível: faturamento não é lucro. Exemplos para validação:
+"Qual a receita da rede?" seguido de "este ano", e "Qual loja faturou mais nos últimos 30 dias?".
 
 Rotas do backend admin:
 
