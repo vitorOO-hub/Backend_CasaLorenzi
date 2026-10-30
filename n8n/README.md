@@ -15,7 +15,7 @@ recebeu não ganha um segundo e-mail de categoria no mesmo ano.
 
 ## Como funciona
 
-**Disparo diário (igual aos relatórios do n8n):** o nó **Todo dia às 9h** (relógio, fuso de São
+**Disparo semanal (igual aos relatórios do n8n):** o nó **Toda sexta às 9h** (relógio, fuso de São
 Paulo) acorda o servidor (`/health`, o Render grátis dorme) e chama
 `POST /api/v1/automacoes/emails-diarios`. O backend devolve os e-mails de pontos e de categoria do
 dia (já com a lista de quem recebe) e reenvia os resumos de compra que falharam. Depois, no próprio

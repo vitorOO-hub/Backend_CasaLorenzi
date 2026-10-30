@@ -70,7 +70,7 @@
     },
     {
       "id": "b1f0c5a2-0005-4c1a-9b0e-000000000005",
-      "name": "Todo dia as 9h",
+      "name": "Toda sexta as 9h",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -81,8 +81,11 @@
         "rule": {
           "interval": [
             {
-              "field": "days",
-              "daysInterval": 1,
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [
+                5
+              ],
               "triggerAtHour": 9
             }
           ]
@@ -248,17 +251,6 @@
         ]
       ]
     },
-    "Todo dia as 9h": {
-      "main": [
-        [
-          {
-            "node": "Acordar o servidor",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Acordar o servidor": {
       "main": [
         [
@@ -319,6 +311,17 @@
         [
           {
             "node": "Registrar enviados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Toda sexta as 9h": {
+      "main": [
+        [
+          {
+            "node": "Acordar o servidor",
             "type": "main",
             "index": 0
           }
