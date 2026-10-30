@@ -21,7 +21,11 @@ from app.painel_estoque.repositorio import FiltroSaldo
 FERRAMENTAS: list[dict[str, Any]] = [
     {
         "name": "consultar_vendas",
-        "description": "Indicadores e vendas da rede em um periodo. Datas no formato AAAA-MM-DD.",
+        "description": (
+            "Indicadores de vendas da rede ou loja no período. Por padrão retorna o resumo; "
+            "selecione detalhe para séries, movimento semanal, peças ou marcas. "
+            "Datas no formato AAAA-MM-DD."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -31,6 +35,13 @@ FERRAMENTAS: list[dict[str, Any]] = [
                 "categoria": {"type": "string"},
                 "canal": {"type": "string", "enum": ["loja", "online"]},
                 "marca": {"type": "string"},
+                "detalhe": {
+                    "type": "string",
+                    "enum": [
+                        "resumo", "serie_diaria", "movimento_semana", "pecas_mais_vendidas",
+                        "marcas", "evolucao_marcas",
+                    ],
+                },
             },
             "required": ["inicio", "fim"],
             "additionalProperties": False,
@@ -320,9 +331,15 @@ def executar(
             argumentos.get("canal"),
             marca=argumentos.get("marca"),
         )
-        return gerencia_service.montar_dashboard(
+        dashboard = gerencia_service.montar_dashboard(
             conexao, usuario, inicio=inicio, fim=fim, filtro=filtro
         )
+        campos = ("periodo", "periodo_anterior", "atual", "anterior", "escopo")
+        resultado = {campo: dashboard[campo] for campo in campos if campo in dashboard}
+        detalhe = argumentos.get("detalhe", "resumo")
+        if detalhe != "resumo" and detalhe in dashboard:
+            resultado[detalhe] = dashboard[detalhe]
+        return resultado
     if nome == "consultar_estoque":
         loja = UUID(argumentos["id_loja"]) if argumentos.get("id_loja") else None
         filtro = FiltroSaldo(

@@ -63,6 +63,32 @@ def test_consulta_de_vendas_limita_periodo_antes_do_banco():
         )
 
 
+@pytest.mark.parametrize("detalhe", ["resumo", "pecas_mais_vendidas", "marcas"])
+def test_vendas_admin_retorna_resumo_e_detalhe_solicitado(monkeypatch, detalhe):
+    dashboard = {
+        "periodo": {"inicio": "2026-01-01", "fim": "2026-10-30"},
+        "atual": {"faturamento": 123},
+        "anterior": {"faturamento": 100},
+        "serie_diaria": [{"descricao": "x" * 100} for _ in range(365)],
+        "opcoes": {"marcas": ["x" * 100 for _ in range(100)]},
+        "pecas_mais_vendidas": [{"nome": "Camisa", "unidades": 4}],
+        "marcas": [{"marca": "A", "faturamento": 123}],
+    }
+    monkeypatch.setattr(
+        ferramentas.gerencia_service, "montar_dashboard", lambda *_a, **_k: dashboard
+    )
+    resultado = ferramentas.executar(
+        None, admin(), "consultar_vendas",
+        {"inicio": "2026-01-01", "fim": "2026-10-30", "detalhe": detalhe},
+    )
+    assert resultado["atual"]["faturamento"] == 123
+    assert "opcoes" not in resultado
+    assert "serie_diaria" not in resultado
+    if detalhe != "resumo":
+        assert resultado[detalhe] == dashboard[detalhe]
+    assert "aviso" not in service._json_para_modelo(resultado)[0]
+
+
 @pytest.mark.parametrize("provedor_nome", ["groq", "gemini"])
 def test_adaptador_converte_chamada_de_ferramenta_sem_rede(provedor_nome, monkeypatch):
     if provedor_nome == "groq":
