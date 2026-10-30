@@ -1,0 +1,226 @@
+{
+  "name": "Casa Lorenzi - relatório semanal (teste)",
+  "nodes": [
+    {
+      "id": "f01a0001-0001-4000-9000-000000000001",
+      "name": "Toda sexta às 8h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        280
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [
+                5
+              ],
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "f01a0001-0001-4000-9000-000000000002",
+      "name": "Buscar resumo da rede",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        280
+      ],
+      "parameters": {
+        "url": "https://backend-casalorenzi.onrender.com/api/v1/automacoes/resumo-semanal",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "f01a0001-0001-4000-9000-000000000003",
+      "name": "Preparar e-mail do admin",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        80
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const r = $json;\nconst para = '2020.vitor.oliveira@gmail.com';\nconst esc = (v) => String(v ?? '').replace(/[&<>\\\"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','\\\"':'&quot;',\"'\":'&#39;'}[c]));\nconst brl = (v) => Number(v || 0).toLocaleString('pt-BR', {style:'currency',currency:'BRL'});\nconst pct = (v) => v == null ? 'Sem base de comparação' : `${v >= 0 ? '+' : ''}${(v * 100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%`;\nconst dt = (v) => v ? new Date(v).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}) : 'Sem venda registrada';\nconst logo = 'https://projetacasalorenzi.vercel.app/img/logo-casa-lorenzi.png';\nconst lojas = r.lojas || [];\nconst pedidos = lojas.reduce((total, x) => total + Number(x.pedidos || 0), 0);\nconst online = lojas.reduce((total, x) => total + Number(x.faturamento_online || 0), 0);\nconst variacaoRede = r.faturamento_anterior\n  ? r.faturamento / r.faturamento_anterior - 1\n  : null;\nconst linhasLojas = lojas.length\n  ? lojas.map((x, i) => `<tr bgcolor=\"${i % 2 ? '#faf8f5' : '#ffffff'}\"><td style=\"padding:11px 12px;border-bottom:1px solid #e9e3dc;color:#26304a\">${esc(x.loja)}</td><td align=\"right\" style=\"padding:11px 12px;border-bottom:1px solid #e9e3dc;color:#26304a;white-space:nowrap\">${brl(x.faturamento)}</td><td align=\"right\" style=\"padding:11px 12px;border-bottom:1px solid #e9e3dc;color:#26304a\">${Number(x.pedidos || 0).toLocaleString('pt-BR')}</td><td align=\"right\" style=\"padding:11px 12px;border-bottom:1px solid #e9e3dc;color:#26304a;white-space:nowrap\">${brl(x.faturamento_online)}</td><td align=\"right\" style=\"padding:11px 12px;border-bottom:1px solid #e9e3dc;color:#26304a;white-space:nowrap\">${pct(x.variacao)}</td></tr>`).join('')\n  : '<tr><td colspan=\"5\" style=\"padding:14px;color:#687187\">Nenhuma loja ativa retornada no período.</td></tr>';\nconst itens = r.estoque_parado?.itens || [];\nconst totalVariacoes = Number(r.estoque_parado?.total_itens || 0);\nconst totalUnidades = Number(r.estoque_parado?.total_unidades || 0);\nconst unidadesListadas = itens.reduce((total, item) => total + Number(item.saldo || 0), 0);\nconst variacoesOcultas = Math.max(totalVariacoes - itens.length, 0);\nconst unidadesOcultas = Math.max(totalUnidades - unidadesListadas, 0);\nconst linhasEstoque = itens.length\n  ? itens.map((x, i) => `<tr bgcolor=\"${i % 2 ? '#faf8f5' : '#ffffff'}\"><td style=\"padding:11px 12px;border-bottom:1px solid #e9e3dc;color:#26304a\">${esc(x.produto)} · ${esc(x.cor)} · ${esc(x.tamanho)}<br><span style=\"font-size:12px;color:#687187\">${esc(x.loja)} · SKU ${esc(x.sku)}</span></td><td align=\"right\" style=\"padding:11px 12px;border-bottom:1px solid #e9e3dc;color:#26304a\">${Number(x.saldo || 0).toLocaleString('pt-BR')}</td><td align=\"right\" style=\"padding:11px 12px;border-bottom:1px solid #e9e3dc;color:#26304a;white-space:nowrap\">${brl(x.valor_parado)}</td><td align=\"right\" style=\"padding:11px 12px;border-bottom:1px solid #e9e3dc;color:#26304a;white-space:nowrap\">${dt(x.ultima_venda)}</td></tr>`).join('')\n  : '<tr><td colspan=\"4\" style=\"padding:14px;color:#687187\">Nenhuma peça parada encontrada.</td></tr>';\nconst p = r.pontos_a_vencer;\nconst pontos = p ? `<tr><td style=\"padding:0 30px 24px\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" bgcolor=\"#faeee6\" style=\"background:#faeee6;border-radius:3px\"><tr><td style=\"padding:20px 22px\"><div style=\"font:12px Arial,sans-serif;letter-spacing:1.5px;color:#a65f43\">LORENZI+</div><h2 style=\"margin:8px 0 5px;font:24px Georgia,serif;color:#16213b\">Pontos a vencer em até ${Number(p.dias)} dias</h2><p style=\"margin:0;font:15px Arial,sans-serif;line-height:1.6;color:#28324b\"><b>${Number(p.pontos || 0).toLocaleString('pt-BR')} pontos</b> distribuídos entre ${Number(p.clientes || 0).toLocaleString('pt-BR')} clientes.</p></td></tr></table></td></tr>` : '';\nconst html = `<!doctype html><html lang=\"pt-BR\"><body style=\"margin:0;padding:0;background:#f5f2ed\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" bgcolor=\"#f5f2ed\" style=\"background:#f5f2ed\"><tr><td align=\"center\" style=\"padding:24px 12px\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:760px\"><tr><td align=\"center\" style=\"padding:0 0 18px\"><img src=\"${logo}\" width=\"112\" alt=\"Casa Lorenzi\" style=\"display:block;width:112px;height:auto;border:0\"></td></tr><tr><td bgcolor=\"#ffffff\" style=\"background:#ffffff;border:1px solid #e7e1da;border-top:3px solid #761e2e\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr><td style=\"padding:28px 30px 10px\"><div style=\"font:12px Arial,sans-serif;letter-spacing:1.6px;color:#a65f43;text-transform:uppercase\">Casa Lorenzi · visão da rede</div><h1 style=\"margin:10px 0 12px;font:34px Georgia,'Times New Roman',serif;font-weight:normal;line-height:1.15;color:#16213b\">Relatório semanal</h1><p style=\"margin:0;font:15px Arial,sans-serif;line-height:1.7;color:#35405a\">Semana de <b>${esc(r.semana.inicio)}</b> a <b>${esc(r.semana.fim)}</b><br>Comparativo: ${esc(r.semana_anterior.inicio)} a ${esc(r.semana_anterior.fim)}</p></td></tr><tr><td style=\"padding:18px 30px 22px\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" bgcolor=\"#faeee6\" style=\"background:#faeee6;border-radius:3px\"><tr><td width=\"50%\" style=\"padding:18px 20px;border-right:1px solid #ead8cc\"><div style=\"font:12px Arial,sans-serif;letter-spacing:1.2px;color:#a65f43\">FATURAMENTO DA REDE</div><div style=\"margin-top:7px;font:28px Georgia,'Times New Roman',serif;color:#16213b\">${brl(r.faturamento)}</div><div style=\"margin-top:5px;font:13px Arial,sans-serif;color:#687187\">${pct(variacaoRede)} vs. semana anterior</div></td><td width=\"50%\" style=\"padding:18px 20px\"><div style=\"font:12px Arial,sans-serif;letter-spacing:1.2px;color:#a65f43\">PEDIDOS · VENDAS ONLINE</div><div style=\"margin-top:7px;font:22px Georgia,'Times New Roman',serif;color:#16213b\">${pedidos.toLocaleString('pt-BR')} pedidos</div><div style=\"margin-top:5px;font:13px Arial,sans-serif;color:#687187\">${brl(online)} em vendas online</div></td></tr></table></td></tr><tr><td style=\"padding:0 30px 8px\"><h2 style=\"margin:0 0 12px;font:24px Georgia,'Times New Roman',serif;font-weight:normal;color:#16213b\">Desempenho por loja</h2><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;font:13px Arial,sans-serif\"><thead><tr bgcolor=\"#202b49\"><th align=\"left\" style=\"padding:10px 12px;color:#ffffff;font-weight:normal\">Loja</th><th align=\"right\" style=\"padding:10px 12px;color:#ffffff;font-weight:normal\">Faturamento</th><th align=\"right\" style=\"padding:10px 12px;color:#ffffff;font-weight:normal\">Pedidos</th><th align=\"right\" style=\"padding:10px 12px;color:#ffffff;font-weight:normal\">Online</th><th align=\"right\" style=\"padding:10px 12px;color:#ffffff;font-weight:normal\">Variação</th></tr></thead><tbody>${linhasLojas}</tbody></table></td></tr><tr><td style=\"padding:22px 30px 8px\"><h2 style=\"margin:0 0 6px;font:24px Georgia,'Times New Roman',serif;font-weight:normal;color:#16213b\">Estoque parado · 60 dias</h2><p style=\"margin:0 0 12px;font:13px Arial,sans-serif;line-height:1.6;color:#687187\">${Number(r.estoque_parado?.total_itens || 0).toLocaleString('pt-BR')} itens · ${Number(r.estoque_parado?.total_unidades || 0).toLocaleString('pt-BR')} unidades · ${brl(r.estoque_parado?.total_valor)}</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;font:13px Arial,sans-serif\"><thead><tr bgcolor=\"#202b49\"><th align=\"left\" style=\"padding:10px 12px;color:#ffffff;font-weight:normal\">Peça</th><th align=\"right\" style=\"padding:10px 12px;color:#ffffff;font-weight:normal\">Saldo</th><th align=\"right\" style=\"padding:10px 12px;color:#ffffff;font-weight:normal\">Valor parado</th><th align=\"right\" style=\"padding:10px 12px;color:#ffffff;font-weight:normal\">Última venda</th></tr></thead><tbody>${linhasEstoque}</tbody></table></td></tr>${pontos}<tr><td style=\"padding:18px 30px 24px\"><p style=\"margin:0;padding-top:14px;border-top:1px solid #e9e3dc;font:12px Arial,sans-serif;line-height:1.6;color:#7a8190\">${esc(r.criterio_vendas)} Estoque: ${esc(r.estoque_parado?.criterio || '')}</p></td></tr></table></td></tr><tr><td align=\"center\" style=\"padding:16px 8px;font:11px Arial,sans-serif;color:#858b96\">Relatório automático · Casa Lorenzi</td></tr></table></td></tr></table></body></html>`;\nconst htmlEstoqueExplicito = html.replace(\n  /(<h2[^>]*>Estoque parado · 60 dias<\\/h2>)<p[^>]*>[\\s\\S]*?<\\/p>(<table role=\"presentation\")/,\n  (_, titulo, tabela) => `${titulo}<p style=\"margin:0 0 6px;font:13px Arial,sans-serif;line-height:1.6;color:#687187\">${totalVariacoes.toLocaleString('pt-BR')} variações sem venda nos últimos 60 dias · ${totalUnidades.toLocaleString('pt-BR')} unidades no total · ${brl(r.estoque_parado?.total_valor)}</p><p style=\"margin:0 0 12px;font:12px Arial,sans-serif;line-height:1.6;color:#858b96\">A lista mostra ${itens.length.toLocaleString('pt-BR')} variações com maior valor parado, somando ${unidadesListadas.toLocaleString('pt-BR')} unidades. ${variacoesOcultas.toLocaleString('pt-BR')} outras variações (${unidadesOcultas.toLocaleString('pt-BR')} unidades) não aparecem na lista.</p>${tabela}`\n).replace('>Saldo</th>', '>Unidades na variação</th>');\nreturn {json:{para,assunto:`TESTE · Relatório semanal Casa Lorenzi · ${r.semana.inicio} a ${r.semana.fim}`,html:htmlEstoqueExplicito}};"
+      }
+    },
+    {
+      "id": "f01a0001-0001-4000-9000-000000000004",
+      "name": "Enviar e-mail do admin",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        760,
+        80
+      ],
+      "parameters": {
+        "sendTo": "={{ $json.para }}",
+        "subject": "={{ $json.assunto }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Casa Lorenzi"
+        }
+      }
+    },
+    {
+      "id": "f01a0001-0001-4000-9000-000000000005",
+      "name": "Separar lojas para teste",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const resumo = $input.first().json;\nreturn (resumo.lojas || []).map((loja) => ({json:{id_loja:loja.id_loja,loja:loja.loja}}));"
+      }
+    },
+    {
+      "id": "f01a0001-0001-4000-9000-000000000006",
+      "name": "Buscar resumo da loja",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        480
+      ],
+      "parameters": {
+        "url": "={{ 'https://backend-casalorenzi.onrender.com/api/v1/automacoes/resumo-semanal?id_loja=' + encodeURIComponent($json.id_loja) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "f01a0001-0001-4000-9000-000000000007",
+      "name": "Preparar e-mail do gerente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const r = $json;\nconst para = '2020.vitor.oliveira@gmail.com';\nconst loja = r.lojas?.[0];\nif (!loja) throw new Error('A API não retornou a loja solicitada');\nconst esc = (v) => String(v ?? '').replace(/[&<>\\\"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','\\\"':'&quot;',\"'\":'&#39;'}[c]));\nconst brl = (v) => Number(v || 0).toLocaleString('pt-BR', {style:'currency',currency:'BRL'});\nconst pct = (v) => v == null ? 'Sem base de comparação' : `${v >= 0 ? '+' : ''}${(v * 100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%`;\nconst dt = (v) => v ? new Date(v).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}) : 'Sem venda registrada';\nconst logo = 'https://projetacasalorenzi.vercel.app/img/logo-casa-lorenzi.png';\nconst itens = r.estoque_parado?.itens || [];\nconst totalVariacoes = Number(r.estoque_parado?.total_itens || 0);\nconst totalUnidades = Number(r.estoque_parado?.total_unidades || 0);\nconst unidadesListadas = itens.reduce((total, item) => total + Number(item.saldo || 0), 0);\nconst variacoesOcultas = Math.max(totalVariacoes - itens.length, 0);\nconst unidadesOcultas = Math.max(totalUnidades - unidadesListadas, 0);\nconst indicadores = r.indicadores_unidade;\nconst categorias = indicadores?.categorias_mais_vendidas || [];\nconst linhasCategorias = categorias.length\n  ? categorias.map((x, i) => `<tr bgcolor=\"${i % 2 ? '#faf8f5' : '#ffffff'}\"><td style=\"padding:9px 12px;border-bottom:1px solid #e9e3dc;color:#26304a\">${esc(x.categoria)}</td><td align=\"right\" style=\"padding:9px 12px;border-bottom:1px solid #e9e3dc;color:#26304a\">${Number(x.unidades || 0).toLocaleString('pt-BR')}</td><td align=\"right\" style=\"padding:9px 12px;border-bottom:1px solid #e9e3dc;color:#26304a;white-space:nowrap\">${brl(x.faturamento)}</td></tr>`).join('')\n  : '<tr><td colspan=\"3\" style=\"padding:12px;color:#687187\">Nenhuma venda por categoria no período.</td></tr>';\nconst blocoIndicadores = indicadores\n  ? `<tr><td style=\"padding:0 30px 22px\"><h2 style=\"margin:0 0 10px;font:24px Georgia,'Times New Roman',serif;font-weight:normal;color:#16213b\">Peças e categorias mais vendidas</h2><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" bgcolor=\"#faeee6\" style=\"background:#faeee6;border-radius:3px\"><tr><td width=\"50%\" style=\"padding:16px 20px;border-right:1px solid #ead8cc\"><div style=\"font:12px Arial,sans-serif;letter-spacing:1.1px;color:#a65f43\">TICKET MÉDIO</div><div style=\"margin-top:7px;font:25px Georgia,'Times New Roman',serif;color:#16213b\">${indicadores.ticket_medio == null ? 'Sem vendas' : brl(indicadores.ticket_medio)}</div></td><td width=\"50%\" style=\"padding:16px 20px\"><div style=\"font:12px Arial,sans-serif;letter-spacing:1.1px;color:#a65f43\">PEÇAS VENDIDAS</div><div style=\"margin-top:7px;font:25px Georgia,'Times New Roman',serif;color:#16213b\">${Number(indicadores.pecas_vendidas || 0).toLocaleString('pt-BR')}</div></td></tr></table><h3 style=\"margin:16px 0 8px;font:18px Georgia,'Times New Roman',serif;font-weight:normal;color:#16213b\">Categorias mais vendidas · por unidades</h3><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;font:13px Arial,sans-serif\"><thead><tr bgcolor=\"#202b49\"><th align=\"left\" style=\"padding:9px 12px;color:#ffffff;font-weight:normal\">Categoria</th><th align=\"right\" style=\"padding:9px 12px;color:#ffffff;font-weight:normal\">Peças</th><th align=\"right\" style=\"padding:9px 12px;color:#ffffff;font-weight:normal\">Faturamento</th></tr></thead><tbody>${linhasCategorias}</tbody></table></td></tr>`\n  : '<tr><td style=\"padding:0 30px 22px;font:13px Arial,sans-serif;color:#687187\">Indicadores de vendas ainda indisponíveis para esta unidade.</td></tr>';\nconst linhas = itens.length\n  ? itens.map((x, i) => `<tr bgcolor=\"${i % 2 ? '#faf8f5' : '#ffffff'}\"><td style=\"padding:11px 12px;border-bottom:1px solid #e9e3dc;color:#26304a\">${esc(x.produto)} · ${esc(x.cor)} · ${esc(x.tamanho)}<br><span style=\"font-size:12px;color:#687187\">SKU ${esc(x.sku)}</span></td><td align=\"right\" style=\"padding:11px 12px;border-bottom:1px solid #e9e3dc;color:#26304a\">${Number(x.saldo || 0).toLocaleString('pt-BR')}</td><td align=\"right\" style=\"padding:11px 12px;border-bottom:1px solid #e9e3dc;color:#26304a;white-space:nowrap\">${brl(x.valor_parado)}</td><td align=\"right\" style=\"padding:11px 12px;border-bottom:1px solid #e9e3dc;color:#26304a;white-space:nowrap\">${dt(x.ultima_venda)}</td></tr>`).join('')\n  : '<tr><td colspan=\"4\" style=\"padding:14px;color:#687187\">Nenhuma peça parada encontrada nesta unidade.</td></tr>';\nconst html = `<!doctype html><html lang=\"pt-BR\"><body style=\"margin:0;padding:0;background:#f5f2ed\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" bgcolor=\"#f5f2ed\" style=\"background:#f5f2ed\"><tr><td align=\"center\" style=\"padding:24px 12px\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:720px\"><tr><td align=\"center\" style=\"padding:0 0 18px\"><img src=\"${logo}\" width=\"112\" alt=\"Casa Lorenzi\" style=\"display:block;width:112px;height:auto;border:0\"></td></tr><tr><td bgcolor=\"#ffffff\" style=\"background:#ffffff;border:1px solid #e7e1da;border-top:3px solid #761e2e\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr><td style=\"padding:28px 30px 10px\"><div style=\"font:12px Arial,sans-serif;letter-spacing:1.6px;color:#a65f43;text-transform:uppercase\">Casa Lorenzi · gestão da unidade</div><h1 style=\"margin:10px 0 12px;font:32px Georgia,'Times New Roman',serif;font-weight:normal;line-height:1.15;color:#16213b\">Resumo semanal</h1><p style=\"margin:0;font:15px Arial,sans-serif;line-height:1.7;color:#35405a\"><b>${esc(loja.loja)}</b><br>Semana de ${esc(r.semana.inicio)} a ${esc(r.semana.fim)} · comparação com ${esc(r.semana_anterior.inicio)} a ${esc(r.semana_anterior.fim)}</p></td></tr><tr><td style=\"padding:18px 30px 22px\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" bgcolor=\"#faeee6\" style=\"background:#faeee6;border-radius:3px\"><tr><td colspan=\"2\" style=\"padding:18px 20px 4px\"><div style=\"font:12px Arial,sans-serif;letter-spacing:1.2px;color:#a65f43\">VENDAS DA UNIDADE</div></td></tr><tr><td width=\"50%\" style=\"padding:8px 20px 16px;border-right:1px solid #ead8cc\"><div style=\"font:27px Georgia,'Times New Roman',serif;color:#16213b\">${brl(loja.faturamento)}</div><div style=\"margin-top:4px;font:13px Arial,sans-serif;color:#687187\">Faturamento · ${pct(loja.variacao)} vs. semana anterior</div></td><td width=\"50%\" style=\"padding:8px 20px 16px\"><div style=\"font:21px Georgia,'Times New Roman',serif;color:#16213b\">${Number(loja.pedidos || 0).toLocaleString('pt-BR')} pedidos</div><div style=\"margin-top:4px;font:13px Arial,sans-serif;color:#687187\">${brl(loja.faturamento_online)} em vendas online</div></td></tr><tr><td colspan=\"2\" style=\"padding:0 20px 16px;font:13px Arial,sans-serif;color:#687187\">Semana anterior: ${brl(loja.faturamento_anterior)} · ${Number(loja.pedidos_anterior || 0).toLocaleString('pt-BR')} pedidos</td></tr></table></td></tr><tr><td style=\"padding:0 30px 8px\"><h2 style=\"margin:0 0 6px;font:24px Georgia,'Times New Roman',serif;font-weight:normal;color:#16213b\">Estoque parado · 60 dias</h2><p style=\"margin:0 0 12px;font:13px Arial,sans-serif;line-height:1.6;color:#687187\">${Number(r.estoque_parado?.total_itens || 0).toLocaleString('pt-BR')} itens · ${Number(r.estoque_parado?.total_unidades || 0).toLocaleString('pt-BR')} unidades · ${brl(r.estoque_parado?.total_valor)}</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;font:13px Arial,sans-serif\"><thead><tr bgcolor=\"#202b49\"><th align=\"left\" style=\"padding:10px 12px;color:#ffffff;font-weight:normal\">Peça</th><th align=\"right\" style=\"padding:10px 12px;color:#ffffff;font-weight:normal\">Saldo</th><th align=\"right\" style=\"padding:10px 12px;color:#ffffff;font-weight:normal\">Valor parado</th><th align=\"right\" style=\"padding:10px 12px;color:#ffffff;font-weight:normal\">Última venda</th></tr></thead><tbody>${linhas}</tbody></table></td></tr><tr><td style=\"padding:18px 30px 24px\"><p style=\"margin:0;padding-top:14px;border-top:1px solid #e9e3dc;font:12px Arial,sans-serif;line-height:1.6;color:#7a8190\">${esc(r.criterio_vendas)} Estoque: ${esc(r.estoque_parado?.criterio || '')}</p></td></tr></table></td></tr><tr><td align=\"center\" style=\"padding:16px 8px;font:11px Arial,sans-serif;color:#858b96\">Relatório automático · Casa Lorenzi</td></tr></table></td></tr></table></body></html>`;\nconst htmlComIndicadores = html.replace(\n  /<tr><td style=\"padding:0 30px 8px\"><h2[^>]*>Estoque parado · 60 dias<\\/h2>/,\n  `${blocoIndicadores}<tr><td style=\"padding:0 30px 8px\"><h2 style=\"margin:0 0 6px;font:24px Georgia,'Times New Roman',serif;font-weight:normal;color:#16213b\">Estoque parado · 60 dias</h2>`\n);\nconst htmlEstoqueExplicito = htmlComIndicadores.replace(\n  /(<h2[^>]*>Estoque parado · 60 dias<\\/h2>)<p[^>]*>[\\s\\S]*?<\\/p>(<table role=\"presentation\")/,\n  (_, titulo, tabela) => `${titulo}<p style=\"margin:0 0 6px;font:13px Arial,sans-serif;line-height:1.6;color:#687187\">${totalVariacoes.toLocaleString('pt-BR')} variações sem venda nos últimos 60 dias · ${totalUnidades.toLocaleString('pt-BR')} unidades no total · ${brl(r.estoque_parado?.total_valor)}</p><p style=\"margin:0 0 12px;font:12px Arial,sans-serif;line-height:1.6;color:#858b96\">A lista mostra ${itens.length.toLocaleString('pt-BR')} variações com maior valor parado, somando ${unidadesListadas.toLocaleString('pt-BR')} unidades. ${variacoesOcultas.toLocaleString('pt-BR')} outras variações (${unidadesOcultas.toLocaleString('pt-BR')} unidades) não aparecem na lista.</p>${tabela}`\n).replace('>Saldo</th>', '>Unidades na variação</th>');\nreturn {json:{para,assunto:`TESTE · Relatório semanal · ${loja.loja} · ${r.semana.inicio} a ${r.semana.fim}`,html:htmlEstoqueExplicito}};"
+      }
+    },
+    {
+      "id": "f01a0001-0001-4000-9000-000000000008",
+      "name": "Enviar e-mail do gerente",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1280,
+        480
+      ],
+      "parameters": {
+        "sendTo": "={{ $json.para }}",
+        "subject": "={{ $json.assunto }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Casa Lorenzi"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Toda sexta às 8h": {
+      "main": [
+        [
+          {
+            "node": "Buscar resumo da rede",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar resumo da rede": {
+      "main": [
+        [
+          {
+            "node": "Preparar e-mail do admin",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Separar lojas para teste",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar e-mail do admin": {
+      "main": [
+        [
+          {
+            "node": "Enviar e-mail do admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar lojas para teste": {
+      "main": [
+        [
+          {
+            "node": "Buscar resumo da loja",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar resumo da loja": {
+      "main": [
+        [
+          {
+            "node": "Preparar e-mail do gerente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar e-mail do gerente": {
+      "main": [
+        [
+          {
+            "node": "Enviar e-mail do gerente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "active": false
+}

@@ -625,6 +625,27 @@ def vendas_por_categoria(
     return [dict(linha) for linha in linhas]
 
 
+def categorias_mais_vendidas(
+    conexao: Connection, filtro: Filtro, inicio: date, fim: date, *, limite: int
+) -> list[dict[str, Any]]:
+    linhas = conexao.execute(
+        text(
+            VENDAS
+            + """
+            SELECT COALESCE(categoria, 'Sem categoria') AS categoria,
+                   COALESCE(sum(quantidade), 0) AS unidades,
+                   COALESCE(sum(valor + valor_sem_rateio), 0) AS faturamento
+            FROM venda
+            GROUP BY 1
+            ORDER BY unidades DESC, faturamento DESC, categoria
+            LIMIT :limite
+            """  # nosec B608
+        ),
+        {**_parametros(filtro, inicio, fim), "limite": limite},
+    ).mappings()
+    return [dict(linha) for linha in linhas]
+
+
 def vendas_por_loja(
     conexao: Connection, filtro: Filtro, inicio: date, fim: date
 ) -> list[dict[str, Any]]:

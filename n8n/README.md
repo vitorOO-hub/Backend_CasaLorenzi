@@ -66,3 +66,29 @@ curl -X POST -H "X-Chave-Automacao: $CHAVE" "$API/api/v1/automacoes/resumo-da-co
 
 Mudou `montar_email.js`? Cole o conteúdo de novo no nó **Montar e-mail** (ou reimporte
 `fluxo_emails.json` e refaça as duas credenciais).
+
+## Relatório semanal (teste)
+
+O arquivo `fluxo_relatorio_semanal.json` é um workflow separado do envio de e-mails a clientes.
+Ele roda às sextas-feiras às 8h de São Paulo, busca o resumo da rede para o admin e depois busca
+um resumo filtrado por loja para cada gerente. Durante os testes, ambos os tipos de relatório são
+enviados para `2020.vitor.oliveira@gmail.com`; os assuntos começam com `TESTE`.
+
+1. Importe `fluxo_relatorio_semanal.json` pelo menu de workflows do n8n.
+2. Nos dois nós **Buscar resumo**, configure a credencial **Header Auth** com nome
+   `X-Chave-Automacao` e o valor de `CHAVE_AUTOMACAO` configurado no backend.
+3. Nos dois nós **Enviar e-mail**, selecione a credencial Gmail usada para enviar os e-mails Casa
+   Lorenzi.
+4. Execute manualmente e confira os e-mails. O fluxo vem desativado e não dispara até ser ativado.
+5. Depois de validar, troque o destinatário temporário pela lista definitiva de admin/gerentes e
+   ative o workflow.
+
+O endpoint por loja precisa estar publicado no backend. A API usada pelo fluxo é
+`https://backend-casalorenzi.onrender.com/api/v1/automacoes/resumo-semanal`; o relatório individual
+usa `?id_loja=<UUID>` e não inclui pontos a vencer, que são um indicador da rede.
+
+Os HTMLs dos relatórios ficam em `codigo_email_relatorio_admin.js` e
+`codigo_email_relatorio_gerente.js`. Ao atualizar o workflow que já foi importado no n8n, copie o
+conteúdo de cada arquivo para o nó **Preparar e-mail** correspondente e publique a revisão. O logo
+é carregado do site Casa Lorenzi; se o cliente de e-mail bloquear imagens remotas, o texto alternativo
+continua identificando a marca.

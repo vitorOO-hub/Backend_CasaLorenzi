@@ -14,6 +14,8 @@ from app.assistente.cliente.schemas import (
     ConversaResumo,
     MensagemCriacao,
     RespostaAssistente,
+    SugestaoChamado,
+    SugestaoChamadoEntrada,
 )
 from app.core.config import Settings, get_settings
 from app.core.db import ExecutarDep
@@ -102,5 +104,29 @@ def enviar_mensagem(
     return executar(
         lambda conexao: service.enviar_mensagem(
             conexao, usuario, id_conversa, dados.texto, configuracoes=configuracoes, fabrica=fabrica
+        )
+    )
+
+
+@router.post(
+    "/sugestao-chamado",
+    response_model=SugestaoChamado,
+    summary="Resposta rapida antes de abrir um chamado (ou nenhuma)",
+)
+def sugestao_chamado(
+    dados: SugestaoChamadoEntrada,
+    usuario: UsuarioDep,
+    executar: ExecutarDep,
+    configuracoes: SettingsDep,
+    fabrica: FabricaDep,
+):
+    return executar(
+        lambda conexao: service.sugerir_antes_do_chamado(
+            conexao,
+            usuario,
+            dados.assunto,
+            dados.descricao,
+            configuracoes=configuracoes,
+            fabrica=fabrica,
         )
     )

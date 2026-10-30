@@ -30,6 +30,7 @@ log = logging.getLogger(__name__)
 
 LIMITE_PRODUTOS = 5
 LIMITE_PEDIDOS = 5
+LIMITE_CHAMADOS = 5
 LIMITE_OFERTAS = 3
 MAX_VARIACOES = 12  # por peca, na resposta ao modelo e no seletor do cartao
 # Busca semantica (distancia de cosseno, 0 = identica). Com o gemini-embedding-2 o que tem a ver
@@ -199,6 +200,12 @@ DECLARACOES = [
         },
     ),
     Ferramenta(
+        "consultar_chamados",
+        "Os ultimos chamados do cliente logado: protocolo, assunto, situacao, equipe, datas e se a "
+        "ultima mensagem foi do atendente. So informa o andamento: nao responde pelo atendente.",
+        {"type": "object", "properties": {}, "additionalProperties": False},
+    ),
+    Ferramenta(
         "consultar_politica",
         "Politicas oficiais da loja: trocas, devolucao, defeito, reembolso, cancelamento, "
         "frete, prazo de entrega, retirada na loja, pagamento e parcelamento, ajustes e "
@@ -240,8 +247,12 @@ class Ferramentas:
         usuario: UsuarioAtual,
         id_conversa: UUID | None = None,
         vetorizar: embeddings.Vetorizar | None = None,
+        permitidas: frozenset[str] | None = None,
     ) -> None:
         self.conexao, self.usuario, self.id_conversa = conexao, usuario, id_conversa
+        # Subconjunto que o modelo pode chamar aqui (None = todas): o que ele nao recebeu no
+        # esquema tambem nao executa, mesmo que o modelo invente a chamada.
+        self.permitidas = permitidas
         # Busca semantica (embedding da pergunta); None = so a busca por palavras.
         self.vetorizar = vetorizar
         self.id_atendimento: UUID | None = None
@@ -253,7 +264,9 @@ class Ferramentas:
         self.pecas_encontradas: list[dict[str, Any]] = []
 
     def executar(self, nome: str, argumentos: dict[str, Any]) -> dict[str, Any]:
-        metodo = getattr(self, f"_{nome}", None) if nome in {d.nome for d in DECLARACOES} else None
+        conhecida = nome in {d.nome for d in DECLARACOES}
+        liberada = self.permitidas is None or nome in self.permitidas
+        metodo = getattr(self, f"_{nome}", None) if conhecida and liberada else None
         if metodo is None:
             return {"erro": "ferramenta_desconhecida"}
         try:
@@ -433,6 +446,36 @@ class Ferramentas:
                 for p in pedidos
             ]
         }
+
+    def _consultar_chamados(self, argumentos: dict[str, Any]) -> dict[str, Any]:
+        SemArgumentos.model_validate(argumentos)
+        chamados = cliente.listar_chamados(
+            self.conexao, self.usuario, limit=LIMITE_CHAMADOS, offset=0
+        )
+        resultado = []
+        for c in chamados:
+            mensagens = cliente.listar_mensagens_chamado(
+                self.conexao, self.usuario, c["id_atendimento"]
+            )
+            ultima = mensagens[-1] if mensagens else None
+            resultado.append(
+                {
+                    "protocolo": c.get("protocolo"),
+                    "assunto": c.get("assunto"),
+                    "situacao": c["status"]["nome"],
+                    "aguardando_voce": c["status"]["codigo"] == "aguardando_cliente",
+                    "equipe": c.get("loja_nome") or "atendimento geral",
+                    "aberto_em": c.get("aberto_em"),
+                    "atualizado_em": c.get("atualizado_em"),
+                    "ultima_mensagem": (
+                        {"de": ultima.get("autor"), "em": ultima.get("enviada_em")}
+                        if ultima
+                        else None
+                    ),
+                }
+            )
+        # Sem chamado: o modelo diz isso, e o cliente pode abrir um na area Atendimento.
+        return {"chamados": resultado}
 
     def _consultar_politica(self, argumentos: dict[str, Any]) -> dict[str, Any]:
         dados = ConsultarPolitica.model_validate(argumentos)

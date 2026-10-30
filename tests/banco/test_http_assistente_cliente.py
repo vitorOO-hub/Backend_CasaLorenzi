@@ -443,3 +443,141 @@ def test_avaliar_resposta_do_assistente(cena):
     )
     assert http.put(url, json={"avaliacao": "util"}, headers=como("outro")).status_code == 404
     assert http.put(url, json={"avaliacao": "otima"}, headers=como("cliente")).status_code == 422
+
+
+# ---------------------------------------------------------------- chamados
+
+
+def _abrir_chamado_pelo_chat(http, como, provedor):
+    conversa = _nova(http, como("cliente"))
+    provedor.roteiro = [
+        (
+            "transferir_para_atendente",
+            {"motivo": "Barra da calça", "resumo": "Cliente quer saber da barra da calça."},
+        )
+    ]
+    corpo = _enviar(http, como("cliente"), conversa, "quero falar com uma pessoa").json()
+    return corpo["id_atendimento"]
+
+
+def test_cliente_pergunta_do_chamado_no_proprio_chat(cena):
+    http, como, provedor, pg, _ = cena
+    id_atendimento = _abrir_chamado_pelo_chat(http, como, provedor)
+    protocolo = http.get(
+        f"/api/v1/cliente/chamados/{id_atendimento}", headers=como("cliente")
+    ).json()["protocolo"]
+
+    conversa = _nova(http, como("cliente"))
+    provedor.roteiro = [("consultar_chamados", {})]
+    provedor.texto = f"Seu chamado {protocolo} esta aberto."
+    corpo = _enviar(http, como("cliente"), conversa, "como esta meu chamado?").json()
+
+    assert corpo["status"] == "ativa" and protocolo in corpo["resposta"]
+    (chamado,) = provedor.resultados[0].resultado["chamados"]
+    assert chamado["protocolo"] == protocolo and chamado["situacao"] == "Aberto"
+    assert chamado["equipe"] == "atendimento geral" and chamado["aguardando_voce"] is False
+
+
+def test_chamados_de_outro_cliente_nao_aparecem(cena):
+    http, como, provedor, _, _ = cena
+    _abrir_chamado_pelo_chat(http, como, provedor)
+    conversa = _nova(http, como("outro"))
+    provedor.roteiro = [("consultar_chamados", {})]
+    _enviar(http, como("outro"), conversa, "e o meu chamado?")
+    assert provedor.resultados[0].resultado == {"chamados": []}
+
+
+class ProvedorDaSugestao(ProvedorRoteirizado):
+    def responder(self, *, ferramentas, **kwargs):
+        self.ofertadas = [f.nome for f in ferramentas]
+        return super().responder(**kwargs)
+
+
+@pytest.fixture
+def sugestao(cena):
+    http, como, _, pg, extra = cena
+    provedor = ProvedorDaSugestao()
+    http.app.dependency_overrides[get_fabrica_provedor] = lambda: lambda destino, cfg: provedor
+    return http, como, provedor, pg
+
+
+SUGESTAO = "/api/v1/assistente/cliente/sugestao-chamado"
+
+
+def test_duvida_de_politica_recebe_resposta_antes_do_chamado(sugestao):
+    http, como, provedor, pg = sugestao
+    provedor.roteiro = [("consultar_politica", {"tema": "trocas"})]
+    provedor.texto = "A troca e feita em ate 30 dias na loja da marca da peca."
+    r = http.post(
+        SUGESTAO,
+        json={"assunto": "Troca", "descricao": "Em quantos dias posso trocar uma camisa?"},
+        headers=como("cliente"),
+    )
+    assert r.status_code == 200 and r.json()["sugestao"].startswith("A troca e feita")
+    # So consultas: nada de abrir chamado, oferecer peca ou ver estoque.
+    assert set(provedor.ofertadas) == {
+        "consultar_politica",
+        "consultar_pedidos",
+        "consultar_chamados",
+        "info_loja",
+        "consultar_pontos",
+    }
+    # Fica registrada (e conta no limite diario), mas fora do historico do chat.
+    assert http.get(BASE, headers=como("cliente")).json() == []
+    (status,) = pg.execute(
+        "SELECT c.status FROM conversa_assistente c JOIN usuario u ON u.id_usuario = c.id_usuario"
+        " WHERE u.nome ILIKE 'cliente assist' ORDER BY c.criada_em DESC LIMIT 1"
+    ).fetchone()
+    assert status == "encerrada"
+
+
+def test_caso_para_uma_pessoa_nao_tem_sugestao(sugestao):
+    http, como, provedor, _ = sugestao
+    provedor.roteiro = [("consultar_pedidos", {})]
+    provedor.texto = "SEM_SUGESTAO"
+    r = http.post(
+        SUGESTAO,
+        json={"assunto": "Defeito", "descricao": "A costura da calça abriu no primeiro uso."},
+        headers=como("cliente"),
+    )
+    assert r.status_code == 200 and r.json() == {"sugestao": None}
+
+
+def test_sugestao_sem_consulta_ou_com_ferramenta_proibida_nao_aparece(sugestao):
+    http, como, provedor, pg = sugestao
+    provedor.texto = "Pode trocar em 90 dias."
+    corpo = {"assunto": "Troca", "descricao": "Qual o prazo para trocar?"}
+    assert http.post(SUGESTAO, json=corpo, headers=como("cliente")).json()["sugestao"] is None
+    # O modelo tentou abrir um chamado por conta propria: a ferramenta nem executa.
+    provedor.roteiro = [("transferir_para_atendente", {"motivo": "x x x", "resumo": "y" * 12})]
+    assert http.post(SUGESTAO, json=corpo, headers=como("cliente")).json()["sugestao"] is None
+    assert provedor.resultados[0].resultado == {"erro": "ferramenta_desconhecida"}
+    (abertos,) = pg.execute(
+        "SELECT count(*) FROM atendimento a JOIN usuario u ON u.id_usuario = a.id_cliente"
+        " WHERE u.nome ILIKE 'cliente assist'"
+    ).fetchone()
+    assert abertos == 0
+
+
+def test_falha_do_modelo_nao_impede_o_chamado(sugestao):
+    http, como, provedor, _ = sugestao
+    provedor.erro = ErroProvedor("groq", "tempo esgotado")
+    r = http.post(
+        SUGESTAO,
+        json={"assunto": "Pedido", "descricao": "Meu pedido chega quando?"},
+        headers=como("cliente"),
+    )
+    assert r.status_code == 200 and r.json() == {"sugestao": None}
+
+
+def test_sugestao_valida_o_texto_e_exige_cliente(sugestao):
+    http, como, _, _ = sugestao
+    assert (
+        http.post(
+            SUGESTAO, json={"assunto": "x", "descricao": "y"}, headers=como("cliente")
+        ).status_code
+        == 422
+    )
+    corpo = {"assunto": "Troca", "descricao": "Qual o prazo?"}
+    assert http.post(SUGESTAO, json=corpo).status_code == 401
+    assert http.post(SUGESTAO, json=corpo, headers=como("atendente")).status_code == 403

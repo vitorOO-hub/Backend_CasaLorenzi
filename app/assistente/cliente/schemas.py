@@ -98,3 +98,19 @@ class AvaliacaoDaResposta(BaseModel):
 
     # null tira a avaliacao.
     avaliacao: Avaliacao | None
+
+
+class SugestaoChamadoEntrada(BaseModel):
+    """O que o cliente escreveu no formulario de chamado, antes de enviar."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    assunto: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=200)]
+    descricao: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=3, max_length=4000)
+    ]
+
+
+class SugestaoChamado(BaseModel):
+    # None: nada seguro a sugerir, o cliente abre o chamado normalmente.
+    sugestao: str | None

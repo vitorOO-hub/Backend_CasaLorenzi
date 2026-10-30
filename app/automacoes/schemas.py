@@ -77,6 +77,18 @@ class VendasDaLoja(Saida):
     variacao: float | None
 
 
+class CategoriaMaisVendida(Saida):
+    categoria: str
+    unidades: int
+    faturamento: float
+
+
+class IndicadoresDaUnidade(Saida):
+    ticket_medio: float
+    pecas_vendidas: int
+    categorias_mais_vendidas: list[CategoriaMaisVendida]
+
+
 class Semana(Saida):
     inicio: date
     fim: date
@@ -89,6 +101,7 @@ class ResumoSemanal(Saida):
     faturamento: float
     faturamento_anterior: float
     lojas: list[VendasDaLoja]
+    indicadores_unidade: IndicadoresDaUnidade | None = None
     estoque_parado: EstoqueParado
     pontos_a_vencer: PontosAVencer | None
 
