@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.assistente import repositorio, service
+from app.assistente import admin, repositorio, service
 from app.assistente.provedor import FalhaDoProvedor
 from app.assistente.schemas import (
     Conversa,
@@ -68,7 +68,7 @@ def enviar_mensagem(
     configuracoes: SettingsDep,
 ):
     try:
-        return service.enviar_mensagem(executar, usuario, configuracoes, id_conversa, dados.texto)
+        return admin.enviar_mensagem(executar, usuario, configuracoes, id_conversa, dados.texto)
     except (
         service.AcessoNegado,
         repositorio.ConversaNaoEncontrada,

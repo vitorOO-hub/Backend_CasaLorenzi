@@ -242,7 +242,10 @@ def enviar_mensagem(
         executar_db(lambda c: repositorio.gravar_resposta(c, id_conversa, resposta, "", 0, 0))
         return {"id_conversa": id_conversa, "resposta": resposta}
 
-    precisa_de_ferramenta = forcar_ferramenta or plano.classificacao.requer_ferramenta
+    consulta_obrigatoria = (
+        forcar_ferramenta(pergunta_consulta) if callable(forcar_ferramenta) else forcar_ferramenta
+    )
+    precisa_de_ferramenta = consulta_obrigatoria or plano.classificacao.requer_ferramenta
     tokens_entrada = tokens_saida = chamadas_totais = 0
     resposta_final = ""
     falha_consulta = False

@@ -2,7 +2,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.assistente import ferramentas, provedor, service
+from app.assistente import admin as assistente_admin
+from app.assistente import ferramentas, periodos, provedor, repositorio, service
 from app.assistente.roteamento import DestinoModelo
 from app.core.config import Settings
 from app.core.papeis import Papel, UsuarioAtual
@@ -87,6 +88,115 @@ def test_vendas_admin_retorna_resumo_e_detalhe_solicitado(monkeypatch, detalhe):
     if detalhe != "resumo":
         assert resultado[detalhe] == dashboard[detalhe]
     assert "aviso" not in service._json_para_modelo(resultado)[0]
+
+
+@pytest.mark.parametrize(
+    ("pergunta", "resposta"),
+    [
+        ("qual a receita da rede?", "Qual período"),
+        ("quanto ganhamos esse ano?", "faturamento ou o lucro"),
+        ("qual o lucro da rede este ano?", "não consigo consultar o lucro"),
+    ],
+)
+def test_admin_esclarece_vendas_e_lucro_sem_valores_inventados(pergunta, resposta):
+    assert resposta in assistente_admin.esclarecimento_necessario(pergunta)
+
+
+@pytest.mark.parametrize(
+    "pergunta", ["Quais são os pedidos pendentes?", "Mostre as marcas do catálogo"]
+)
+def test_admin_nao_exige_periodo_em_consultas_que_nao_precisam(pergunta):
+    assert assistente_admin.esclarecimento_necessario(pergunta) is None
+
+
+@pytest.mark.parametrize(
+    ("pergunta", "periodo"),
+    [("qual a receita da rede?", "dos ultimos 30 dias"), ("faturamento", "este ano")],
+)
+def test_admin_recupera_periodo_preservando_visao_da_rede(pergunta, periodo):
+    historico = [
+        {"role": "user", "content": pergunta},
+        {"role": "assistant", "content": periodos.PEDIDO_PERIODO},
+        {"role": "user", "content": periodo},
+    ]
+    assert assistente_admin.contextualizar_periodo(periodo, historico) == f"{pergunta} {periodo}"
+
+
+def test_admin_exige_consulta_antes_de_afirmar_dados(monkeypatch):
+    pergunta = "qual a receita da rede neste ano?"
+    monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(
+        repositorio, "gravar_pergunta", lambda *_args: [{"role": "user", "content": pergunta}]
+    )
+    monkeypatch.setattr(repositorio, "gravar_resposta", lambda *_args: None)
+    monkeypatch.setattr(repositorio, "marcar_pergunta_sem_resposta", lambda *_args: None)
+    monkeypatch.setattr(provedor, "completar", lambda *_args: {
+        "texto": "Receita inventada de R$ 999", "chamadas": [],
+        "tokens_entrada": 1, "tokens_saida": 1,
+    })
+    resposta = assistente_admin.enviar_mensagem(
+        lambda operacao: operacao(None), admin(),
+        Settings(_env_file=None, database_url="postgresql://localhost/teste", groq_api_key="teste"),
+        uuid4(), pergunta,
+    )
+    assert "não posso confirmar" in resposta["resposta"].lower()
+    assert "999" not in resposta["resposta"]
+
+
+@pytest.mark.parametrize(
+    "mensagens",
+    [
+        ["qual a receita da rede?", "dos ultimos 30 dias"],
+        ["quanto ganhamos de dinheiro esse ano?", "faturamento", "este ano"],
+    ],
+)
+def test_admin_conversa_completa_retoma_periodo_e_consulta_rede(monkeypatch, mensagens):
+    usuario = admin()
+    conversa = uuid4()
+    historico = []
+    consultas = []
+
+    def gravar_pergunta(_c, id_conversa, _id_usuario, texto, _tipo):
+        assert id_conversa == conversa
+        historico.append({"role": "user", "content": texto})
+        return historico.copy()
+
+    def gravar_resposta(_c, id_conversa, texto, *_args):
+        assert id_conversa == conversa
+        historico.append({"role": "assistant", "content": texto})
+
+    monkeypatch.setattr(repositorio, "id_usuario_ativo", lambda *_args: uuid4())
+    monkeypatch.setattr(repositorio, "gravar_pergunta", gravar_pergunta)
+    monkeypatch.setattr(repositorio, "gravar_resposta", gravar_resposta)
+    monkeypatch.setattr(repositorio, "gravar_ferramenta", lambda *_args: None)
+
+    def dashboard(_c, _usuario, *, inicio, fim, filtro):
+        consultas.append((inicio, fim, filtro.id_loja))
+        return {"atual": {"faturamento": 123}}
+
+    monkeypatch.setattr(ferramentas.gerencia_service, "montar_dashboard", dashboard)
+    turnos = iter([
+        {"texto": "", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": [{
+            "id": "1", "name": "consultar_vendas",
+            "arguments": {"inicio": "2026-01-01", "fim": "2026-01-31"},
+        }]},
+        {"texto": "Faturamento: R$ 123", "tokens_entrada": 1, "tokens_saida": 1, "chamadas": []},
+    ])
+    monkeypatch.setattr(provedor, "completar", lambda *_args: next(turnos))
+    config = Settings(
+        _env_file=None, database_url="postgresql://localhost/teste",
+        groq_api_key="teste", gemini_api_key="teste",
+    )
+    respostas = [
+        assistente_admin.enviar_mensagem(
+            lambda operacao: operacao(None), usuario, config, conversa, texto
+        )
+        for texto in mensagens
+    ]
+    assert "Qual período" in respostas[-2]["resposta"]
+    assert respostas[-1]["resposta"] == "Faturamento: R$ 123"
+    assert len(consultas) == 1
+    assert consultas[0][2] is None
 
 
 @pytest.mark.parametrize("provedor_nome", ["groq", "gemini"])
