@@ -191,6 +191,28 @@ def operadores_de_estoque(conexao: Connection) -> dict[UUID, list[str]]:
     return por_loja
 
 
+def destinatarios_do_resumo(conexao: Connection, id_loja: UUID | None) -> list[str]:
+    """Quem recebe o resumo semanal: os admins (`diretor` no banco) ou os gerentes da loja."""
+    linhas = conexao.execute(
+        text(
+            """
+            SELECT u.email
+            FROM usuario u
+            JOIN tipo_usuario t ON t.id_tipo_usuario = u.id_tipo_usuario AND t.codigo = :tipo
+            WHERE u.ativo AND COALESCE(u.email, '') <> ''
+              AND (u.id_loja = CAST(:loja AS uuid)
+                   OR (CAST(:loja AS uuid) IS NULL AND u.id_loja IS NULL))
+            ORDER BY u.email
+            """
+        ),
+        {
+            "tipo": "diretor" if id_loja is None else "gerente_loja",
+            "loja": str(id_loja) if id_loja else None,
+        },
+    ).scalars()
+    return list(linhas)
+
+
 # ------------------------------------------------------------------ e-mails ao cliente (n8n)
 
 MAX_TENTATIVAS = 5

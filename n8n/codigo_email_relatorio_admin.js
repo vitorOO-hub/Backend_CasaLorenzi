@@ -1,5 +1,6 @@
 const r = $json;
-const para = '2020.vitor.oliveira@gmail.com';
+const para = (r.destinatarios || []).join(',');
+if (!para) return null; // sem destinatario cadastrado: nao envia
 const esc = (v) => String(v ?? '').replace(/[&<>\"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
 const brl = (v) => Number(v || 0).toLocaleString('pt-BR', {style:'currency',currency:'BRL'});
 const pct = (v) => v == null ? 'Sem base de comparação' : `${v >= 0 ? '+' : ''}${(v * 100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%`;

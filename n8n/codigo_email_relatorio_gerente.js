@@ -1,5 +1,6 @@
 const r = $json;
-const para = '2020.vitor.oliveira@gmail.com';
+const para = (r.destinatarios || []).join(',');
+if (!para) return null; // sem destinatario cadastrado: nao envia
 const loja = r.lojas?.[0];
 if (!loja) throw new Error('A API não retornou a loja solicitada');
 const esc = (v) => String(v ?? '').replace(/[&<>\"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
