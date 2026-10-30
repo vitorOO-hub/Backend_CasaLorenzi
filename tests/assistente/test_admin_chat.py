@@ -169,6 +169,20 @@ def test_admin_exige_consulta_antes_de_afirmar_dados(monkeypatch):
     assert "999" not in resposta["resposta"]
 
 
+def test_gerente_nao_pode_usar_servico_do_admin(monkeypatch):
+    gerente = UsuarioAtual(id_auth=uuid4(), papel=Papel.GERENTE_LOJA, id_loja=uuid4())
+    monkeypatch.setattr(
+        repositorio, "id_usuario_ativo",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("não deveria consultar o banco")),
+    )
+    with pytest.raises(service.AcessoNegado):
+        assistente_admin.enviar_mensagem(
+            lambda operacao: operacao(None), gerente,
+            Settings(_env_file=None, database_url="postgresql://localhost/teste"),
+            uuid4(), "qual a receita da rede este ano?",
+        )
+
+
 @pytest.mark.parametrize(
     "pergunta",
     ["Qual o CPF de Maria?", "Qual o telefone de João?", "Quem é o gerente?"],
