@@ -111,7 +111,7 @@
     },
     {
       "id": "b1f0c5a2-0007-4c1a-9b0e-000000000007",
-      "name": "Disparar avisos diarios",
+      "name": "Preparar e-mails do dia",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -120,11 +120,96 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "https://backend-casalorenzi.onrender.com/api/v1/automacoes/disparar-emails",
+        "url": "https://backend-casalorenzi.onrender.com/api/v1/automacoes/emails-diarios",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
           "timeout": 600000
+        }
+      }
+    },
+    {
+      "id": "b1f0c5a2-0008-4c1a-9b0e-000000000008",
+      "name": "Separar e-mails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        240
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Um item por e-mail pronto (a resposta do backend traz a lista em `emails`).\nreturn ($input.first().json.emails ?? []).map((email) => ({ json: email }));"
+      }
+    },
+    {
+      "id": "b1f0c5a2-0009-4c1a-9b0e-000000000009",
+      "name": "Montar e-mail (diario)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        240
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Nó \"Montar e-mail\" do fluxo \"Casa Lorenzi - e-mails ao cliente\" (n8n, nó Code, modo \"Run Once for\n// Each Item\"). Recebe o corpo do webhook que o backend manda (app/automacoes/emails.py) e devolve\n// { para, assunto, html, texto }. Os textos que vêm do banco (nome, produtos, loja) são escapados.\n// HTML de e-mail: só tabelas e estilo inline (Gmail, Outlook e celular).\n// Mudou este arquivo? Cole de novo no nó Code do n8n (ou reimporte n8n/fluxo_emails.json).\n\nconst corpo = $json.body ?? $json;\n\nconst COR = {\n  fundo: \"#f6f3ee\", papel: \"#ffffff\", tinta: \"#16203a\", suave: \"#5e6b89\", linha: \"#e7e1d7\",\n  marinho: \"#1f2a48\", dourado: \"#b46746\", douradoClaro: \"#f8ece4\", vinho: \"#7a1020\", areia: \"#eeeae3\",\n};\nconst SERIFA = \"Georgia,'Times New Roman',serif\";\nconst SANS = \"'Helvetica Neue',Helvetica,Arial,sans-serif\";\n\nconst esc = (v) => String(v ?? \"\").replace(/[&<>\"']/g, (c) => ({ \"&\": \"&amp;\", \"<\": \"&lt;\", \">\": \"&gt;\", '\"': \"&quot;\", \"'\": \"&#39;\" })[c]);\nconst MINUSCULAS = new Set([\"de\", \"da\", \"do\", \"das\", \"dos\", \"e\", \"em\", \"com\"]);\n// O banco guarda nomes em minúsculas (\"calça alfaiataria torino\"): no e-mail, cada palavra com maiúscula.\nconst titulo = (v) => String(v ?? \"\").trim().split(/\\s+/).map((p, i) => {\n  if (i > 0 && MINUSCULAS.has(p.toLowerCase())) return p.toLowerCase();\n  if (/^[A-Z0-9]{1,3}$/.test(p)) return p; // tamanhos (PP, GG, 42) e siglas ficam como estão\n  return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();\n}).join(\" \");\nconst moeda = (v) => Number(v || 0).toLocaleString(\"pt-BR\", { style: \"currency\", currency: \"BRL\" });\nconst inteiro = (v) => Number(v || 0).toLocaleString(\"pt-BR\");\nconst dataLonga = (iso) => {\n  const d = new Date(iso);\n  return isNaN(d) ? esc(iso) : d.toLocaleDateString(\"pt-BR\", { timeZone: \"America/Sao_Paulo\", day: \"numeric\", month: \"long\", year: \"numeric\" });\n};\nconst dataCurta = (iso) => {\n  const d = new Date(iso);\n  return isNaN(d) ? esc(iso) : d.toLocaleDateString(\"pt-BR\", { timeZone: \"America/Sao_Paulo\", day: \"2-digit\", month: \"2-digit\" });\n};\nconst pontosTxt = (n) => `${inteiro(n)} ${Number(n) === 1 ? \"ponto\" : \"pontos\"}`;\n\nif (!corpo || !corpo.tipo || !corpo.para || !corpo.para.email) {\n  throw new Error(\"Corpo inválido: faltam tipo ou para.email\");\n}\n\nconst primeiro = titulo(corpo.para.primeiro_nome || \"cliente\");\nconst nome = esc(primeiro);\nconst site = String(corpo.site || \"https://projetocasalorenzi.vercel.app\").replace(/\\/$/, \"\");\nconst LOGO = `${site}/img/logo-casa-lorenzi.png`;\n\n// ------------------------------------------------------------------ peças de layout\n\nconst botao = (texto, link) => `<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:8px 0 4px\"><tr>\n<td style=\"background:${COR.marinho};border-radius:2px\"><a href=\"${esc(link)}\" style=\"display:inline-block;padding:14px 28px;font-family:${SANS};font-size:13px;letter-spacing:1.5px;text-transform:uppercase;color:#ffffff;text-decoration:none\">${esc(texto)}</a></td>\n</tr></table>`;\n\nconst rotulo = (texto) => `<p style=\"margin:0 0 6px;font-family:${SANS};font-size:11px;letter-spacing:2px;text-transform:uppercase;color:${COR.dourado}\">${texto}</p>`;\n\nconst cartao = (conteudo, fundo = COR.douradoClaro) => `<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:20px 0;background:${fundo};border-radius:2px\"><tr><td style=\"padding:20px 22px\">${conteudo}</td></tr></table>`;\n\nfunction barra(percentual) {\n  const p = Math.max(4, Math.min(100, Math.round(percentual || 0)));\n  return `<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:10px 0 6px;background:${COR.areia};border-radius:8px\"><tr>\n<td width=\"${p}%\" style=\"background:${COR.dourado};height:8px;line-height:8px;font-size:0;border-radius:8px\">&nbsp;</td>${p < 100 ? `<td style=\"height:8px;line-height:8px;font-size:0\">&nbsp;</td>` : \"\"}\n</tr></table>`;\n}\n\nfunction beneficios(lista) {\n  return (lista || []).map((b) => `<tr>\n<td valign=\"top\" style=\"padding:6px 10px 6px 0;font-family:${SERIFA};font-size:16px;color:${COR.dourado}\">&#10003;</td>\n<td style=\"padding:6px 0;font-family:${SANS};font-size:14px;line-height:1.5;color:${COR.tinta}\"><strong>${esc(b.titulo)}</strong><br><span style=\"color:${COR.suave}\">${esc(b.descricao)}</span></td>\n</tr>`).join(\"\");\n}\n\nfunction blocoCategoria(categoria, chamada) {\n  const prox = categoria && categoria.proxima;\n  if (!prox) return \"\";\n  const lista = beneficios(prox.beneficios);\n  return cartao(`${rotulo(\"Lorenzi+\")}\n<p style=\"margin:0;font-family:${SERIFA};font-size:20px;line-height:1.3;color:${COR.tinta}\">${chamada || `Faltam <strong>${pontosTxt(prox.faltam)}</strong> para o ${esc(prox.nome)}`}</p>\n${barra(prox.progresso)}\n<p style=\"margin:0 0 ${lista ? \"12px\" : \"0\"};font-family:${SANS};font-size:12px;color:${COR.suave}\">${esc(categoria.atual.nome)} &rarr; ${esc(prox.nome)} · faltam ${pontosTxt(prox.faltam)}</p>\n${lista ? `<p style=\"margin:0 0 4px;font-family:${SANS};font-size:13px;color:${COR.tinta}\">No ${esc(prox.nome)} você passa a ter:</p><table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\">${lista}</table>` : \"\"}`);\n}\n\nfunction moldura({ preheader, titulo: tituloHtml, conteudo, rodapeExtra }) {\n  return `<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"light\"><title>Casa Lorenzi</title></head>\n<body style=\"margin:0;padding:0;background:${COR.fundo}\">\n<div style=\"display:none;max-height:0;overflow:hidden;opacity:0;color:${COR.fundo}\">${esc(preheader)}&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div>\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:${COR.fundo}\"><tr><td align=\"center\" style=\"padding:28px 12px\">\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px\">\n<tr><td align=\"center\" style=\"padding:8px 0 22px\"><a href=\"${esc(site)}\" style=\"text-decoration:none\"><img src=\"${esc(LOGO)}\" width=\"112\" height=\"112\" alt=\"Casa Lorenzi\" style=\"display:block;border:0;width:112px;height:112px\"></a></td></tr>\n<tr><td style=\"background:${COR.papel};border:1px solid ${COR.linha};border-top:3px solid ${COR.vinho}\">\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n<tr><td style=\"padding:36px 40px 4px;font-family:${SERIFA};font-size:28px;line-height:1.25;color:${COR.tinta}\">${tituloHtml}</td></tr>\n<tr><td style=\"padding:14px 40px 34px;font-family:${SANS};font-size:15px;line-height:1.65;color:${COR.tinta}\">${conteudo}</td></tr>\n</table></td></tr>\n<tr><td style=\"padding:24px 20px 8px;text-align:center;font-family:${SANS};font-size:12px;line-height:1.6;color:${COR.suave}\">\n${rodapeExtra ? `${rodapeExtra}<br><br>` : \"\"}\n<a href=\"${esc(site)}/loja\" style=\"color:${COR.suave}\">Loja</a> &nbsp;·&nbsp; <a href=\"${esc(site)}/casas\" style=\"color:${COR.suave}\">Nossas casas</a> &nbsp;·&nbsp; <a href=\"${esc(site)}/agendar\" style=\"color:${COR.suave}\">Agendar atendimento</a> &nbsp;·&nbsp; <a href=\"${esc(site)}/conta\" style=\"color:${COR.suave}\">Minha conta</a><br><br>\nVocê recebeu este e-mail porque é cliente da Casa Lorenzi.<br>Para deixar de receber avisos, altere suas preferências em <a href=\"${esc(site)}/conta\" style=\"color:${COR.suave}\">Minha conta</a>.\n</td></tr>\n</table></td></tr></table></body></html>`;\n}\n\n// ------------------------------------------------------------------ os três e-mails\n\nlet assunto, html, texto;\n\nif (corpo.tipo === \"pos_compra\") {\n  const p = corpo.pedido;\n  const loja = titulo(p.loja);\n  const itens = (p.itens || []).map((i) => `<tr>\n<td width=\"76\" valign=\"top\" style=\"padding:14px 14px 14px 0;border-bottom:1px solid ${COR.linha}\">${i.imagem ? `<img src=\"${esc(i.imagem)}\" width=\"64\" height=\"80\" alt=\"\" style=\"display:block;width:64px;height:80px;object-fit:cover;border:0;background:${COR.areia}\">` : `<div style=\"width:64px;height:80px;background:${COR.areia}\"></div>`}</td>\n<td valign=\"top\" style=\"padding:14px 0;border-bottom:1px solid ${COR.linha};font-family:${SANS};font-size:14px;line-height:1.5;color:${COR.tinta}\"><strong style=\"font-family:${SERIFA};font-size:16px;font-weight:normal\">${esc(titulo(i.nome || i.produto))}</strong><br><span style=\"color:${COR.suave};font-size:13px\">${esc([i.cor && titulo(i.cor), i.tamanho && `Tam. ${i.tamanho}`].filter(Boolean).join(\" · \"))}${i.quantidade > 1 ? ` · ${inteiro(i.quantidade)} × ${moeda(i.preco_unitario)}` : \"\"}</span></td>\n<td valign=\"top\" align=\"right\" style=\"padding:14px 0 14px 12px;border-bottom:1px solid ${COR.linha};font-family:${SANS};font-size:14px;white-space:nowrap;color:${COR.tinta}\">${moeda(i.total)}</td>\n</tr>`).join(\"\");\n  const linhaTotal = (rot, valor, forte) => `<tr><td style=\"padding:6px 0;font-family:${SANS};font-size:${forte ? 16 : 14}px;color:${forte ? COR.tinta : COR.suave}\">${forte ? `<strong>${rot}</strong>` : rot}</td><td align=\"right\" style=\"padding:6px 0;font-family:${SANS};font-size:${forte ? 16 : 14}px;color:${COR.tinta}\">${forte ? `<strong>${valor}</strong>` : valor}</td></tr>`;\n  const pontos = corpo.pontos && Number(corpo.pontos.ganhos) > 0\n    ? cartao(`${rotulo(\"Lorenzi+\")}<p style=\"margin:0;font-family:${SERIFA};font-size:20px;color:${COR.tinta}\">Você ganhou <strong>${pontosTxt(corpo.pontos.ganhos)}</strong></p><p style=\"margin:6px 0 0;font-family:${SANS};font-size:13px;color:${COR.suave}\">Seu saldo agora é de ${pontosTxt(corpo.pontos.saldo)}. Use como desconto na próxima compra.</p>`)\n    : \"\";\n  const ondeComprou = p.canal === \"online\" ? \"no nosso site\" : `na <strong>${esc(loja)}</strong>`;\n  assunto = `${primeiro}, obrigado pela sua compra na Casa Lorenzi`;\n  html = moldura({\n    preheader: `Pedido ${p.numero} · ${moeda(p.total)} · ${dataLonga(p.data)}`,\n    titulo: `Obrigado, ${nome}.`,\n    conteudo: `<p style=\"margin:0 0 22px\">Foi um prazer receber você ${ondeComprou}. Aqui está o resumo da sua compra de ${dataLonga(p.data)}.</p>\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 8px\"><tr>\n<td style=\"font-family:${SANS};font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:${COR.suave}\">Pedido ${esc(p.numero)}</td>\n<td align=\"right\" style=\"font-family:${SANS};font-size:12px;color:${COR.suave}\">${p.pagamento ? esc(p.pagamento) : \"\"}</td>\n</tr></table>\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-top:1px solid ${COR.tinta}\">${itens}</table>\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:10px 0 0\">\n${Number(p.frete) > 0 ? linhaTotal(\"Frete\", moeda(p.frete)) : \"\"}${linhaTotal(\"Total\", moeda(p.total), true)}\n</table>\n${pontos}\n<p style=\"margin:22px 0 18px\">Precisa de um ajuste na barra ou na cintura? É só agendar um horário com a nossa alfaiataria.</p>\n${botao(\"Ver minhas compras\", `${site}/conta/pedidos`)}\n<p style=\"margin:22px 0 0;font-family:${SANS};font-size:12px;color:${COR.suave}\">Este e-mail é um resumo da compra e não substitui a nota fiscal.</p>`,\n    rodapeExtra: p.loja_endereco ? `${esc(loja)} · ${esc(titulo(p.loja_endereco))}` : \"\",\n  });\n  texto = `Obrigado pela sua compra! Pedido ${p.numero}, total ${moeda(p.total)}.`;\n} else if (corpo.tipo === \"pontos\") {\n  const pt = corpo.pontos;\n  const vencimentos = pt.vencimentos || [];\n  const primeira = vencimentos[0];\n  const lista = vencimentos.map((v) => `<tr>\n<td style=\"padding:10px 0;border-bottom:1px solid ${COR.linha};font-family:${SANS};font-size:14px;color:${COR.tinta}\">${dataLonga(v.data)}</td>\n<td align=\"right\" style=\"padding:10px 0;border-bottom:1px solid ${COR.linha};font-family:${SANS};font-size:14px;color:${COR.tinta}\"><strong>${pontosTxt(v.pontos)}</strong></td>\n</tr>`).join(\"\");\n  assunto = `${primeiro}, ${pontosTxt(pt.a_vencer)} vencem ${primeira ? `em ${dataCurta(primeira.data)}` : \"em breve\"}`;\n  html = moldura({\n    preheader: `Use seus pontos Lorenzi+ antes que eles vençam. Saldo: ${pontosTxt(pt.saldo)}.`,\n    titulo: `${nome}, seus pontos estão perto de vencer.`,\n    conteudo: `<p style=\"margin:0 0 4px\">Você tem pontos Lorenzi+ que vencem nos próximos dias. Eles valem desconto em qualquer compra, no site ou nas nossas casas.</p>\n${cartao(`<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr>\n<td>${rotulo(\"Vencem em breve\")}<p style=\"margin:0;font-family:${SERIFA};font-size:40px;line-height:1;color:${COR.vinho}\">${inteiro(pt.a_vencer)}</p><p style=\"margin:6px 0 0;font-family:${SANS};font-size:13px;color:${COR.suave}\">${Number(pt.a_vencer) === 1 ? \"ponto\" : \"pontos\"}</p></td>\n<td align=\"right\" valign=\"bottom\">${rotulo(\"Saldo total\")}<p style=\"margin:0;font-family:${SERIFA};font-size:22px;color:${COR.tinta}\">${pontosTxt(pt.saldo)}</p></td>\n</tr></table>`)}\n${lista ? `<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 22px;border-top:1px solid ${COR.tinta}\">${lista}</table>` : \"\"}\n${botao(\"Usar meus pontos\", `${site}/loja`)}\n${blocoCategoria(corpo.categoria)}\n<p style=\"margin:0;font-family:${SANS};font-size:13px;color:${COR.suave}\">Veja seu extrato completo em <a href=\"${esc(site)}/conta/lorenzi-mais\" style=\"color:${COR.marinho}\">Minha conta &rarr; Lorenzi+</a>.</p>`,\n  });\n  texto = `Você tem ${pontosTxt(pt.a_vencer)} Lorenzi+ vencendo. Saldo: ${pontosTxt(pt.saldo)}.`;\n} else if (corpo.tipo === \"categoria\") {\n  const cat = corpo.categoria;\n  const prox = cat && cat.proxima;\n  if (!prox) throw new Error(\"Aviso de categoria sem próxima categoria\");\n  assunto = `${primeiro}, você está a ${pontosTxt(prox.faltam)} do ${prox.nome}`;\n  html = moldura({\n    preheader: `Veja o que muda quando você chegar ao ${prox.nome} do Lorenzi+.`,\n    titulo: `${nome}, o ${esc(prox.nome)} está logo ali.`,\n    conteudo: `<p style=\"margin:0 0 4px\">Hoje você é cliente <strong>${esc(cat.atual.nome)}</strong> do Lorenzi+ e já percorreu ${Math.round(prox.progresso || 0)}% do caminho até a próxima categoria.</p>\n${blocoCategoria(cat, `Faltam <strong>${pontosTxt(prox.faltam)}</strong> para você chegar ao ${esc(prox.nome)}`)}\n<p style=\"margin:0 0 18px\">Cada compra soma pontos, e você tem <strong>${pontosTxt(corpo.pontos.saldo)}</strong> hoje para usar como desconto.</p>\n${botao(\"Ver a loja\", `${site}/loja`)}`,\n  });\n  texto = `Faltam ${pontosTxt(prox.faltam)} para a categoria ${prox.nome} do Lorenzi+.`;\n} else {\n  throw new Error(`Tipo de e-mail desconhecido: ${corpo.tipo}`);\n}\n\nreturn { json: { para: corpo.para.email, assunto, html, texto, tipo: corpo.tipo } };\n"
+      }
+    },
+    {
+      "id": "b1f0c5a2-0010-4c1a-9b0e-000000000010",
+      "name": "Enviar pelo Gmail (diario)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1200,
+        240
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "sendTo": "={{ $json.para }}",
+        "subject": "={{ $json.assunto }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Casa Lorenzi"
+        }
+      }
+    },
+    {
+      "id": "b1f0c5a2-0011-4c1a-9b0e-000000000011",
+      "name": "Reunir os enviados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        240
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Devolve ao backend so o que o Gmail enviou de verdade (quem falhou entra no disparo de amanha).\nconst emails = $('Separar e-mails').all();\nconst enviados = $input.all()\n  .map((saida, i) => (saida.json.error || !saida.json.id ? null : emails[i].json.confirmacao))\n  .filter(Boolean);\nreturn enviados.length ? [{ json: { enviados } }] : [];"
+      }
+    },
+    {
+      "id": "b1f0c5a2-0012-4c1a-9b0e-000000000012",
+      "name": "Registrar enviados",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        240
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://backend-casalorenzi.onrender.com/api/v1/automacoes/emails-diarios/enviados",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 120000
         }
       }
     }
@@ -178,7 +263,62 @@
       "main": [
         [
           {
-            "node": "Disparar avisos diarios",
+            "node": "Preparar e-mails do dia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar e-mails do dia": {
+      "main": [
+        [
+          {
+            "node": "Separar e-mails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar e-mails": {
+      "main": [
+        [
+          {
+            "node": "Montar e-mail (diario)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar e-mail (diario)": {
+      "main": [
+        [
+          {
+            "node": "Enviar pelo Gmail (diario)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar pelo Gmail (diario)": {
+      "main": [
+        [
+          {
+            "node": "Reunir os enviados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reunir os enviados": {
+      "main": [
+        [
+          {
+            "node": "Registrar enviados",
             "type": "main",
             "index": 0
           }

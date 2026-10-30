@@ -15,9 +15,14 @@ recebeu não ganha um segundo e-mail de categoria no mesmo ano.
 
 ## Como funciona
 
-**Disparo diário:** o nó **Todo dia às 9h** (relógio do n8n, fuso de São Paulo) acorda o servidor
-(`/health`, o Render grátis dorme) e chama `POST /api/v1/automacoes/disparar-emails` no backend, que
-decide quem recebe e devolve cada e-mail ao webhook abaixo. Não há mais agendamento no GitHub Actions.
+**Disparo diário (igual aos relatórios do n8n):** o nó **Todo dia às 9h** (relógio, fuso de São
+Paulo) acorda o servidor (`/health`, o Render grátis dorme) e chama
+`POST /api/v1/automacoes/emails-diarios`. O backend devolve os e-mails de pontos e de categoria do
+dia (já com a lista de quem recebe) e reenvia os resumos de compra que falharam. Depois, no próprio
+n8n: **Separar e-mails** (um item por cliente) → **Montar e-mail (diario)** → **Enviar pelo Gmail
+(diario)** → **Reunir os enviados** (só os que o Gmail enviou) → **Registrar enviados**
+(`POST /emails-diarios/enviados`), que marca o aviso no banco. Quem falhou no Gmail não é marcado e
+entra de novo amanhã. Não há mais agendamento no GitHub Actions.
 
 **Cada e-mail:**
 
@@ -42,9 +47,10 @@ No n8n (`https://vitorjunior.app.n8n.cloud`), fluxo **Casa Lorenzi - e-mails ao 
    `X-Chave-Automacao`, Value = o valor de `CHAVE_AUTOMACAO` do backend.
 2. Nó **Enviar pelo Gmail** → Credential → *Create new* (**Gmail OAuth2**) → *Sign in with Google*
    com o Gmail da loja.
-3. Nó **Disparar avisos diarios** → Credential → a mesma **Header Auth** do passo 1
-   (`X-Chave-Automacao`). Confira também a URL do backend nos nós **Acordar o servidor** e
-   **Disparar avisos diarios**.
+3. Nós **Preparar e-mails do dia** e **Registrar enviados** → Credential → a mesma **Header Auth**
+   do passo 1 (`X-Chave-Automacao`). Nó **Enviar pelo Gmail (diario)** → a mesma credencial Gmail
+   do passo 2. Confira a URL do backend nos nós **Acordar o servidor**, **Preparar e-mails do dia**
+   e **Registrar enviados**.
 4. **Publish** (ativa o fluxo e o relógio). A URL de produção do webhook é
    `https://vitorjunior.app.n8n.cloud/webhook/casa-lorenzi-emails`.
 
@@ -58,8 +64,8 @@ O segredo `CHAVE_AUTOMACAO` do GitHub não é mais necessário (o agendamento sa
 ```bash
 # Quem receberia hoje, sem enviar nada:
 curl -X POST -H "X-Chave-Automacao: $CHAVE" "$API/api/v1/automacoes/disparar-emails?simular=true"
-# Disparo de verdade:
-curl -X POST -H "X-Chave-Automacao: $CHAVE" "$API/api/v1/automacoes/disparar-emails"
+# E-mails que o relógio do n8n enviaria agora (não grava nada):
+curl -X POST -H "X-Chave-Automacao: $CHAVE" "$API/api/v1/automacoes/emails-diarios"
 # Reenviar o resumo de uma compra (sai uma vez só):
 curl -X POST -H "X-Chave-Automacao: $CHAVE" "$API/api/v1/automacoes/resumo-da-compra/<id_pedido>"
 ```

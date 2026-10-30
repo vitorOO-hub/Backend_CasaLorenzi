@@ -275,6 +275,68 @@ def test_aviso_de_categoria_sai_uma_vez(n8n, disparo, monkeypatch):
 # ------------------------------------------------------------------ rotas
 
 
+def test_preparar_diarios_devolve_pontos_sem_gravar_nada(disparo, avisos):
+    pronto = emails.preparar_diarios(ConexaoFalsa(), configuracoes())
+    assert pronto["total"] == 1
+    mensagem = pronto["emails"][0]
+    assert mensagem["tipo"] == "pontos" and mensagem["para"]["email"] == "ana@exemplo.com"
+    assert mensagem["confirmacao"]["chave_categoria"] == "prata:2026"
+    assert disparo == [] and avisos == {}  # so o n8n confirmando grava
+
+
+def test_categoria_ja_dita_no_email_de_pontos_nao_ganha_outro(disparo, monkeypatch):
+    perto = {"id_usuario": CLIENTE, "nome": "ana", "email": "ana@exemplo.com", "saldo": 900}
+    monkeypatch.setattr(
+        repositorio, "clientes_com_email", lambda c: [{**perto, "creditos_no_ano": 1700}]
+    )
+    pronto = emails.preparar_diarios(ConexaoFalsa(), configuracoes())
+    assert [m["tipo"] for m in pronto["emails"]] == ["pontos"]
+
+
+def test_preparar_diarios_inclui_categoria_de_quem_nao_tem_pontos(disparo, monkeypatch):
+    monkeypatch.setattr(service, "clientes_a_avisar", lambda c, dias, canal: {"clientes": []})
+    perto = {"id_usuario": uuid4(), "nome": "bia", "email": "bia@ex.com", "saldo": 4500}
+    monkeypatch.setattr(
+        repositorio, "clientes_com_email", lambda c: [{**perto, "creditos_no_ano": 4200}]
+    )
+    pronto = emails.preparar_diarios(ConexaoFalsa(), configuracoes())
+    assert [m["tipo"] for m in pronto["emails"]] == ["categoria"]
+    assert pronto["emails"][0]["confirmacao"]["chave_categoria"].startswith("ouro:")
+
+
+def test_registrar_enviados_grava_o_lote_e_marca_a_categoria(disparo, avisos):
+    pronto = emails.preparar_diarios(ConexaoFalsa(), configuracoes())
+    confirmacao = pronto["emails"][0]["confirmacao"]
+    from app.automacoes.schemas import EmailsEnviados
+
+    dados = EmailsEnviados.model_validate({"enviados": [confirmacao]})
+    assert emails.registrar_enviados(ConexaoFalsa(), dados.enviados) == {
+        "recebidos": 1,
+        "gravados": 1,
+    }
+    assert len(disparo) == 1
+    assert [v["status"] for k, v in avisos.items() if k[1] == "categoria"] == ["enviado"]
+    # Repetir a confirmacao nao duplica o aviso de categoria.
+    emails.registrar_enviados(ConexaoFalsa(), dados.enviados)
+    assert len([k for k in avisos if k[1] == "categoria"]) == 1
+
+
+def test_rotas_do_disparo_diario_exigem_a_chave(par, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(
+        emails,
+        "preparar_diarios",
+        lambda c, cfg: {"total": 0, "emails": [], "resumos_reenviados": {}},
+    )
+    cliente = montar_cliente(par, chave_automacao=CHAVE)
+    assert cliente.post(AUTOMACOES + "/emails-diarios").status_code == 401
+    cabecalho = {"X-Chave-Automacao": CHAVE}
+    assert cliente.post(AUTOMACOES + "/emails-diarios", headers=cabecalho).json()["total"] == 0
+    vazio = cliente.post(
+        AUTOMACOES + "/emails-diarios/enviados", headers=cabecalho, json={"enviados": []}
+    )
+    assert vazio.status_code == 422
+
+
 def test_disparo_exige_a_chave_e_o_n8n_configurado(par, monkeypatch):  # noqa: F811
     monkeypatch.setattr(emails, "disparar", lambda c, cfg, simular: {"simulado": simular})
     sem_n8n = montar_cliente(par, chave_automacao=CHAVE)

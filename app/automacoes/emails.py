@@ -342,3 +342,104 @@ def disparar(conexao: Connection, configuracoes: Settings, *, simular: bool = Fa
         "categoria": categoria,
         "resumos_reenviados": reenvios,
     }
+
+
+# ------------------------------------------------------- disparo diario pelo relogio do n8n
+# O n8n pede os e-mails prontos (`preparar_diarios`), envia pelo Gmail e devolve o que saiu
+# (`registrar_enviados`): so ai o backend marca como avisado.
+
+
+def preparar_diarios(conexao: Connection, configuracoes: Settings) -> dict[str, Any]:
+    """Reenvia os resumos de compra que falharam (pelo webhook) e devolve os e-mails de pontos e
+    de categoria que o n8n deve enviar. Cada e-mail leva `confirmacao`, que o n8n devolve depois
+    de enviar. Nao grava aviso nenhum."""
+    teto = configuracoes.emails_por_disparo
+    clientes = service.clientes_a_avisar(
+        conexao, dias=configuracoes.emails_dias_aviso_pontos, canal="email"
+    )["clientes"]
+    clientes = [c for c in clientes if email_valido(c["email"])][:teto]
+    mensagens: list[dict[str, Any]] = []
+    # O e-mail de pontos ja fala da proxima categoria: ela nao ganha um segundo e-mail hoje.
+    ja_cobertas: set[tuple[UUID, str]] = set()
+    for cliente in clientes:
+        chave = None
+        if perto_da_proxima(cliente):
+            chave = _chave_da_categoria(cliente["proxima_categoria"])
+            ja_cobertas.add((cliente["id_cliente"], chave))
+        mensagens.append(
+            {
+                **mensagem_de_pontos(configuracoes, cliente),
+                "confirmacao": {
+                    "tipo": "pontos",
+                    "id_cliente": str(cliente["id_cliente"]),
+                    "chave_categoria": chave,
+                    "vencimentos": [
+                        {"vence_em": _iso(v["vence_em"]), "pontos": v["pontos"]}
+                        for v in cliente["vencimentos"]
+                    ],
+                },
+            }
+        )
+    candidatos = []
+    for cliente in repositorio.clientes_com_email(conexao):
+        if not email_valido(cliente["email"]):
+            continue
+        situacao = situacao_da_categoria(cliente["creditos_no_ano"])
+        if perto_da_proxima(situacao):
+            candidatos.append((cliente, _chave_da_categoria(situacao["proxima_categoria"])))
+    ja = repositorio.avisos_de_categoria(conexao, sorted({c for _, c in candidatos}))
+    candidatos = [
+        (c, k)
+        for c, k in candidatos
+        if (c["id_usuario"], k) not in ja and (c["id_usuario"], k) not in ja_cobertas
+    ][: max(teto - len(mensagens), 0)]
+    for cliente, chave in candidatos:
+        mensagens.append(
+            {
+                **mensagem_de_categoria(configuracoes, cliente),
+                "confirmacao": {
+                    "tipo": "categoria",
+                    "id_cliente": str(cliente["id_usuario"]),
+                    "chave_categoria": chave,
+                    "vencimentos": [],
+                },
+            }
+        )
+    reenvios = {"candidatos": 0, "enviados": 0, "falhas": 0}
+    for id_pedido in repositorio.compras_a_reenviar(conexao, max(teto - len(mensagens), 0)):
+        reenvios["candidatos"] += 1
+        situacao = enviar_resumo_da_compra(conexao, configuracoes, id_pedido)
+        if situacao == "enviado":
+            reenvios["enviados"] += 1
+        elif situacao == "falhou":
+            reenvios["falhas"] += 1
+    return {"total": len(mensagens), "emails": mensagens, "resumos_reenviados": reenvios}
+
+
+def registrar_enviados(conexao: Connection, confirmacoes: list[Any]) -> dict[str, int]:
+    """Marca como avisado o que o n8n confirmou ter enviado (pontos e/ou categoria)."""
+    gravados = 0
+    for c in confirmacoes:
+        if c.tipo == "pontos":
+            gravados += repositorio.gravar_avisos(
+                conexao,
+                "email",
+                json.dumps(
+                    [
+                        {
+                            "id_cliente": str(c.id_cliente),
+                            "vence_em": v.vence_em.isoformat(),
+                            "pontos": v.pontos,
+                        }
+                        for v in c.vencimentos
+                    ]
+                ),
+            )
+        if c.chave_categoria:
+            id_aviso = repositorio.reservar_aviso(
+                conexao, c.id_cliente, "categoria", c.chave_categoria
+            )
+            if id_aviso:
+                repositorio.concluir_aviso(conexao, id_aviso, None)
+            conexao.commit()
+    return {"recebidos": len(confirmacoes), "gravados": gravados}

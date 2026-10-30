@@ -59,6 +59,30 @@ class AvisosEnviados(BaseModel):
     avisos: list[AvisoEnviado] = Field(min_length=1, max_length=5000)
 
 
+class AvisoVencimento(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    vence_em: datetime
+    pontos: int = Field(gt=0)
+
+
+class ConfirmacaoDeEmail(BaseModel):
+    """O que o n8n devolve de cada e-mail diario que enviou (veio em `confirmacao`)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tipo: Literal["pontos", "categoria"]
+    id_cliente: UUID
+    chave_categoria: str | None = Field(default=None, max_length=40)
+    vencimentos: list[AvisoVencimento] = Field(default_factory=list, max_length=50)
+
+
+class EmailsEnviados(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enviados: list[ConfirmacaoDeEmail] = Field(min_length=1, max_length=5000)
+
+
 class AvisosGravados(Saida):
     recebidos: int
     # Avisos repetidos (mesmo cliente, lote e canal) nao contam de novo.

@@ -15,6 +15,7 @@ from app.automacoes.schemas import (
     AvisosGravados,
     Canal,
     ClientesAAvisar,
+    EmailsEnviados,
     EstoqueDoDia,
     EstoqueParadoPorLoja,
     RelatoriosDeEstoque,
@@ -134,6 +135,20 @@ def disparar_emails(
     if not simular and not emails.configurado(configuracoes):
         raise EmailsIndisponiveis()
     return executar(lambda conexao: emails.disparar(conexao, configuracoes, simular=simular))
+
+
+@router.post(
+    "/emails-diarios", summary="Disparo diario pelo relogio do n8n: e-mails prontos para enviar"
+)
+def emails_diarios(executar: ExecutarDep, configuracoes: SettingsDep) -> dict:
+    """Devolve os e-mails de pontos e de categoria do dia (o n8n envia). Reenvia, pelo webhook, os
+    resumos de compra que falharam. Nao grava aviso: isso e `/emails-diarios/enviados`."""
+    return executar(lambda conexao: emails.preparar_diarios(conexao, configuracoes))
+
+
+@router.post("/emails-diarios/enviados", summary="Registrar os e-mails diarios que o n8n enviou")
+def emails_diarios_enviados(dados: EmailsEnviados, executar: ExecutarDep) -> dict:
+    return executar(lambda conexao: emails.registrar_enviados(conexao, dados.enviados))
 
 
 @router.post("/resumo-da-compra/{id_pedido}", summary="Enviar (uma vez) o resumo de uma compra")
