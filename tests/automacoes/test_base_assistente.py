@@ -192,6 +192,11 @@ def test_resumo_semanal_da_loja_filtra_estoque_e_omite_pontos(monkeypatch):
     filtros_indicadores = []
     monkeypatch.setattr(
         automacoes.repositorio,
+        "destinatarios_do_resumo",
+        lambda conexao, id_loja: ["gerente@barra.com"],
+    )
+    monkeypatch.setattr(
+        automacoes.repositorio,
         "nome_da_loja_ativa",
         lambda conexao, id_loja: "Barra" if id_loja == LOJA_A else None,
     )
@@ -237,11 +242,17 @@ def test_resumo_semanal_da_loja_filtra_estoque_e_omite_pontos(monkeypatch):
     assert all(item[0].id_loja == LOJA_A for item in filtros_indicadores)
     assert filtros_indicadores[1][3] == automacoes.CATEGORIAS_MAIS_VENDIDAS_NO_RESUMO
     assert resumo["pontos_a_vencer"] is None
+    assert resumo["destinatarios"] == ["gerente@barra.com"]
     resposta = ResumoSemanal.model_validate(resumo)
     assert resposta.indicadores_unidade.ticket_medio == 100.0
 
 
 def test_resumo_semanal_da_rede_nao_calcula_indicadores_exclusivos_da_unidade(monkeypatch):
+    monkeypatch.setattr(
+        automacoes.repositorio,
+        "destinatarios_do_resumo",
+        lambda conexao, id_loja: ["admin@lorenzi.com"],
+    )
     monkeypatch.setattr(
         automacoes.repositorio, "nomes_das_lojas", lambda conexao: {LOJA_A: "Barra"}
     )
@@ -262,6 +273,7 @@ def test_resumo_semanal_da_rede_nao_calcula_indicadores_exclusivos_da_unidade(mo
     resumo = automacoes.resumo_semanal(None, date(2026, 10, 27))
 
     assert resumo["indicadores_unidade"] is None
+    assert resumo["destinatarios"] == ["admin@lorenzi.com"]
 
 
 def test_resumo_semanal_rejeita_loja_inativa_ou_desconhecida(monkeypatch):

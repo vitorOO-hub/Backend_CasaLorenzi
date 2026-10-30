@@ -5,9 +5,13 @@ const test = require('node:test');
 
 const root = path.resolve(__dirname, '..');
 
-function montarEmail(arquivo, relatorio) {
+function montarItem(arquivo, relatorio) {
   const codigo = fs.readFileSync(path.join(root, 'n8n', arquivo), 'utf8');
-  return new Function('$json', codigo)(relatorio).json.html;
+  return new Function('$json', codigo)(relatorio);
+}
+
+function montarEmail(arquivo, relatorio) {
+  return montarItem(arquivo, relatorio).json.html;
 }
 
 const estoque = {
@@ -27,6 +31,7 @@ const estoque = {
 };
 
 const relatorioBase = {
+  destinatarios: ['gestor@exemplo.com'],
   semana: {inicio: '2026-10-19', fim: '2026-10-25'},
   semana_anterior: {inicio: '2026-10-12', fim: '2026-10-18'},
   criterio_vendas: 'Vendas pagas.',
@@ -82,4 +87,12 @@ test('e-mail do admin não recebe os indicadores exclusivos da unidade', () => {
 
   assert.doesNotMatch(html, /Categorias mais vendidas · por unidades/);
   assert.doesNotMatch(html, /TICKET MÉDIO/);
+});
+
+test('o destinatário vem do cadastro e, sem ele, o e-mail não sai', () => {
+  const dois = {...relatorioBase, destinatarios: ['a@exemplo.com', 'b@exemplo.com']};
+  assert.equal(montarItem('codigo_email_relatorio_admin.js', dois).json.para, 'a@exemplo.com,b@exemplo.com');
+
+  const sem = {...relatorioBase, destinatarios: []};
+  assert.equal(montarItem('codigo_email_relatorio_admin.js', sem), null);
 });

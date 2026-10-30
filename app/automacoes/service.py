@@ -177,6 +177,7 @@ def resumo_semanal(
             ],
         }
     return {
+        "destinatarios": repositorio.destinatarios_do_resumo(conexao, id_loja),
         "semana": {"inicio": inicio, "fim": fim},
         "semana_anterior": {"inicio": inicio_ant, "fim": fim_ant},
         "criterio_vendas": CRITERIO_VENDAS,

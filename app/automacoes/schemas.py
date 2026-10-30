@@ -119,6 +119,8 @@ class Semana(Saida):
 
 
 class ResumoSemanal(Saida):
+    # Admins (resumo da rede) ou gerentes da loja pedida (resumo da unidade), pelo cadastro.
+    destinatarios: list[str]
     semana: Semana
     semana_anterior: Semana
     criterio_vendas: str
