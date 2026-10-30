@@ -16,7 +16,7 @@ recebeu não ganha um segundo e-mail de categoria no mesmo ano.
 ## Como funciona
 
 **Disparo semanal (igual aos relatórios do n8n):** o nó **Toda sexta às 9h** (relógio, fuso de São
-Paulo) acorda o servidor (`/health`, o Render grátis dorme) e chama
+Paulo) acorda o servidor (`/health`, o Render grátis dorme; o nó não derruba o fluxo se falhar e há uma espera de 60 s antes da próxima chamada) e chama
 `POST /api/v1/automacoes/emails-diarios`. O backend devolve os e-mails de pontos e de categoria do
 dia (já com a lista de quem recebe) e reenvia os resumos de compra que falharam. Depois, no próprio
 n8n: **Separar e-mails** (um item por cliente) → **Montar e-mail (diario)** → **Enviar pelo Gmail

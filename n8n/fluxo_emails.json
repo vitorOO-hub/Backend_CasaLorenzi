@@ -102,15 +102,16 @@
         240
       ],
       "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 20000,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
       "parameters": {
         "method": "GET",
         "url": "https://backend-casalorenzi.onrender.com/health",
         "options": {
           "timeout": 120000
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "id": "b1f0c5a2-0007-4c1a-9b0e-000000000007",
@@ -129,7 +130,10 @@
         "options": {
           "timeout": 600000
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
     },
     {
       "id": "b1f0c5a2-0008-4c1a-9b0e-000000000008",
@@ -215,6 +219,22 @@
           "timeout": 120000
         }
       }
+    },
+    {
+      "id": "b1f0c5a2-0013-4c1a-9b0e-000000000013",
+      "name": "Esperar o servidor subir",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        360,
+        240
+      ],
+      "webhookId": "b1f0c5a2-0013-4c1a-9b0e-wait",
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 60,
+        "unit": "seconds"
+      }
     }
   ],
   "connections": {
@@ -255,7 +275,7 @@
       "main": [
         [
           {
-            "node": "Preparar e-mails do dia",
+            "node": "Esperar o servidor subir",
             "type": "main",
             "index": 0
           }
@@ -322,6 +342,17 @@
         [
           {
             "node": "Acordar o servidor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esperar o servidor subir": {
+      "main": [
+        [
+          {
+            "node": "Preparar e-mails do dia",
             "type": "main",
             "index": 0
           }
